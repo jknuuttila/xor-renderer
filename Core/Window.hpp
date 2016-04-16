@@ -20,6 +20,8 @@ namespace xor
         Window(const char *title, int w, int h, int x = -1, int y = -1);
         virtual ~Window();
 
+        HWND hWnd() { return m_hWnd; }
+
         int run();
         void terminate(int exitCode);
 

@@ -13,5 +13,7 @@
     <ClInclude Include="Log.hpp" />
     <ClInclude Include="Window.hpp" />
     <ClInclude Include="OS.hpp" />
+    <ClInclude Include="Math.hpp" />
+    <ClInclude Include="MathVectors.hpp" />
   </ItemGroup>
 </Project>
