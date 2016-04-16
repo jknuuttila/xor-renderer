@@ -55,8 +55,14 @@ namespace xor
         return DefWindowProc(hWnd, uMsg, wParam, lParam);
     }
 
-    Window::Window(const char *title, int w, int h, int x, int y)
+    Window::Window(const char *title, uint2 size, int2 position)
+        : m_size(size)
     {
+        auto w = size.x;
+        auto h = size.y;
+        auto x = position.x;
+        auto y = position.y;
+
         static ATOM windowClass = registerWindowClass();
 
         x = (x < 0) ? CW_USEDEFAULT : x;

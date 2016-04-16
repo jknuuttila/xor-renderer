@@ -2,6 +2,7 @@
 
 #include "OS.hpp"
 #include "Utils.hpp"
+#include "MathVectors.hpp"
 
 namespace xor
 {
@@ -10,16 +11,17 @@ namespace xor
         MovingPtr<HWND> m_hWnd       = nullptr;
         int             m_exitCode   = 0;
         bool            m_terminate  = false;
+        uint2           m_size       = 0;
 
         static ATOM registerWindowClass();
         static LRESULT CALLBACK windowProcFun(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     protected:
         LRESULT windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     public:
-        // TODO: use int2
-        Window(const char *title, int w, int h, int x = -1, int y = -1);
+        Window(const char *title, uint2 size, int2 position = -1);
         virtual ~Window();
 
+        uint2 size() const { return m_size; }
         HWND hWnd() { return m_hWnd; }
 
         int run();

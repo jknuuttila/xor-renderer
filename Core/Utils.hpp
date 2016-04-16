@@ -1,8 +1,13 @@
 #pragma once
 
+#include "span.h"
+#include "string_span.h"
+
 #include <vector>
 #include <string>
 #include <type_traits>
+
+using gsl::span;
 
 namespace xor
 {
