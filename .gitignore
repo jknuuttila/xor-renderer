@@ -26,3 +26,16 @@
 *.exe
 *.out
 *.app
+
+# VS stuff
+*.db
+*.opendb
+**/bin/**
+**/build/**
+**/Debug/**
+**/Release/**
+**/x64/**
+**/.vs/**
+
+# Vim
+*.swp
