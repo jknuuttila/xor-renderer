@@ -5,6 +5,7 @@
     <ClCompile Include="Error.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="Window.cpp" />
+    <ClCompile Include="Allocators.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Utils.hpp" />
@@ -15,5 +16,6 @@
     <ClInclude Include="OS.hpp" />
     <ClInclude Include="Math.hpp" />
     <ClInclude Include="MathVectors.hpp" />
+    <ClInclude Include="Allocators.hpp" />
   </ItemGroup>
 </Project>
