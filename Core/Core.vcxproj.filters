@@ -2,8 +2,16 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="Utils.cpp" />
+    <ClCompile Include="Error.cpp" />
+    <ClCompile Include="Log.cpp" />
+    <ClCompile Include="Window.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Utils.hpp" />
+    <ClInclude Include="Core.hpp" />
+    <ClInclude Include="Error.hpp" />
+    <ClInclude Include="Log.hpp" />
+    <ClInclude Include="Window.hpp" />
+    <ClInclude Include="OS.hpp" />
   </ItemGroup>
 </Project>
