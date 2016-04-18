@@ -48,6 +48,12 @@ namespace xor
         case WM_CLOSE:
             PostQuitMessage(0);
             break;
+        case WM_KEYDOWN:
+            keyDown(static_cast<int>(wParam));
+            break;
+        case WM_KEYUP:
+            keyUp(static_cast<int>(wParam));
+            break;
         default:
             break;
         }

@@ -20,6 +20,13 @@ namespace xor
         Device createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel = D3D_FEATURE_LEVEL_12_0);
     };
 
+    class SwapChain
+    {
+        friend class Device;
+        ComPtr<IDXGISwapChain3> m_swapChain;
+    public:
+    };
+
     class Device
     {
         friend class Adapter;
@@ -31,12 +38,13 @@ namespace xor
         Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel);
     public:
         Device() {}
+
+        SwapChain createSwapChain(Window &window);
     };
 
     // Global initialization and deinitialization of the Xor renderer.
     class Xor
     {
-        ComPtr<IDXGIFactory4> m_factory;
         std::vector<Adapter>  m_adapters;
     public:
         enum class DebugLayer

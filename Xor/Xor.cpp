@@ -2,6 +2,17 @@
 
 namespace xor
 {
+    static ComPtr<IDXGIFactory4> dxgiFactory()
+    {
+        ComPtr<IDXGIFactory4> factory;
+
+        XOR_CHECK_HR(CreateDXGIFactory1(
+            __uuidof(IDXGIFactory4),
+            &factory));
+
+        return factory;
+    }
+
     Xor::Xor(DebugLayer debugLayer)
     {
         if (debugLayer == DebugLayer::Enabled)
@@ -13,9 +24,7 @@ namespace xor
             debug->EnableDebugLayer();
         }
 
-        XOR_CHECK_HR(CreateDXGIFactory1(
-            __uuidof(IDXGIFactory4),
-            &m_factory));
+        auto factory = dxgiFactory();
 
         {
             uint i = 0;
@@ -23,7 +32,7 @@ namespace xor
             while (foundAdapters)
             {
                 ComPtr<IDXGIAdapter1> adapter;
-                auto hr = m_factory->EnumAdapters1(i, &adapter);
+                auto hr = factory->EnumAdapters1(i, &adapter);
 
                 switch (hr)
                 {
@@ -91,5 +100,41 @@ namespace xor
                 __uuidof(ID3D12CommandQueue),
                 &m_graphicsQueue));
         }
+    }
+
+    SwapChain Device::createSwapChain(Window &window)
+    {
+        SwapChain swapChain;
+
+        auto factory = dxgiFactory();
+
+        {
+            DXGI_SWAP_CHAIN_DESC1 desc = {};
+            desc.Width              = window.size().x;
+            desc.Height             = window.size().y;
+            desc.Format             = DXGI_FORMAT_R8G8B8A8_UNORM;
+            desc.Stereo             = false;
+            desc.SampleDesc.Count   = 1;
+            desc.SampleDesc.Quality = 0;
+            desc.BufferUsage        = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+            desc.BufferCount        = 2;
+            desc.Scaling            = DXGI_SCALING_NONE;
+            desc.SwapEffect         = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+            desc.AlphaMode          = DXGI_ALPHA_MODE_IGNORE;
+            desc.Flags              = 0;
+
+            ComPtr<IDXGISwapChain1> swapChain1;
+            XOR_CHECK_HR(factory->CreateSwapChainForHwnd(
+                m_graphicsQueue.Get(),
+                window.hWnd(),
+                &desc,
+                nullptr,
+                nullptr,
+                &swapChain1));
+
+            XOR_CHECK_HR(swapChain1.As(&swapChain.m_swapChain));
+        }
+
+        return swapChain;
     }
 }

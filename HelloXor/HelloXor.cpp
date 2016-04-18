@@ -3,9 +3,27 @@
 
 using namespace xor;
 
-int main(int argc, const char *argv[])
+class HelloXor : public Window
 {
     Xor xor;
-    Device device = xor.defaultAdapter().createDevice();
-    return 0;
+    Device device;
+    SwapChain swapChain;
+public:
+    HelloXor()
+        : Window { "Hello, Xor!", { 1600, 900 } }
+    {
+        device    = xor.defaultAdapter().createDevice();
+        swapChain = device.createSwapChain(*this);
+    }
+
+    void keyDown(int keyCode) override
+    {
+        if (keyCode == VK_ESCAPE)
+            terminate(0);
+    }
+};
+
+int main(int argc, const char *argv[])
+{
+    return HelloXor().run();
 }

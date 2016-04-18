@@ -28,5 +28,8 @@ namespace xor
         void terminate(int exitCode);
 
         virtual void mainLoop() {}
+
+        virtual void keyUp(int keyCode) {}
+        virtual void keyDown(int keyCode) {}
     };
 }
