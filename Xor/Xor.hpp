@@ -59,6 +59,10 @@ namespace xor
         void execute(CommandList &cmd);
         void present(SwapChain &swapChain, bool vsync = true);
 
+        // TODO: Change seqNums to int64_t in public APIs
+        uint64_t now();
+        void whenCompleted(std::function<void()> f);
+        void whenCompleted(std::function<void()> f, uint64_t seqNum);
         bool hasCompleted(uint64_t seqNum);
         void waitUntilCompleted(uint64_t seqNum);
     };

@@ -231,6 +231,24 @@ namespace xor
         retireCommandLists();
     }
 
+    uint64_t Device::now()
+    {
+        return 0;
+    }
+
+    void Device::whenCompleted(std::function<void()> f)
+    {
+        whenCompleted(std::move(f), now());
+    }
+
+    void Device::whenCompleted(std::function<void()> f, uint64_t seqNum)
+    {
+        if (hasCompleted(seqNum))
+            f();
+        else
+            state->completionCallbacks.emplace(seqNum, std::move(f));
+    }
+
     bool Device::hasCompleted(uint64_t seqNum)
     {
         retireCommandLists();
@@ -328,6 +346,11 @@ namespace xor
     {
         while (!hasCompleted())
             WaitForSingleObject(state->completedEvent.get(), timeout);
+    }
+
+    CommandList::~CommandList()
+    {
+        // TODO: whenCompleted() -> return to pool
     }
 
     void CommandList::clearRTV(RTV &rtv, float4 color)
