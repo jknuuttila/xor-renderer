@@ -14,6 +14,7 @@
     <ClCompile Include="Allocators.cpp" />
     <ClCompile Include="Error.cpp" />
     <ClCompile Include="Log.cpp" />
+    <ClCompile Include="String.cpp" />
     <ClCompile Include="Utils.cpp" />
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
@@ -25,6 +26,7 @@
     <ClInclude Include="Math.hpp" />
     <ClInclude Include="MathVectors.hpp" />
     <ClInclude Include="OS.hpp" />
+    <ClInclude Include="String.hpp" />
     <ClInclude Include="Utils.hpp" />
     <ClInclude Include="Window.hpp" />
   </ItemGroup>

@@ -6,6 +6,7 @@
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="Window.cpp" />
     <ClCompile Include="Allocators.cpp" />
+    <ClCompile Include="String.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Utils.hpp" />
@@ -17,5 +18,6 @@
     <ClInclude Include="Math.hpp" />
     <ClInclude Include="MathVectors.hpp" />
     <ClInclude Include="Allocators.hpp" />
+    <ClInclude Include="String.hpp" />
   </ItemGroup>
 </Project>

@@ -1,22 +1,13 @@
 #include "OS.hpp"
 #include "Error.hpp"
 #include "Utils.hpp"
+#include "String.hpp"
 
 #include <cstring>
 #include <vector>
 
 namespace xor
 {
-    std::wstring convertToWide(const char * str)
-    {
-        auto len = strlen(str);
-        std::vector<wchar_t> wideBuf(len + 1);
-        size_t converted;
-        auto err = mbstowcs_s(&converted, wideBuf.data(), wideBuf.size(), str, len);
-        XOR_CHECK(err == 0, "Failed to convert string");
-        return std::wstring(wideBuf.data());
-    }
-
     std::vector<std::string> listFiles(const std::string &path, const std::string &pattern)
     {
         std::vector<std::string> files;
@@ -67,52 +58,6 @@ namespace xor
         }
 
         return files;
-    }
-
-    std::string replaceAll(std::string s, const std::string &replacedString, const std::string &replaceWith)
-    {
-        auto oldLen = replacedString.length();
-        auto newLen = replaceWith.length();
-
-        auto pos = s.find(replacedString, 0);
-
-        while (pos != std::string::npos)
-        {
-            s.replace(pos, oldLen, replaceWith);
-            pos += newLen;
-            pos = s.find(replacedString, pos);
-        }
-
-        return s;
-    }
-
-    std::vector<std::string> tokenize(const std::string &s, const std::string &delimiters)
-    {
-        std::vector<std::string> tokens;
-
-        std::string::size_type pos = 0;
-        bool delim = false;
-
-        while (pos != std::string::npos)
-        {
-            if (delim)
-            {
-                pos = s.find_first_not_of(delimiters, pos);
-            }
-            else
-            {
-                auto end = s.find_first_of(delimiters, pos);
-                if (end == std::string::npos) end = s.length();
-                tokens.emplace_back(s.substr(pos, end - pos));
-                if (tokens.back().empty())
-                    tokens.pop_back();
-                pos = end;
-            }
-
-            delim = !delim;
-        }
-
-        return tokens;
     }
 
     std::vector<std::string> splitPath(const std::string & path)

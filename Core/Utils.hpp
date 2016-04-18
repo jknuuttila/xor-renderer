@@ -79,34 +79,10 @@ namespace xor
     // TODO: Move these elsewhere
     std::vector<std::string> listFiles(const std::string &path, const std::string &pattern = "*");
     std::vector<std::string> searchFiles(const std::string &path, const std::string &pattern);
-    std::string replaceAll(std::string s, const std::string &replacedString, const std::string &replaceWith);
-    std::vector<std::string> tokenize(const std::string &s, const std::string &delimiters);
-    std::vector<std::string> splitPath(const std::string &path);
 
     std::string fileOpenDialog(const std::string &description, const std::string &pattern);
     std::string fileSaveDialog(const std::string &description, const std::string &pattern);
     std::string absolutePath(const std::string &path);
-
-    template <typename Iter>
-    std::string join(Iter begin, Iter end, std::string separator)
-    {
-        std::string s;
-
-        if (begin == end)
-            return s;
-
-        auto it = begin;
-        s = *it;
-        ++it;
-
-        while (it != end)
-        {
-            s += separator;
-            s += *it;
-            ++it;
-        }
-
-        return s;
-    }
+    std::vector<std::string> splitPath(const std::string &path);
 }
 

@@ -9,19 +9,35 @@
 
 namespace xor
 {
+    class Device;
     class Adapter
     {
         friend class Xor;
+
         ComPtr<IDXGIAdapter3> m_adapter;
-        std::string m_description;
+        String                m_description;
     public:
+        Device createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel = D3D_FEATURE_LEVEL_12_0);
+    };
+
+    class Device
+    {
+        friend class Adapter;
+
+        ComPtr<IDXGIAdapter3>      m_adapter;
+        ComPtr<ID3D12Device>       m_device;
+        ComPtr<ID3D12CommandQueue> m_graphicsQueue;
+
+        Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel);
+    public:
+        Device() {}
     };
 
     // Global initialization and deinitialization of the Xor renderer.
     class Xor
     {
         ComPtr<IDXGIFactory4> m_factory;
-        std::vector<Adapter> m_adapters;
+        std::vector<Adapter>  m_adapters;
     public:
         enum class DebugLayer
         {
@@ -31,6 +47,9 @@ namespace xor
 
         Xor(DebugLayer debugLayer = DebugLayer::Enabled);
         ~Xor();
+
+        span<Adapter> adapters();
+        Adapter &defaultAdapter();
     };
 }
 
