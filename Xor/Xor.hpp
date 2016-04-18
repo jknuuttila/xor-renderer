@@ -8,6 +8,7 @@
 #include <vector>
 #include <initializer_list>
 #include <queue>
+#include <memory>
 
 namespace xor
 {
@@ -22,8 +23,57 @@ namespace xor
         Device createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel = D3D_FEATURE_LEVEL_12_0);
     };
 
-    class Resource
+    namespace state
     {
+        struct DeviceState;
+        struct CommandListState;
+        struct ResourceState;
+        struct ViewState;
+
+        template <typename T>
+        struct SharedState
+        {
+            std::shared_ptr<T> state;
+            void makeState() { state = std::make_shared<T>(); }
+            T *operator->() { return state.get(); }
+        };
+    }
+
+    class SwapChain;
+    class CommandList;
+    class Device : private state::SharedState<state::DeviceState>
+    {
+        friend class Adapter;
+        friend class CommandList;
+
+        void retireCommandLists();
+
+        Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel);
+    public:
+        Device() {}
+
+        SwapChain createSwapChain(Window &window);
+
+        CommandList graphicsCommandList();
+
+        void execute(CommandList &cmd);
+        void present(SwapChain &swapChain, bool vsync = true);
+
+        bool hasCompleted(uint64_t seqNum);
+        void waitUntilCompleted(uint64_t seqNum);
+    };
+
+    class Resource : private state::SharedState<state::ResourceState>
+    {
+        friend class Device;
+        friend class CommandList;
+    public:
+    };
+
+    class View : private state::SharedState<state::ViewState>
+    {
+        friend class Device;
+        friend class CommandList;
     public:
     };
 
@@ -32,13 +82,14 @@ namespace xor
     public:
     };
 
-    class RTV
+    class RTV : public View
     {
+        Texture m_texture;
     public:
         Texture texture();
     };
 
-    class Barrier
+    class Barrier : public D3D12_RESOURCE_BARRIER
     {
     public:
     };
@@ -51,23 +102,25 @@ namespace xor
     class SwapChain
     {
         friend class Device;
+        Device m_device;
         ComPtr<IDXGISwapChain3> m_swapChain;
+
+        struct Backbuffer
+        {
+            int64_t seqNum = -1;
+            RTV rtv;
+        };
+        std::vector<Backbuffer> m_backbuffers;
+
+        Backbuffer &current();
+
     public:
         RTV backbuffer();
     };
 
-    class CommandList
+    class CommandList : private state::SharedState<state::CommandListState>
     {
         friend class Device;
-
-        ComPtr<ID3D12CommandAllocator>    m_allocator;
-        ComPtr<ID3D12GraphicsCommandList> m_cmd;
-
-        uint64_t            m_timesStarted = 0;
-        ComPtr<ID3D12Fence> m_timesCompleted;
-        Handle              m_completedEvent;
-
-        uint64_t m_seqNum = 0;
 
         CommandList(Device &device);
         bool hasCompleted();
@@ -85,46 +138,6 @@ namespace xor
 
         void clearRTV(RTV &rtv, float4 color = 0);
         void barrier(std::initializer_list<Barrier> barriers);
-    };
-
-    class Device
-    {
-        friend class Adapter;
-        friend class CommandList;
-
-        ComPtr<IDXGIAdapter3>      m_adapter;
-        ComPtr<ID3D12Device>       m_device;
-        ComPtr<ID3D12CommandQueue> m_graphicsQueue;
-
-        GrowingPool<CommandList>   m_freeGraphicsCommandLists;
-
-        SequenceTracker m_commandListSequence;
-        std::vector<CommandList> m_executedCommandLists;
-        struct CompletionCallback
-        {
-            uint64_t seqNum = 0;
-            std::function<void()> f;
-
-            // Smallest seqNum goes first in a priority queue.
-            bool operator<(const CompletionCallback &c) const
-            {
-                return seqNum > c.seqNum;
-            }
-        };
-        std::priority_queue<CompletionCallback> m_completionCallbacks;
-
-        void retireCommandLists();
-
-        Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel);
-    public:
-        Device() {}
-
-        SwapChain createSwapChain(Window &window);
-
-        CommandList graphicsCommandList();
-
-        void execute(CommandList &cmd);
-        void present(SwapChain &swapChain, bool vsync = true);
     };
 
     // Global initialization and deinitialization of the Xor renderer.

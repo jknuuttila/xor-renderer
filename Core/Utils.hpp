@@ -1,5 +1,7 @@
 #pragma once
 
+#include "OS.hpp"
+
 #include "span.h"
 #include "string_span.h"
 
@@ -24,7 +26,6 @@ namespace xor
         static_assert(std::is_pointer<T>::value, "T must be a pointer type.");
 
         MovingPtr(T p = NullValue) : p(p) {}
-        ~MovingPtr() {}
 
         MovingPtr(const MovingPtr &) = delete;
         MovingPtr &operator=(const MovingPtr &) = delete;
