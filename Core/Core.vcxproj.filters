@@ -19,5 +19,6 @@
     <ClInclude Include="MathVectors.hpp" />
     <ClInclude Include="Allocators.hpp" />
     <ClInclude Include="String.hpp" />
+    <ClInclude Include="MathInteger.hpp" />
   </ItemGroup>
 </Project>

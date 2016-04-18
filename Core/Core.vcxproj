@@ -24,6 +24,7 @@
     <ClInclude Include="Error.hpp" />
     <ClInclude Include="Log.hpp" />
     <ClInclude Include="Math.hpp" />
+    <ClInclude Include="MathInteger.hpp" />
     <ClInclude Include="MathVectors.hpp" />
     <ClInclude Include="OS.hpp" />
     <ClInclude Include="String.hpp" />

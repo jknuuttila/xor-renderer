@@ -5,16 +5,17 @@
 
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 namespace xor
 {
     // Simple pool allocator that manages abstract offsets.
-    class OffsetPoolAllocator
+    class OffsetPool
     {
         size_t               m_size = 0;
         std::vector<int64_t> m_freeOffsets;
     public:
-        OffsetPoolAllocator(size_t size);
+        OffsetPool(size_t size);
 
         bool empty() const;
         bool full() const;
@@ -28,12 +29,12 @@ namespace xor
 
     // Object pool allocator using a simple std::vector.
     template <typename T>
-    class PoolAllocator
+    class Pool
     {
         size_t         m_size = 0;
         std::vector<T> m_objects;
     public:
-        PoolAllocator(size_t size)
+        Pool(size_t size)
             : m_size(size)
             , m_objects(size)
         {}
@@ -60,6 +61,32 @@ namespace xor
             m_objects.emplace_back(std::move(object));
             XOR_ASSERT(m_objects.size() <= m_size,
                        "Object count exceeds size, which is a bug.");
+        }
+    };
+
+    template <typename T>
+    class GrowingPool
+    {
+        std::vector<T> m_objects;
+    public:
+        template <typename MakeT>
+        T allocate(MakeT &&make)
+        {
+            if (!m_objects.empty())
+            {
+                T t = std::move(m_objects.back());
+                m_objects.pop_back();
+                return t;
+            }
+            else
+            {
+                return make();
+            }
+        }
+
+        void release(T object)
+        {
+            m_objects.emplace_back(std::move(object));
         }
     };
 }

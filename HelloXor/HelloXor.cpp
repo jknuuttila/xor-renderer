@@ -21,6 +21,18 @@ public:
         if (keyCode == VK_ESCAPE)
             terminate(0);
     }
+
+    void mainLoop() override
+    {
+        auto cmd        = device.graphicsCommandList();
+        auto backbuffer = swapChain.backbuffer();
+        // TODO: Replace transition() with automatic deduction of split barriers.
+        cmd.barrier({ transition(backbuffer.texture(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET) });
+        cmd.clearRTV(backbuffer, float4(0, 0, .25f, 1));
+        cmd.barrier({ transition(backbuffer.texture(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT) });
+        device.execute(cmd);
+        device.present(swapChain);
+    }
 };
 
 int main(int argc, const char *argv[])

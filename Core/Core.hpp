@@ -11,3 +11,6 @@
 #include "Error.hpp"
 #include "Window.hpp"
 #include "String.hpp"
+#include "Allocators.hpp"
+#include "Math.hpp"
+

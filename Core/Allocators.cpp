@@ -5,7 +5,7 @@
 
 namespace xor
 {
-    OffsetPoolAllocator::OffsetPoolAllocator(size_t size)
+    OffsetPool::OffsetPool(size_t size)
     {
         XOR_ASSERT(size <= static_cast<size_t>(std::numeric_limits<int64_t>::max()),
                    "Size must be representable with a signed 64-integer.");
@@ -17,27 +17,27 @@ namespace xor
             m_freeOffsets.emplace_back(i);
     }
 
-    bool OffsetPoolAllocator::empty() const
+    bool OffsetPool::empty() const
     {
         return m_freeOffsets.empty();
     }
 
-    bool OffsetPoolAllocator::full() const
+    bool OffsetPool::full() const
     {
         return spaceLeft() == size();
     }
 
-    size_t OffsetPoolAllocator::size() const
+    size_t OffsetPool::size() const
     {
         return m_size;
     }
 
-    size_t OffsetPoolAllocator::spaceLeft() const
+    size_t OffsetPool::spaceLeft() const
     {
         return m_freeOffsets.size();
     }
 
-    int64_t OffsetPoolAllocator::allocate()
+    int64_t OffsetPool::allocate()
     {
         if (empty())
             return -1;
@@ -47,7 +47,7 @@ namespace xor
         return offset;
     }
 
-    void OffsetPoolAllocator::release(int64_t offset)
+    void OffsetPool::release(int64_t offset)
     {
         XOR_ASSERT(offset >= 0 && static_cast<size_t>(offset) < m_size,
                    "Attempted to release an invalid offset.");
