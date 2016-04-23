@@ -15,7 +15,7 @@ namespace xor
 
     struct CompletionCallback
     {
-        SeqNum seqNum = 0;
+        SeqNum seqNum = InvalidSeqNum;
         std::function<void()> f;
 
         CompletionCallback(SeqNum seqNum, std::function<void()> f)
@@ -32,20 +32,42 @@ namespace xor
 
     static const uint MaxRTVs = 256;
 
+    struct Descriptor
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu = { 0 };
+        D3D12_GPU_DESCRIPTOR_HANDLE gpu = { 0 };
+    };
+
     struct ViewHeap
     {
         ComPtr<ID3D12DescriptorHeap> heap;
         OffsetPool freeDescriptors;
+        uint increment = 0;
 
-        D3D12_CPU_DESCRIPTOR_HANDLE allocate()
+        Descriptor allocate()
         {
             auto offset = freeDescriptors.allocate();
             XOR_CHECK(offset >= 0, "Ran out of descriptors in the heap.");
-            D3D12_CPU_DESCRIPTOR_HANDLE descriptor = {};
+
+            offset *= increment;
+
+            Descriptor descriptor;
+
+            descriptor.cpu = heap->GetCPUDescriptorHandleForHeapStart();
+            descriptor.gpu = heap->GetGPUDescriptorHandleForHeapStart();
+
+            descriptor.cpu.ptr += offset;
+            descriptor.gpu.ptr += offset;
+
+            return descriptor;
         }
 
-        void release(D3D12_CPU_DESCRIPTOR_HANDLE descriptor)
+        void release(Descriptor descriptor)
         {
+            auto start = heap->GetCPUDescriptorHandleForHeapStart();
+            size_t offset = descriptor.cpu.ptr - start.ptr;
+            offset /= increment;
+            freeDescriptors.release(static_cast<int64_t>(offset));
         }
     };
 
@@ -96,14 +118,14 @@ namespace xor
 
         struct ResourceState
         {
-            ComPtr<ID3D12Resource> resource;
             Device device;
+            ComPtr<ID3D12Resource> resource;
         };
 
         struct ViewState
         {
-            D3D12_CPU_DESCRIPTOR_HANDLE descriptor = { 0 };
             Device device;
+            Descriptor descriptor;
         };
     }
 
@@ -264,6 +286,18 @@ namespace xor
                 &tex->resource));
 
             bb.rtv.makeState();
+            bb.rtv->descriptor = m_state->rtvs.allocate();
+            {
+                D3D12_RENDER_TARGET_VIEW_DESC desc = {};
+                desc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+                desc.ViewDimension        = D3D12_RTV_DIMENSION_TEXTURE2D;
+                desc.Texture2D.MipSlice   = 0;
+                desc.Texture2D.PlaneSlice = 0;
+                device()->CreateRenderTargetView(
+                    tex->resource.Get(),
+                    &desc,
+                    bb.rtv->descriptor.cpu);
+            }
 
             swapChain->backbuffers.emplace_back(std::move(bb));
         }
@@ -448,7 +482,7 @@ namespace xor
 
     void CommandList::clearRTV(RTV &rtv, float4 color)
     {
-        m_state->cmd->ClearRenderTargetView(rtv->descriptor,
+        m_state->cmd->ClearRenderTargetView(rtv->descriptor.cpu,
                                           color.data(),
                                           0,
                                           nullptr);
