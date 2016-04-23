@@ -14,6 +14,7 @@ using gsl::span;
 namespace xor
 {
     // TODO: move this elsewhere
+    using ll   = long long;
     using ull  = unsigned long long;
 
     // Pointer wrapper that becomes nullptr when moved from.
@@ -64,13 +65,15 @@ namespace xor
         const T *operator->() const { return get(); }
     };
 
-    // Assigns monotonically increasing consecutive sequence numbers,
+    // Assigns monotonically increasing consecutive non-negative sequence numbers,
     // and keeps track of which ones have completed. Sequence numbers
     // can complete in arbitrary order.
+    using SeqNum = int64_t;
+    static const SeqNum InvalidSeqNum = -1;
     class SequenceTracker
     {
-        uint64_t              m_next = 0;
-        uint64_t              m_uncompletedBase = 0;
+        int64_t               m_next = 0;
+        int64_t               m_uncompletedBase = 0;
         std::vector<uint64_t> m_uncompletedBits;
 
         struct Bit
@@ -79,15 +82,16 @@ namespace xor
             uint64_t mask;
         };
 
-        Bit bit(uint64_t seqNum) const;
+        Bit bit(SeqNum seqNum) const;
         int64_t lowestSetBit() const;
         void removeCompletedBits();
     public:
-        uint64_t start();
-        void complete(uint64_t seqNum);
+        SeqNum start();
+        void complete(SeqNum seqNum);
 
-        uint64_t oldestUncompleted() const;
-        bool hasCompleted(uint64_t seqNum) const;
+        SeqNum newestStarted() const;
+        SeqNum oldestUncompleted() const;
+        bool hasCompleted(SeqNum seqNum) const;
     };
 
     class Handle

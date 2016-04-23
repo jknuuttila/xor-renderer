@@ -15,6 +15,7 @@ namespace xor
         size_t               m_size = 0;
         std::vector<int64_t> m_freeOffsets;
     public:
+        OffsetPool() = default;
         OffsetPool(size_t size);
 
         bool empty() const;
@@ -34,6 +35,7 @@ namespace xor
         size_t         m_size = 0;
         std::vector<T> m_objects;
     public:
+        Pool() = default;
         Pool(size_t size)
             : m_size(size)
             , m_objects(size)

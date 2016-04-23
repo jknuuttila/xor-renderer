@@ -13,18 +13,55 @@ namespace xor
         return factory;
     }
 
+    struct CompletionCallback
+    {
+        SeqNum seqNum = 0;
+        std::function<void()> f;
+
+        CompletionCallback(SeqNum seqNum, std::function<void()> f)
+            : seqNum(seqNum)
+            , f(std::move(f))
+        {}
+
+        // Smallest seqNum goes first in a priority queue.
+        bool operator<(const CompletionCallback &c) const
+        {
+            return seqNum > c.seqNum;
+        }
+    };
+
+    static const uint MaxRTVs = 256;
+
+    struct ViewHeap
+    {
+        ComPtr<ID3D12DescriptorHeap> heap;
+        OffsetPool freeDescriptors;
+
+        D3D12_CPU_DESCRIPTOR_HANDLE allocate()
+        {
+            auto offset = freeDescriptors.allocate();
+            XOR_CHECK(offset >= 0, "Ran out of descriptors in the heap.");
+            D3D12_CPU_DESCRIPTOR_HANDLE descriptor = {};
+        }
+
+        void release(D3D12_CPU_DESCRIPTOR_HANDLE descriptor)
+        {
+        }
+    };
+
     namespace state
     {
-        struct CompletionCallback
+        struct CommandListState
         {
-            uint64_t seqNum = 0;
-            std::function<void()> f;
+            Device                            device;
+            ComPtr<ID3D12CommandAllocator>    allocator;
+            ComPtr<ID3D12GraphicsCommandList> cmd;
 
-            // Smallest seqNum goes first in a priority queue.
-            bool operator<(const CompletionCallback &c) const
-            {
-                return seqNum > c.seqNum;
-            }
+            uint64_t            timesStarted = 0;
+            ComPtr<ID3D12Fence> timesCompleted;
+            Handle              completedEvent;
+
+            SeqNum seqNum = 0;
         };
 
         struct DeviceState
@@ -33,25 +70,28 @@ namespace xor
             ComPtr<ID3D12Device>       device;
             ComPtr<ID3D12CommandQueue> graphicsQueue;
 
-            GrowingPool<CommandList>   freeGraphicsCommandLists;
+            GrowingPool<std::shared_ptr<CommandListState>> freeGraphicsCommandLists;
 
             SequenceTracker commandListSequence;
             std::vector<CommandList> executedCommandLists;
-            uint64_t newestExecuted = 0;
+            SeqNum newestExecuted = 0;
+
+            ViewHeap rtvs;
 
             std::priority_queue<CompletionCallback> completionCallbacks;
         };
 
-        struct CommandListState
+        struct SwapChainState
         {
-            ComPtr<ID3D12CommandAllocator>    allocator;
-            ComPtr<ID3D12GraphicsCommandList> cmd;
+            Device                  device;
+            ComPtr<IDXGISwapChain3> swapChain;
 
-            uint64_t            timesStarted = 0;
-            ComPtr<ID3D12Fence> timesCompleted;
-            Handle              completedEvent;
-
-            uint64_t seqNum = 0;
+            struct Backbuffer
+            {
+                SeqNum seqNum = InvalidSeqNum;
+                RTV rtv;
+            };
+            std::vector<Backbuffer> backbuffers;
         };
 
         struct ResourceState
@@ -66,6 +106,8 @@ namespace xor
             Device device;
         };
     }
+
+    using namespace xor::state;
 
     Xor::Xor(DebugLayer debugLayer)
     {
@@ -138,13 +180,13 @@ namespace xor
     {
         makeState();
 
-        state->adapter = std::move(adapter);
+        m_state->adapter = std::move(adapter);
 
         XOR_CHECK_HR(D3D12CreateDevice(
-            state->adapter.Get(),
+            m_state->adapter.Get(),
             minimumFeatureLevel,
             __uuidof(ID3D12Device),
-            &state->device));
+            &m_state->device));
 
         {
             D3D12_COMMAND_QUEUE_DESC desc = {};
@@ -152,18 +194,35 @@ namespace xor
             desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
             desc.Flags    = D3D12_COMMAND_QUEUE_FLAG_NONE;
             desc.NodeMask = 0;
-            XOR_CHECK_HR(state->device->CreateCommandQueue(
+            XOR_CHECK_HR(device()->CreateCommandQueue(
                 &desc,
                 __uuidof(ID3D12CommandQueue),
-                &state->graphicsQueue));
+                &m_state->graphicsQueue));
+        }
+
+        {
+            D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+            desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+            desc.NumDescriptors = MaxRTVs;
+            desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+            desc.NodeMask       = 0;
+            XOR_CHECK_HR(device()->CreateDescriptorHeap(
+                &desc,
+                __uuidof(ID3D12DescriptorHeap),
+                &m_state->rtvs.heap));
+
+            m_state->rtvs.freeDescriptors = OffsetPool(MaxRTVs);
         }
     }
 
     SwapChain Device::createSwapChain(Window &window)
     {
-        SwapChain swapChain;
+        static const uint BufferCount = 2;
 
         auto factory = dxgiFactory();
+
+        SwapChain swapChain;
+        swapChain.makeState();
 
         {
             DXGI_SWAP_CHAIN_DESC1 desc = {};
@@ -174,7 +233,7 @@ namespace xor
             desc.SampleDesc.Count   = 1;
             desc.SampleDesc.Quality = 0;
             desc.BufferUsage        = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-            desc.BufferCount        = 2;
+            desc.BufferCount        = BufferCount;
             desc.Scaling            = DXGI_SCALING_NONE;
             desc.SwapEffect         = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
             desc.AlphaMode          = DXGI_ALPHA_MODE_IGNORE;
@@ -182,29 +241,91 @@ namespace xor
 
             ComPtr<IDXGISwapChain1> swapChain1;
             XOR_CHECK_HR(factory->CreateSwapChainForHwnd(
-                state->graphicsQueue.Get(),
+                m_state->graphicsQueue.Get(),
                 window.hWnd(),
                 &desc,
                 nullptr,
                 nullptr,
                 &swapChain1));
 
-            XOR_CHECK_HR(swapChain1.As(&swapChain.m_swapChain));
+            XOR_CHECK_HR(swapChain1.As(&swapChain->swapChain));
+        }
+
+        for (uint i = 0; i < BufferCount; ++i)
+        {
+            SwapChainState::Backbuffer bb;
+
+            auto &tex = bb.rtv.m_texture;
+            tex.makeState();
+            tex->device = *this;
+            XOR_CHECK_HR(swapChain->swapChain->GetBuffer(
+                i,
+                __uuidof(ID3D12Resource),
+                &tex->resource));
+
+            bb.rtv.makeState();
+
+            swapChain->backbuffers.emplace_back(std::move(bb));
         }
 
         return swapChain;
     }
 
+    ID3D12Device *Device::device()
+    {
+        return m_state->device.Get();
+    }
+
+    std::shared_ptr<CommandListState> Device::createCommandList()
+    {
+        auto &dev = m_state->device;
+
+        std::shared_ptr<CommandListState> cmd =
+            std::make_shared<CommandListState>();
+
+        cmd->device = *this;
+
+        XOR_CHECK_HR(dev->CreateCommandAllocator(
+            D3D12_COMMAND_LIST_TYPE_DIRECT,
+            __uuidof(ID3D12CommandAllocator),
+            &cmd->allocator));
+
+        XOR_CHECK_HR(dev->CreateCommandList(
+            0,
+            D3D12_COMMAND_LIST_TYPE_DIRECT,
+            cmd->allocator.Get(),
+            nullptr,
+            __uuidof(ID3D12GraphicsCommandList),
+            &cmd->cmd));
+
+        // Close it when creating so we can always Reset()
+        // it when reusing.
+        cmd->cmd->Close();
+
+        XOR_CHECK_HR(dev->CreateFence(
+            0,
+            D3D12_FENCE_FLAG_NONE, 
+            __uuidof(ID3D12Fence),
+            &cmd->timesCompleted));
+
+        cmd->completedEvent = CreateEventExA(nullptr, nullptr, 0, 
+                                             EVENT_ALL_ACCESS);
+        XOR_CHECK(!!cmd->completedEvent, "Failed to create completion event.");
+
+        return cmd;
+    }
+
     CommandList Device::graphicsCommandList()
     {
-        auto cmd = state->freeGraphicsCommandLists.allocate([this]
+        CommandList cmd;
+        cmd.m_state = m_state->freeGraphicsCommandLists.allocate([this]
         {
-            return CommandList(*this);
+            return this->createCommandList();
         });
 
         cmd->cmd->Reset(cmd->allocator.Get(), nullptr);
         ++cmd->timesStarted;
-        cmd->seqNum = state->commandListSequence.start();
+        cmd->seqNum = m_state->commandListSequence.start();
 
         return cmd;
     }
@@ -213,27 +334,27 @@ namespace xor
     {
         cmd->cmd->Close();
         ID3D12CommandList *cmds[] = { cmd->cmd.Get() };
-        state->graphicsQueue->ExecuteCommandLists(1, cmds);
-        state->graphicsQueue->Signal(cmd->timesCompleted.Get(), cmd->timesStarted);
+        m_state->graphicsQueue->ExecuteCommandLists(1, cmds);
+        m_state->graphicsQueue->Signal(cmd->timesCompleted.Get(), cmd->timesStarted);
 
-        state->newestExecuted = std::max(state->newestExecuted, cmd->seqNum);
-        state->executedCommandLists.emplace_back(std::move(cmd));
+        m_state->newestExecuted = std::max(m_state->newestExecuted, cmd->seqNum);
+        m_state->executedCommandLists.emplace_back(std::move(cmd));
     }
 
     void Device::present(SwapChain & swapChain, bool vsync)
     {
-        auto &backbuffer  = swapChain.current();
+        auto &backbuffer = swapChain->backbuffers[swapChain.currentIndex()];
         // The backbuffer is assumed to depend on all command lists
         // that have been executed, but not on those which have
         // been started but not executed. Otherwise, deadlock could result.
-        backbuffer.seqNum = state->newestExecuted;
-        swapChain.m_swapChain->Present(vsync ? 1 : 0, 0);
+        backbuffer.seqNum = m_state->newestExecuted;
+        swapChain->swapChain->Present(vsync ? 1 : 0, 0);
         retireCommandLists();
     }
 
-    uint64_t Device::now()
+    SeqNum Device::now()
     {
-        return 0;
+        return m_state->commandListSequence.newestStarted();
     }
 
     void Device::whenCompleted(std::function<void()> f)
@@ -241,25 +362,25 @@ namespace xor
         whenCompleted(std::move(f), now());
     }
 
-    void Device::whenCompleted(std::function<void()> f, uint64_t seqNum)
+    void Device::whenCompleted(std::function<void()> f, SeqNum seqNum)
     {
         if (hasCompleted(seqNum))
             f();
         else
-            state->completionCallbacks.emplace(seqNum, std::move(f));
+            m_state->completionCallbacks.emplace(seqNum, std::move(f));
     }
 
-    bool Device::hasCompleted(uint64_t seqNum)
+    bool Device::hasCompleted(SeqNum seqNum)
     {
         retireCommandLists();
-        return state->commandListSequence.hasCompleted(seqNum);
+        return m_state->commandListSequence.hasCompleted(seqNum);
     }
 
-    void Device::waitUntilCompleted(uint64_t seqNum)
+    void Device::waitUntilCompleted(SeqNum seqNum)
     {
         while (!hasCompleted(seqNum))
         {
-            auto &executed = state->executedCommandLists;
+            auto &executed = m_state->executedCommandLists;
             XOR_CHECK(!executed.empty(), "Nothing to wait for, deadlock!");
             executed.front().waitUntilCompleted();
         }
@@ -267,9 +388,9 @@ namespace xor
 
     void Device::retireCommandLists()
     {
-        auto &s = *state;
+        auto &s = *m_state;
 
-        unsigned completedLists = 0;
+        uint completedLists = 0;
 
         for (auto &cmd : s.executedCommandLists)
         {
@@ -279,13 +400,13 @@ namespace xor
                 break;
         }
 
-        for (unsigned i = 0; i < completedLists; ++i)
+        for (uint i = 0; i < completedLists; ++i)
         {
             auto &cmd = s.executedCommandLists[i];
             s.commandListSequence.complete(cmd->seqNum);
-            s.freeGraphicsCommandLists.release(std::move(cmd));
         }
 
+        // This will also return the command list states to the pool
         s.executedCommandLists.erase(s.executedCommandLists.begin(),
                                      s.executedCommandLists.begin() + completedLists);
 
@@ -300,62 +421,34 @@ namespace xor
         }
     }
 
-    CommandList::CommandList(Device &device)
-    {
-        auto &dev = device->device;
-
-        XOR_CHECK_HR(dev->CreateCommandAllocator(
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
-            __uuidof(ID3D12CommandAllocator),
-            &state->allocator));
-
-        XOR_CHECK_HR(dev->CreateCommandList(
-            0,
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
-            state->allocator.Get(),
-            nullptr,
-            __uuidof(ID3D12GraphicsCommandList),
-            &state->cmd));
-
-        // Close it when creating so we can always Reset()
-        // it when reusing.
-        state->cmd->Close();
-
-        XOR_CHECK_HR(dev->CreateFence(
-            0,
-            D3D12_FENCE_FLAG_NONE, 
-            __uuidof(ID3D12Fence),
-            &state->timesCompleted));
-
-        state->completedEvent = CreateEventExA(nullptr, nullptr, 0, 
-                                               EVENT_ALL_ACCESS);
-        XOR_CHECK(!!state->completedEvent, "Failed to create completion event.");
-    }
-
     bool CommandList::hasCompleted()
     {
-        auto completed = state->timesCompleted->GetCompletedValue();
+        auto completed = m_state->timesCompleted->GetCompletedValue();
 
-        XOR_ASSERT(completed <= state->timesStarted,
+        XOR_ASSERT(completed <= m_state->timesStarted,
                    "Command list completion count out of sync.");
 
-        return completed == state->timesStarted;
+        return completed == m_state->timesStarted;
     }
 
     void CommandList::waitUntilCompleted(DWORD timeout)
     {
         while (!hasCompleted())
-            WaitForSingleObject(state->completedEvent.get(), timeout);
+            WaitForSingleObject(m_state->completedEvent.get(), timeout);
     }
 
     CommandList::~CommandList()
     {
-        // TODO: whenCompleted() -> return to pool
+        if (m_state)
+        {
+            auto &freeCmds = m_state->device->freeGraphicsCommandLists;
+            freeCmds.release(std::move(m_state));
+        }
     }
 
     void CommandList::clearRTV(RTV &rtv, float4 color)
     {
-        state->cmd->ClearRenderTargetView(rtv->descriptor,
+        m_state->cmd->ClearRenderTargetView(rtv->descriptor,
                                           color.data(),
                                           0,
                                           nullptr);
@@ -363,28 +456,29 @@ namespace xor
 
     void CommandList::barrier(std::initializer_list<Barrier> barriers)
     {
-        state->cmd->ResourceBarrier(static_cast<UINT>(barriers.size()),
+        m_state->cmd->ResourceBarrier(static_cast<UINT>(barriers.size()),
                                     barriers.begin());
     }
 
-    SwapChain::Backbuffer &SwapChain::current()
+    uint SwapChain::currentIndex()
     {
         // Block until the current backbuffer has finished rendering.
         for (;;)
         {
-            auto &cur = m_backbuffers[m_swapChain->GetCurrentBackBufferIndex()];
+            uint index = m_state->swapChain->GetCurrentBackBufferIndex();
 
-            if (cur.seqNum < 0 || m_device.hasCompleted(cur.seqNum))
-                return cur;
+            auto &cur = m_state->backbuffers[index];
+            if (cur.seqNum < 0 || m_state->device.hasCompleted(cur.seqNum))
+                return index;
 
             // If we got here, the backbuffer was presented, but hasn't finished yet.
-            m_device.waitUntilCompleted(cur.seqNum);
+            m_state->device.waitUntilCompleted(cur.seqNum);
         }
     }
 
     RTV SwapChain::backbuffer()
     {
-        return current().rtv;
+        return m_state->backbuffers[currentIndex()].rtv;
     }
 
     Texture RTV::texture()
@@ -405,5 +499,21 @@ namespace xor
         barrier.Transition.StateAfter  = after;
         barrier.Transition.Subresource = subresource;
         return barrier;
+    }
+
+    Resource::Resource()
+    {
+    }
+
+    Resource::~Resource()
+    {
+    }
+
+    View::View()
+    {
+    }
+
+    View::~View()
+    {
     }
 }

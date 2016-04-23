@@ -144,11 +144,11 @@ namespace xor
         return static_cast<double>(ticks) * period;
     }
 
-    SequenceTracker::Bit SequenceTracker::bit(uint64_t seqNum) const
+    SequenceTracker::Bit SequenceTracker::bit(SeqNum seqNum) const
     {
         Bit b;
         
-        uint64_t offset       = seqNum - m_uncompletedBase;
+        uint64_t offset       = static_cast<uint64_t>(seqNum - m_uncompletedBase);
         uint64_t offsetQwords = offset / 64;
         uint64_t offsetBits   = offset % 64;
 
@@ -201,9 +201,9 @@ namespace xor
         return -1;
     }
 
-    uint64_t SequenceTracker::start()
+    SeqNum SequenceTracker::start()
     {
-        auto seqNum = m_next;
+        SeqNum seqNum = m_next;
         ++m_next;
 
         auto b = bit(seqNum);
@@ -222,43 +222,51 @@ namespace xor
         return seqNum;
     }
 
-    void SequenceTracker::complete(uint64_t seqNum)
+    void SequenceTracker::complete(SeqNum seqNum)
     {
+        XOR_ASSERT(seqNum >= 0, "Sequence numbers must be non-negative.");
         XOR_ASSERT(!hasCompleted(seqNum),
-                   "Sequence number %ull was completed twice.",
-                   static_cast<ull>(seqNum));
+                   "Sequence number %ll was completed twice.",
+                   static_cast<ll>(seqNum));
 
         auto b = bit(seqNum);
 
         XOR_ASSERT(b.qword >= 0,
-                   "Sequence number %ull was never started.",
-                   static_cast<ull>(seqNum));
+                   "Sequence number %ll was never started.",
+                   static_cast<ll>(seqNum));
 
         m_uncompletedBits[b.qword] &= ~b.mask;
 
         removeCompletedBits();
     }
 
-    uint64_t SequenceTracker::oldestUncompleted() const
+    SeqNum SequenceTracker::newestStarted() const
+    {
+        return m_next - 1;
+    }
+
+    SeqNum SequenceTracker::oldestUncompleted() const
     {
         auto lowest = lowestSetBit();
 
         if (lowest >= 0)
             return m_uncompletedBase + static_cast<uint64_t>(lowest);
         else
-            return m_next;
+            return InvalidSeqNum;
     }
 
-    bool SequenceTracker::hasCompleted(uint64_t seqNum) const
+    bool SequenceTracker::hasCompleted(SeqNum seqNum) const
     {
+        XOR_ASSERT(seqNum >= 0, "Sequence numbers must be non-negative.");
+
         if (seqNum < m_uncompletedBase)
             return true;
 
         auto b = bit(seqNum);
 
         XOR_ASSERT(b.qword >= 0,
-                   "Sequence number %ull was never started.",
-                   static_cast<ull>(seqNum));
+                   "Sequence number %ll was never started.",
+                   static_cast<ll>(seqNum));
 
         return (m_uncompletedBits[b.qword] & b.mask) == 0;
     }

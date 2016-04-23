@@ -27,15 +27,16 @@ namespace xor
     {
         struct DeviceState;
         struct CommandListState;
+        struct SwapChainState;
         struct ResourceState;
         struct ViewState;
 
         template <typename T>
         struct SharedState
         {
-            std::shared_ptr<T> state;
-            void makeState() { state = std::make_shared<T>(); }
-            T *operator->() { return state.get(); }
+            std::shared_ptr<T> m_state;
+            void makeState() { m_state = std::make_shared<T>(); }
+            T *operator->() { return m_state.get(); }
         };
     }
 
@@ -46,6 +47,8 @@ namespace xor
         friend class Adapter;
         friend class CommandList;
 
+        ID3D12Device *device();
+        std::shared_ptr<state::CommandListState> createCommandList();
         void retireCommandLists();
 
         Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel);
@@ -59,12 +62,11 @@ namespace xor
         void execute(CommandList &cmd);
         void present(SwapChain &swapChain, bool vsync = true);
 
-        // TODO: Change seqNums to int64_t in public APIs
-        uint64_t now();
+        SeqNum now();
         void whenCompleted(std::function<void()> f);
-        void whenCompleted(std::function<void()> f, uint64_t seqNum);
-        bool hasCompleted(uint64_t seqNum);
-        void waitUntilCompleted(uint64_t seqNum);
+        void whenCompleted(std::function<void()> f, SeqNum seqNum);
+        bool hasCompleted(SeqNum seqNum);
+        void waitUntilCompleted(SeqNum seqNum);
     };
 
     class Resource : private state::SharedState<state::ResourceState>
@@ -72,6 +74,8 @@ namespace xor
         friend class Device;
         friend class CommandList;
     public:
+        Resource();
+        ~Resource();
     };
 
     class View : private state::SharedState<state::ViewState>
@@ -79,15 +83,21 @@ namespace xor
         friend class Device;
         friend class CommandList;
     public:
+        View();
+        ~View();
     };
 
     class Texture : public Resource
     {
+        friend class Device;
+        friend class CommandList;
     public:
     };
 
     class RTV : public View
     {
+        friend class Device;
+        friend class CommandList;
         Texture m_texture;
     public:
         Texture texture();
@@ -103,20 +113,10 @@ namespace xor
                        D3D12_RESOURCE_STATES after,
                        uint subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 
-    class SwapChain
+    class SwapChain : private state::SharedState<state::SwapChainState>
     {
         friend class Device;
-        Device m_device;
-        ComPtr<IDXGISwapChain3> m_swapChain;
-
-        struct Backbuffer
-        {
-            int64_t seqNum = -1;
-            RTV rtv;
-        };
-        std::vector<Backbuffer> m_backbuffers;
-
-        Backbuffer &current();
+        uint currentIndex();
 
     public:
         RTV backbuffer();
