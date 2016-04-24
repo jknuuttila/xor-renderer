@@ -16,6 +16,14 @@ namespace xor
         explicit String(const std::wstring &wstr);
         explicit String(const wchar_t *wstr);
 
+        static String format(const char *fmt, ...);
+
+        template <typename... Ts>
+        static String format(const String &fmt, Ts... ts)
+        {
+            return format(fmt.c_str(), ts...);
+        }
+
         std::wstring wideStr() const;
     };
 

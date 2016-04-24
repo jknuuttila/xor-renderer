@@ -13,7 +13,10 @@ namespace xor
         m_size = size;
         m_freeOffsets.reserve(size);
         auto ssize = static_cast<int64_t>(size);
-        for (int64_t i = 0; i < ssize; ++i)
+
+        // Put the offsets in back-to-front, so offset 0 is the first to
+        // get allocated.
+        for (int64_t i = ssize - 1; i >= 0; --i)
             m_freeOffsets.emplace_back(i);
     }
 

@@ -8,6 +8,7 @@ class HelloXor : public Window
     Xor xor;
     Device device;
     SwapChain swapChain;
+    Timer time;
 public:
     HelloXor()
         : Window { "Hello, Xor!", { 1600, 900 } }
@@ -26,10 +27,19 @@ public:
     {
         auto cmd        = device.graphicsCommandList();
         auto backbuffer = swapChain.backbuffer();
+
         // TODO: Replace transition() with automatic deduction of split barriers.
         cmd.barrier({ transition(backbuffer.texture(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET) });
-        cmd.clearRTV(backbuffer, float4(0, 0, .25f, 1));
+
+        float4 rgba = float4(hsvToRGB(float3(
+            frac(static_cast<float>(time.seconds())),
+            1,
+            1)));
+        rgba.w = 1;
+        cmd.clearRTV(backbuffer, rgba);
+
         cmd.barrier({ transition(backbuffer.texture(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT) });
+
         device.execute(cmd);
         device.present(swapChain);
     }

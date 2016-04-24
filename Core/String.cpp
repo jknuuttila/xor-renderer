@@ -1,7 +1,9 @@
 #include "String.hpp"
+#include "Error.hpp"
 
 #include <vector>
 #include <cstdlib>
+#include <cstdarg>
 #include <locale>
 #include <codecvt>
 
@@ -16,6 +18,32 @@ namespace xor
     String::String(const wchar_t *wstr)
         : std::string(wConverter.to_bytes(wstr))
     {}
+
+    static String vformat(const char *fmt, va_list ap)
+    {
+        char buffer[1024];
+        int size = vsnprintf(buffer, sizeof(buffer), fmt, ap);
+        if (size > sizeof(buffer))
+        {
+            std::vector<char> largeBuffer(size);
+            int wrote = vsnprintf(largeBuffer.data(), size, fmt, ap);
+            XOR_ASSERT(size == wrote, "Unexpected amount of characters written.");
+            return String(largeBuffer.data(), size - 1);
+        }
+        else
+        {
+            return String(buffer);
+        }
+    }
+
+    String String::format(const char *fmt, ...)
+    {
+        va_list ap;
+        va_start(ap, fmt);
+        String s = vformat(fmt, ap);
+        va_end(ap);
+        return s;
+    }
 
     std::wstring String::wideStr() const
     {

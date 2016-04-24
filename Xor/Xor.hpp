@@ -26,6 +26,8 @@ namespace xor
 
     namespace backend
     {
+        struct Descriptor;
+        struct ViewHeap;
         struct DeviceState;
         struct CommandListState;
         struct SwapChainState;
@@ -35,8 +37,11 @@ namespace xor
         template <typename T>
         struct SharedState
         {
+            using Weak = std::weak_ptr<T>;
+
             std::shared_ptr<T> m_state;
             void makeState() { m_state = std::make_shared<T>(); }
+            Weak weak() { return m_state; }
             T *operator->() { return m_state.get(); }
         };
     }
@@ -47,14 +52,22 @@ namespace xor
     {
         friend class Adapter;
         friend class CommandList;
+        friend class View;
+        friend class SwapChain;
+        friend struct backend::DeviceState;
+        friend struct backend::CommandListState;
+        friend struct backend::SwapChainState;
+        friend struct backend::ResourceState;
+        friend struct backend::ViewState;
+
+        static Device parent(Weak &parentDevice);
 
         ID3D12Device *device();
         std::shared_ptr<backend::CommandListState> createCommandList();
-        void retireCommandLists();
 
         Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel);
     public:
-        Device() {}
+        Device() = default;
 
         SwapChain createSwapChain(Window &window);
 
@@ -68,6 +81,7 @@ namespace xor
         void whenCompleted(std::function<void()> f, SeqNum seqNum);
         bool hasCompleted(SeqNum seqNum);
         void waitUntilCompleted(SeqNum seqNum);
+        void waitUntilDrained();
     };
 
     class Resource : private backend::SharedState<backend::ResourceState>
@@ -75,8 +89,7 @@ namespace xor
         friend class Device;
         friend class CommandList;
     public:
-        Resource();
-        ~Resource();
+        Resource() = default;
 
         ID3D12Resource *get();
     };
@@ -86,8 +99,7 @@ namespace xor
         friend class Device;
         friend class CommandList;
     public:
-        View();
-        ~View();
+        View() = default;
     };
 
     class Texture : public Resource
@@ -122,12 +134,15 @@ namespace xor
         uint currentIndex();
 
     public:
+        SwapChain() = default;
+
         RTV backbuffer();
     };
 
     class CommandList : private backend::SharedState<backend::CommandListState>
     {
         friend class Device;
+        friend struct backend::DeviceState;
 
         void close();
         void reset();

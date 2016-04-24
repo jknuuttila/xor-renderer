@@ -2,92 +2,105 @@
 
 namespace xor
 {
-    static ComPtr<IDXGIFactory4> dxgiFactory()
-    {
-        ComPtr<IDXGIFactory4> factory;
-
-        XOR_CHECK_HR(CreateDXGIFactory1(
-            __uuidof(IDXGIFactory4),
-            &factory));
-
-        return factory;
-    }
-
-    struct CompletionCallback
-    {
-        SeqNum seqNum = InvalidSeqNum;
-        std::function<void()> f;
-
-        CompletionCallback(SeqNum seqNum, std::function<void()> f)
-            : seqNum(seqNum)
-            , f(std::move(f))
-        {}
-
-        // Smallest seqNum goes first in a priority queue.
-        bool operator<(const CompletionCallback &c) const
-        {
-            return seqNum > c.seqNum;
-        }
-    };
-
-    static const uint MaxRTVs = 256;
-
-    struct Descriptor
-    {
-        D3D12_CPU_DESCRIPTOR_HANDLE cpu = { 0 };
-        D3D12_GPU_DESCRIPTOR_HANDLE gpu = { 0 };
-    };
-
-    struct ViewHeap
-    {
-        ComPtr<ID3D12DescriptorHeap> heap;
-        OffsetPool freeDescriptors;
-        uint increment = 0;
-
-        ViewHeap() = default;
-        ViewHeap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_DESC desc)
-        {
-            XOR_CHECK_HR(device->CreateDescriptorHeap(
-                &desc,
-                __uuidof(ID3D12DescriptorHeap),
-                &heap));
-
-            freeDescriptors = OffsetPool(desc.NumDescriptors);
-            increment       = device->GetDescriptorHandleIncrementSize(desc.Type);
-        }
-
-        Descriptor allocate()
-        {
-            auto offset = freeDescriptors.allocate();
-            XOR_CHECK(offset >= 0, "Ran out of descriptors in the heap.");
-
-            offset *= increment;
-
-            Descriptor descriptor;
-
-            descriptor.cpu = heap->GetCPUDescriptorHandleForHeapStart();
-            descriptor.gpu = heap->GetGPUDescriptorHandleForHeapStart();
-
-            descriptor.cpu.ptr += offset;
-            descriptor.gpu.ptr += offset;
-
-            return descriptor;
-        }
-
-        void release(Descriptor descriptor)
-        {
-            auto start = heap->GetCPUDescriptorHandleForHeapStart();
-            size_t offset = descriptor.cpu.ptr - start.ptr;
-            offset /= increment;
-            freeDescriptors.release(static_cast<int64_t>(offset));
-        }
-    };
-
     namespace backend
     {
+        static ComPtr<IDXGIFactory4> dxgiFactory()
+        {
+            ComPtr<IDXGIFactory4> factory;
+
+            XOR_CHECK_HR(CreateDXGIFactory1(
+                __uuidof(IDXGIFactory4),
+                &factory));
+
+            return factory;
+        }
+
+        static void setName(ComPtr<ID3D12Object> object, const String &name)
+        {
+            object->SetName(name.wideStr().c_str());
+        }
+
+        struct CompletionCallback
+        {
+            SeqNum seqNum = InvalidSeqNum;
+            std::function<void()> f;
+
+            CompletionCallback(SeqNum seqNum, std::function<void()> f)
+                : seqNum(seqNum)
+                , f(std::move(f))
+            {}
+
+            // Smallest seqNum goes first in a priority queue.
+            bool operator<(const CompletionCallback &c) const
+            {
+                return seqNum > c.seqNum;
+            }
+        };
+
+        static const uint MaxRTVs = 256;
+
+        struct Descriptor
+        {
+            D3D12_CPU_DESCRIPTOR_HANDLE cpu  = { 0 };
+            D3D12_GPU_DESCRIPTOR_HANDLE gpu  = { 0 };
+            D3D12_DESCRIPTOR_HEAP_TYPE  type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        };
+
+        struct ViewHeap
+        {
+            ComPtr<ID3D12DescriptorHeap> heap;
+            OffsetPool freeDescriptors;
+
+            uint increment                  = 0;
+            D3D12_DESCRIPTOR_HEAP_TYPE type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+
+            ViewHeap() = default;
+            ViewHeap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_DESC desc)
+            {
+                type = desc.Type;
+
+                XOR_CHECK_HR(device->CreateDescriptorHeap(
+                    &desc,
+                    __uuidof(ID3D12DescriptorHeap),
+                    &heap));
+
+                freeDescriptors = OffsetPool(desc.NumDescriptors);
+                increment       = device->GetDescriptorHandleIncrementSize(type);
+            }
+
+            Descriptor allocate()
+            {
+                auto offset = freeDescriptors.allocate();
+                XOR_CHECK(offset >= 0, "Ran out of descriptors in the heap.");
+
+                offset *= increment;
+
+                Descriptor descriptor;
+
+                descriptor.cpu = heap->GetCPUDescriptorHandleForHeapStart();
+                descriptor.gpu = heap->GetGPUDescriptorHandleForHeapStart();
+
+                descriptor.cpu.ptr += offset;
+                descriptor.gpu.ptr += offset;
+                descriptor.type     = type;
+
+                return descriptor;
+            }
+
+            void release(Descriptor descriptor)
+            {
+                XOR_ASSERT(descriptor.type == type, "Released descriptor to the wrong heap.");
+
+                auto start = heap->GetCPUDescriptorHandleForHeapStart();
+                size_t offset = descriptor.cpu.ptr - start.ptr;
+                offset /= increment;
+                freeDescriptors.release(static_cast<int64_t>(offset));
+            }
+        };
+
         struct CommandListState
         {
-            Device                            device;
+            Device::Weak        device;
             ComPtr<ID3D12CommandAllocator>    allocator;
             ComPtr<ID3D12GraphicsCommandList> cmd;
 
@@ -99,7 +112,7 @@ namespace xor
             bool closed = false;
         };
 
-        struct DeviceState
+        struct DeviceState : std::enable_shared_from_this<DeviceState>
         {
             ComPtr<IDXGIAdapter3>      adapter;
             ComPtr<ID3D12Device>       device;
@@ -114,11 +127,77 @@ namespace xor
             ViewHeap rtvs;
 
             std::priority_queue<CompletionCallback> completionCallbacks;
+
+            ~DeviceState()
+            {
+                // Drain the GPU of all work before destroying objects.
+                while (!executedCommandLists.empty())
+                {
+                    executedCommandLists.front().waitUntilCompleted();
+                    retireCommandLists();
+                }
+#if 0
+                ComPtr<ID3D12DebugDevice> debug;
+                XOR_CHECK_HR(device.As(&debug));
+                debug->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL);
+#endif
+            }
+
+            ViewHeap &viewHeap(D3D12_DESCRIPTOR_HEAP_TYPE type)
+            {
+                switch (type)
+                {
+                case D3D12_DESCRIPTOR_HEAP_TYPE_RTV:
+                    return rtvs;
+                default:
+                    XOR_CHECK(false, "Unknown heap type.");
+                    __assume(0);
+                }
+            }
+
+            void releaseDescriptor(Descriptor descriptor)
+            {
+                viewHeap(descriptor.type).release(descriptor);
+            }
+
+            void retireCommandLists()
+            {
+                uint completedLists = 0;
+
+                for (auto &cmd : executedCommandLists)
+                {
+                    if (cmd.hasCompleted())
+                        ++completedLists;
+                    else
+                        break;
+                }
+
+                for (uint i = 0; i < completedLists; ++i)
+                {
+                    auto &cmd = executedCommandLists[i];
+                    commandListSequence.complete(cmd->seqNum);
+                }
+
+                // This will also return the command list states to the pool
+                executedCommandLists.erase(executedCommandLists.begin(),
+                                           executedCommandLists.begin() + completedLists);
+
+                while (!completionCallbacks.empty())
+                {
+                    auto &top = completionCallbacks.top();
+                    if (commandListSequence.hasCompleted(top.seqNum))
+                    {
+                        top.f();
+                    }
+                    completionCallbacks.pop();
+                }
+            }
+
         };
 
         struct SwapChainState
         {
-            Device                  device;
+            Device::Weak            device;
             ComPtr<IDXGISwapChain3> swapChain;
 
             struct Backbuffer
@@ -127,18 +206,41 @@ namespace xor
                 RTV rtv;
             };
             std::vector<Backbuffer> backbuffers;
+
+            ~SwapChainState()
+            {
+                Device::parent(device).waitUntilDrained();
+            }
         };
 
         struct ResourceState
         {
-            Device device;
+            Device::Weak device;
             ComPtr<ID3D12Resource> resource;
+
+            ~ResourceState()
+            {
+                // Actually release the resource once every command list that could possibly have
+                // referenced it has retired.
+
+                // Queue up a no-op lambda, that holds the resource ComPtr by value.
+                // When the Device has executed it, it will get destroyed, freeing the last reference.
+                Device::parent(device).whenCompleted([resource = std::move(resource)] {});
+            }
         };
 
         struct ViewState
         {
-            Device device;
+            Device::Weak device;
             Descriptor descriptor;
+
+            ~ViewState()
+            {
+                Device::parent(device).whenCompleted([device = device, descriptor = descriptor] () mutable
+                {
+                    Device::parent(device)->releaseDescriptor(descriptor);
+                });
+            }
         };
     }
 
@@ -212,7 +314,7 @@ namespace xor
         Device device = Device(m_adapter, minimumFeatureLevel);
 
         ComPtr<ID3D12InfoQueue> infoQueue;
-        if (m_debug && device->device.As(&infoQueue) == S_OK)
+        if (false && m_debug && device->device.As(&infoQueue) == S_OK)
         {
             infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
             infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR,      TRUE);
@@ -234,6 +336,8 @@ namespace xor
             __uuidof(ID3D12Device),
             &m_state->device));
 
+        setName(m_state->device, "Device");
+
         {
             D3D12_COMMAND_QUEUE_DESC desc = {};
             desc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -245,6 +349,8 @@ namespace xor
                 __uuidof(ID3D12CommandQueue),
                 &m_state->graphicsQueue));
         }
+
+        setName(m_state->graphicsQueue, "Graphics Queue");
 
         {
             D3D12_DESCRIPTOR_HEAP_DESC desc = {};
@@ -266,7 +372,7 @@ namespace xor
         SwapChain swapChain;
         swapChain.makeState();
 
-        swapChain->device = *this;
+        swapChain->device = weak();
 
         {
             DXGI_SWAP_CHAIN_DESC1 desc = {};
@@ -301,13 +407,14 @@ namespace xor
 
             auto &tex = bb.rtv.m_texture;
             tex.makeState();
-            tex->device = *this;
+            tex->device = weak();
             XOR_CHECK_HR(swapChain->swapChain->GetBuffer(
                 i,
                 __uuidof(ID3D12Resource),
                 &tex->resource));
 
             bb.rtv.makeState();
+            bb.rtv->device = weak();
             bb.rtv->descriptor = m_state->rtvs.allocate();
             {
                 D3D12_RENDER_TARGET_VIEW_DESC desc = {};
@@ -327,6 +434,16 @@ namespace xor
         return swapChain;
     }
 
+    Device Device::parent(Device::Weak& parentDevice)
+    {
+        Device parent;
+        if (auto devState = parentDevice.lock())
+        {
+            parent.m_state = std::move(devState);
+        }
+        return parent;
+    }
+
     ID3D12Device *Device::device()
     {
         return m_state->device.Get();
@@ -339,7 +456,7 @@ namespace xor
         std::shared_ptr<CommandListState> cmd =
             std::make_shared<CommandListState>();
 
-        cmd->device = *this;
+        cmd->device = weak();
 
         XOR_CHECK_HR(dev->CreateCommandAllocator(
             D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -403,7 +520,7 @@ namespace xor
         // been started but not executed. Otherwise, deadlock could result.
         backbuffer.seqNum = m_state->newestExecuted;
         swapChain->swapChain->Present(vsync ? 1 : 0, 0);
-        retireCommandLists();
+        m_state->retireCommandLists();
     }
 
     SeqNum Device::now()
@@ -426,7 +543,7 @@ namespace xor
 
     bool Device::hasCompleted(SeqNum seqNum)
     {
-        retireCommandLists();
+        m_state->retireCommandLists();
         return m_state->commandListSequence.hasCompleted(seqNum);
     }
 
@@ -440,38 +557,15 @@ namespace xor
         }
     }
 
-    void Device::retireCommandLists()
+    void Device::waitUntilDrained()
     {
-        auto &s = *m_state;
-
-        uint completedLists = 0;
-
-        for (auto &cmd : s.executedCommandLists)
+        for (;;)
         {
-            if (cmd.hasCompleted())
-                ++completedLists;
+            auto newest = m_state->commandListSequence.newestStarted();
+            if (hasCompleted(newest))
+                return;
             else
-                break;
-        }
-
-        for (uint i = 0; i < completedLists; ++i)
-        {
-            auto &cmd = s.executedCommandLists[i];
-            s.commandListSequence.complete(cmd->seqNum);
-        }
-
-        // This will also return the command list states to the pool
-        s.executedCommandLists.erase(s.executedCommandLists.begin(),
-                                     s.executedCommandLists.begin() + completedLists);
-
-        while (!s.completionCallbacks.empty())
-        {
-            auto &top = s.completionCallbacks.top();
-            if (s.commandListSequence.hasCompleted(top.seqNum))
-            {
-                top.f();
-            }
-            s.completionCallbacks.pop();
+                waitUntilCompleted(newest);
         }
     }
 
@@ -518,7 +612,7 @@ namespace xor
     {
         if (m_state)
         {
-            auto &freeCmds = m_state->device->freeGraphicsCommandLists;
+            auto &freeCmds = Device::parent(m_state->device)->freeGraphicsCommandLists;
             freeCmds.release(std::move(m_state));
         }
     }
@@ -544,12 +638,14 @@ namespace xor
         {
             uint index = m_state->swapChain->GetCurrentBackBufferIndex();
 
+            auto device = Device::parent(m_state->device);
+
             auto &cur = m_state->backbuffers[index];
-            if (cur.seqNum < 0 || m_state->device.hasCompleted(cur.seqNum))
+            if (cur.seqNum < 0 || device.hasCompleted(cur.seqNum))
                 return index;
 
             // If we got here, the backbuffer was presented, but hasn't finished yet.
-            m_state->device.waitUntilCompleted(cur.seqNum);
+            device.waitUntilCompleted(cur.seqNum);
         }
     }
 
@@ -578,24 +674,8 @@ namespace xor
         return barrier;
     }
 
-    Resource::Resource()
-    {
-    }
-
-    Resource::~Resource()
-    {
-    }
-
     ID3D12Resource *Resource::get()
     {
         return m_state ? m_state->resource.Get() : nullptr;
-    }
-
-    View::View()
-    {
-    }
-
-    View::~View()
-    {
     }
 }

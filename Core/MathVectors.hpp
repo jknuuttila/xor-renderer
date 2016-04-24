@@ -9,7 +9,9 @@ namespace xor
 {
     namespace math
     {
-        template <typename T, unsigned N> struct VectorBase;
+        using uint = uint32_t;
+
+        template <typename T, uint N> struct VectorBase;
 
         template <typename T>
         struct VectorBase<T, 2>
@@ -45,6 +47,7 @@ namespace xor
                 , z(static_cast<T>(v.z))
             {}
         };
+
         template <typename T>
         struct VectorBase<T, 4>
         {
@@ -66,19 +69,36 @@ namespace xor
             {}
         };
 
-        template <typename T, unsigned N>
+        template <typename T, uint N>
         struct Vector : public VectorBase<T, N>
         {
             using VectorBase<T, N>::VectorBase;
+            Vector() = default;
+
+            template <uint M>
+            explicit Vector(const Vector<T, M> &v)
+            {
+                uint n = std::min(N, M);
+                for (uint i = 0; i < n; ++i)
+                    (*this)[i] = v[i];
+            }
 
             gsl::span<T, N> span() { return gsl::span<T, N>(&x, N); }
             constexpr gsl::span<const T, N> span() const { return gsl::span<const T, N>(&x, N); }
 
             T *data() { return &x; }
             constexpr const T *data() const { return &x; }
-        };
 
-        using uint = uint32_t;
+            T &operator[](uint i) { return data()[i]; }
+            const T &operator[](uint i) const { return data()[i]; }
+
+            friend Vector operator+(Vector a, Vector b)
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] + b[i];
+                return c;
+            }
+        };
 
         using int2   = Vector<int, 2>;
         using int3   = Vector<int, 3>;

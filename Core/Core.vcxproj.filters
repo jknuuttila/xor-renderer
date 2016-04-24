@@ -20,5 +20,6 @@
     <ClInclude Include="Allocators.hpp" />
     <ClInclude Include="String.hpp" />
     <ClInclude Include="MathInteger.hpp" />
+    <ClInclude Include="MathFloat.hpp" />
   </ItemGroup>
 </Project>
