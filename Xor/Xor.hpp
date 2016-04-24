@@ -33,6 +33,7 @@ namespace xor
         struct SwapChainState;
         struct ResourceState;
         struct ViewState;
+        struct PipelineState;
 
         template <typename T>
         struct SharedState
@@ -48,6 +49,27 @@ namespace xor
 
     class SwapChain;
     class CommandList;
+
+    class Pipeline : private backend::SharedState<backend::PipelineState>
+    {
+        friend class Device;
+        friend class CommandList;
+    public:
+        Pipeline() = default;
+
+        class Graphics : public D3D12_GRAPHICS_PIPELINE_STATE_DESC
+        {
+            friend class Device;
+            String m_vs;
+            String m_ps;
+        public:
+            Graphics();
+
+            Graphics &vertexShader(const String &vsName);
+            Graphics &pixelShader(const String &psName);
+        };
+    };
+
     class Device : private backend::SharedState<backend::DeviceState>
     {
         friend class Adapter;
@@ -59,17 +81,20 @@ namespace xor
         friend struct backend::SwapChainState;
         friend struct backend::ResourceState;
         friend struct backend::ViewState;
+        friend struct backend::PipelineState;
 
         static Device parent(Weak &parentDevice);
 
         ID3D12Device *device();
         std::shared_ptr<backend::CommandListState> createCommandList();
+        void collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
 
         Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel);
     public:
         Device() = default;
 
         SwapChain createSwapChain(Window &window);
+        Pipeline createGraphicsPipeline(const Pipeline::Graphics &info);
 
         CommandList graphicsCommandList();
 
@@ -91,6 +116,7 @@ namespace xor
     public:
         Resource() = default;
 
+        D3D12_RESOURCE_DESC desc() const;
         ID3D12Resource *get();
     };
 
@@ -107,6 +133,7 @@ namespace xor
         friend class Device;
         friend class CommandList;
     public:
+        Texture() = default;
     };
 
     class RTV : public View
@@ -144,6 +171,7 @@ namespace xor
         friend class Device;
         friend struct backend::DeviceState;
 
+        ID3D12GraphicsCommandList *cmd();
         void close();
         void reset();
 
@@ -161,8 +189,15 @@ namespace xor
         CommandList(const CommandList &) = delete;
         CommandList& operator=(const CommandList &) = delete;
 
+        void bind(Pipeline &pipeline);
+
         void clearRTV(RTV &rtv, float4 color = 0);
+        void setRenderTargets();
+        void setRenderTargets(RTV &rtv);
+
         void barrier(std::initializer_list<Barrier> barriers);
+
+        void draw(uint vertices, uint startVertex = 0);
     };
 
     // Global initialization and deinitialization of the Xor renderer.

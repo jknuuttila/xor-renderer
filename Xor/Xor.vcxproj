@@ -16,6 +16,11 @@
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Shaders.h.hlsl">
+      <FileType>Document</FileType>
+    </ClInclude>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{AC764C74-7D44-43BC-9CAB-B470883B5549}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>

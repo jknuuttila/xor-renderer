@@ -114,9 +114,10 @@ namespace xor
 
         struct DeviceState : std::enable_shared_from_this<DeviceState>
         {
-            ComPtr<IDXGIAdapter3>      adapter;
-            ComPtr<ID3D12Device>       device;
-            ComPtr<ID3D12CommandQueue> graphicsQueue;
+            ComPtr<IDXGIAdapter3>       adapter;
+            ComPtr<ID3D12Device>        device;
+            ComPtr<ID3D12CommandQueue>  graphicsQueue;
+            ComPtr<ID3D12RootSignature> rootSignature;
 
             GrowingPool<std::shared_ptr<CommandListState>> freeGraphicsCommandLists;
 
@@ -131,10 +132,14 @@ namespace xor
             ~DeviceState()
             {
                 // Drain the GPU of all work before destroying objects.
-                while (!executedCommandLists.empty())
+                for (;;)
                 {
-                    executedCommandLists.front().waitUntilCompleted();
                     retireCommandLists();
+
+                    if (executedCommandLists.empty())
+                        break;
+
+                    executedCommandLists.front().waitUntilCompleted();
                 }
 #if 0
                 ComPtr<ID3D12DebugDevice> debug;
@@ -240,6 +245,17 @@ namespace xor
                 {
                     Device::parent(device)->releaseDescriptor(descriptor);
                 });
+            }
+        };
+
+        struct PipelineState
+        {
+            Device::Weak device;
+            ComPtr<ID3D12PipelineState> pso;
+
+            ~PipelineState()
+            {
+                Device::parent(device).whenCompleted([pso = std::move(pso)] {});
             }
         };
     }
@@ -434,6 +450,78 @@ namespace xor
         return swapChain;
     }
 
+    struct ShaderBinary : public File, public D3D12_SHADER_BYTECODE
+    {
+        ShaderBinary()
+        {
+            pShaderBytecode = nullptr;
+            BytecodeLength  = 0;
+        }
+
+        ShaderBinary(const String &filename)
+            : File(filename)
+        {
+            XOR_CHECK_HR(hr());
+            pShaderBytecode = data();
+            BytecodeLength  = size();
+        }
+    };
+
+    Pipeline::Graphics::Graphics()
+        : D3D12_GRAPHICS_PIPELINE_STATE_DESC {}
+    {
+        RasterizerState.FillMode              = D3D12_FILL_MODE_SOLID;
+        RasterizerState.CullMode              = D3D12_CULL_MODE_BACK;
+        RasterizerState.FrontCounterClockwise = TRUE;
+        RasterizerState.ConservativeRaster    = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+        PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        NumRenderTargets      = 1;
+        RTVFormats[0]         = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+        SampleDesc.Count      = 1;
+        SampleDesc.Quality    = 0;
+    }
+
+    Pipeline::Graphics &Pipeline::Graphics::vertexShader(const String & vsName)
+    {
+        m_vs = vsName;
+        return *this;
+    }
+
+    Pipeline::Graphics &Pipeline::Graphics::pixelShader(const String & psName)
+    {
+        m_ps = psName;
+        return *this;
+    }
+
+    Pipeline Device::createGraphicsPipeline(const Pipeline::Graphics &info)
+    {
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = info;
+
+        ShaderBinary vs;
+        ShaderBinary ps;
+
+        static const char ShaderFileExtension[] = ".cso";
+        if (info.m_vs) vs = ShaderBinary(info.m_vs + ShaderFileExtension);
+        if (info.m_ps) ps = ShaderBinary(info.m_ps + ShaderFileExtension);
+
+        collectRootSignature(vs);
+        collectRootSignature(ps);
+
+        desc.VS = vs;
+        desc.PS = ps;
+
+        Pipeline pipeline;
+        pipeline.makeState();
+        pipeline->device = weak();
+        XOR_CHECK_HR(device()->CreateGraphicsPipelineState(
+            &desc,
+            __uuidof(ID3D12PipelineState),
+            &pipeline->pso));
+
+        return pipeline;
+    }
+
     Device Device::parent(Device::Weak& parentDevice)
     {
         Device parent;
@@ -484,6 +572,19 @@ namespace xor
         return cmd;
     }
 
+    void Device::collectRootSignature(const D3D12_SHADER_BYTECODE &shader)
+    { 
+        if (m_state->rootSignature || shader.BytecodeLength == 0)
+            return;
+
+        XOR_CHECK_HR(device()->CreateRootSignature(
+            0,
+            shader.pShaderBytecode,
+            shader.BytecodeLength,
+            __uuidof(ID3D12RootSignature),
+            &m_state->rootSignature));
+    }
+
     CommandList Device::graphicsCommandList()
     {
         CommandList cmd;
@@ -493,6 +594,8 @@ namespace xor
         });
 
         cmd.reset();
+        cmd->cmd->SetGraphicsRootSignature(m_state->rootSignature.Get());
+        cmd->cmd->SetComputeRootSignature(m_state->rootSignature.Get());
 
         ++cmd->timesStarted;
         cmd->seqNum = m_state->commandListSequence.start();
@@ -569,11 +672,16 @@ namespace xor
         }
     }
 
+    ID3D12GraphicsCommandList *CommandList::cmd()
+    {
+        return m_state->cmd.Get();
+    }
+
     void CommandList::close()
     {
         if (!m_state->closed)
         {
-            XOR_CHECK_HR(m_state->cmd->Close());
+            XOR_CHECK_HR(cmd()->Close());
             m_state->closed = true;
         }
     }
@@ -582,7 +690,7 @@ namespace xor
     {
         if (m_state->closed)
         {
-            XOR_CHECK_HR(m_state->cmd->Reset(m_state->allocator.Get(), nullptr));
+            XOR_CHECK_HR(cmd()->Reset(m_state->allocator.Get(), nullptr));
             m_state->closed = false;
         }
     }
@@ -617,18 +725,68 @@ namespace xor
         }
     }
 
+    void CommandList::bind(Pipeline &pipeline)
+    {
+        cmd()->SetPipelineState(pipeline->pso.Get());
+    }
+
     void CommandList::clearRTV(RTV &rtv, float4 color)
     {
-        m_state->cmd->ClearRenderTargetView(rtv->descriptor.cpu,
-                                            color.data(),
-                                            0,
-                                            nullptr);
+        cmd()->ClearRenderTargetView(rtv->descriptor.cpu,
+                                     color.data(),
+                                     0,
+                                     nullptr);
+    }
+
+    void CommandList::setRenderTargets()
+    {
+        cmd()->OMSetRenderTargets(0,
+                                  nullptr,
+                                  false,
+                                  nullptr);
+    }
+
+    void CommandList::setRenderTargets(RTV &rtv)
+    {
+        cmd()->OMSetRenderTargets(1,
+                                  &rtv->descriptor.cpu,
+                                  FALSE,
+                                  nullptr);
+
+        D3D12_VIEWPORT viewport = {};
+        D3D12_RECT scissor = {};
+
+        auto texDesc      = rtv.texture().desc();
+
+        viewport.Width    = static_cast<float>(texDesc.Width);
+        viewport.Height   = static_cast<float>(texDesc.Height);
+        viewport.MinDepth = D3D12_MIN_DEPTH;
+        viewport.MaxDepth = D3D12_MAX_DEPTH;
+        viewport.TopLeftX = 0;
+        viewport.TopLeftY = 0;
+
+        scissor.left   = 0;
+        scissor.top    = 0;
+        scissor.right  = static_cast<LONG>(texDesc.Width);
+        scissor.bottom = static_cast<LONG>(texDesc.Height);
+
+        cmd()->RSSetViewports(1,
+                              &viewport);
+
+        cmd()->RSSetScissorRects(1,
+                                 &scissor);
     }
 
     void CommandList::barrier(std::initializer_list<Barrier> barriers)
     {
-        m_state->cmd->ResourceBarrier(static_cast<UINT>(barriers.size()),
-                                      barriers.begin());
+        cmd()->ResourceBarrier(static_cast<UINT>(barriers.size()),
+                               barriers.begin());
+    }
+
+    void CommandList::draw(uint vertices, uint startVertex)
+    {
+        cmd()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmd()->DrawInstanced(vertices, 1, startVertex, 0);
     }
 
     uint SwapChain::currentIndex()
@@ -672,6 +830,11 @@ namespace xor
         barrier.Transition.StateAfter  = after;
         barrier.Transition.Subresource = subresource;
         return barrier;
+    }
+
+    D3D12_RESOURCE_DESC Resource::desc() const
+    {
+        return m_state->resource->GetDesc();
     }
 
     ID3D12Resource *Resource::get()

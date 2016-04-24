@@ -13,6 +13,7 @@
   <ItemGroup>
     <ClCompile Include="Allocators.cpp" />
     <ClCompile Include="Error.cpp" />
+    <ClCompile Include="File.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="String.cpp" />
     <ClCompile Include="Utils.cpp" />
@@ -22,6 +23,7 @@
     <ClInclude Include="Allocators.hpp" />
     <ClInclude Include="Core.hpp" />
     <ClInclude Include="Error.hpp" />
+    <ClInclude Include="File.hpp" />
     <ClInclude Include="Log.hpp" />
     <ClInclude Include="Math.hpp" />
     <ClInclude Include="MathFloat.hpp" />

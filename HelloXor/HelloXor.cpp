@@ -8,6 +8,7 @@ class HelloXor : public Window
     Xor xor;
     Device device;
     SwapChain swapChain;
+    Pipeline hello;
     Timer time;
 public:
     HelloXor()
@@ -15,6 +16,10 @@ public:
     {
         device    = xor.defaultAdapter().createDevice();
         swapChain = device.createSwapChain(*this);
+        hello     = device.createGraphicsPipeline(
+            Pipeline::Graphics()
+            .vertexShader("Hello.vs")
+            .pixelShader("Hello.ps"));
     }
 
     void keyDown(int keyCode) override
@@ -29,16 +34,30 @@ public:
         auto backbuffer = swapChain.backbuffer();
 
         // TODO: Replace transition() with automatic deduction of split barriers.
-        cmd.barrier({ transition(backbuffer.texture(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET) });
+        cmd.barrier({ transition(backbuffer.texture(),
+                                 D3D12_RESOURCE_STATE_PRESENT,
+                                 D3D12_RESOURCE_STATE_RENDER_TARGET) });
 
+#if 0
         float4 rgba = float4(hsvToRGB(float3(
             frac(static_cast<float>(time.seconds())),
             1,
             1)));
         rgba.w = 1;
         cmd.clearRTV(backbuffer, rgba);
+#else
+        cmd.clearRTV(backbuffer, float4(0, 0, .25f, 1));
 
-        cmd.barrier({ transition(backbuffer.texture(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT) });
+        cmd.setRenderTargets({backbuffer});
+        cmd.bind(hello);
+        cmd.draw(3);
+        cmd.setRenderTargets();
+
+#endif
+
+        cmd.barrier({ transition(backbuffer.texture(),
+                                 D3D12_RESOURCE_STATE_RENDER_TARGET,
+                                 D3D12_RESOURCE_STATE_PRESENT) });
 
         device.execute(cmd);
         device.present(swapChain);

@@ -13,6 +13,7 @@ namespace xor
         using std::string::string;
 
         String() {}
+        String(const std::string &str) : std::string(str) {}
         explicit String(const std::wstring &wstr);
         explicit String(const wchar_t *wstr);
 
@@ -24,17 +25,26 @@ namespace xor
             return format(fmt.c_str(), ts...);
         }
 
+        String operator+(const String &s)
+        {
+            return static_cast<const std::string &>(*this) +
+                static_cast<const std::string &>(s);
+        }
+
+        explicit operator bool() const { return !empty(); }
         std::wstring wideStr() const;
     };
 
     // TODO: Make a StringView class and move these there.
-    std::string replaceAll(std::string s, const std::string &replacedString, const std::string &replaceWith);
-    std::vector<std::string> tokenize(const std::string &s, const std::string &delimiters);
+    String replaceAll(String s,
+                      const String &replacedString,
+                      const String &replaceWith);
+    std::vector<String> tokenize(const String &s, const String &delimiters);
 
     template <typename Iter>
-    std::string join(Iter begin, Iter end, std::string separator)
+    String join(Iter begin, Iter end, String separator)
     {
-        std::string s;
+        String s;
 
         if (begin == end)
             return s;

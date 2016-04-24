@@ -50,14 +50,14 @@ namespace xor
         return wConverter.from_bytes(*this);
     }
 
-    std::string replaceAll(std::string s, const std::string &replacedString, const std::string &replaceWith)
+    String replaceAll(String s, const String &replacedString, const String &replaceWith)
     {
         auto oldLen = replacedString.length();
         auto newLen = replaceWith.length();
 
         auto pos = s.find(replacedString, 0);
 
-        while (pos != std::string::npos)
+        while (pos != String::npos)
         {
             s.replace(pos, oldLen, replaceWith);
             pos += newLen;
@@ -67,14 +67,14 @@ namespace xor
         return s;
     }
 
-    std::vector<std::string> tokenize(const std::string &s, const std::string &delimiters)
+    std::vector<String> tokenize(const String &s, const String &delimiters)
     {
-        std::vector<std::string> tokens;
+        std::vector<String> tokens;
 
-        std::string::size_type pos = 0;
+        String::size_type pos = 0;
         bool delim = false;
 
-        while (pos != std::string::npos)
+        while (pos != String::npos)
         {
             if (delim)
             {
@@ -83,7 +83,7 @@ namespace xor
             else
             {
                 auto end = s.find_first_of(delimiters, pos);
-                if (end == std::string::npos) end = s.length();
+                if (end == String::npos) end = s.length();
                 tokens.emplace_back(s.substr(pos, end - pos));
                 if (tokens.back().empty())
                     tokens.pop_back();

@@ -3,4 +3,8 @@
   <ItemGroup>
     <ClCompile Include="HelloXor.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Hello.vs.hlsl" />
+    <FxCompile Include="Hello.ps.hlsl" />
+  </ItemGroup>
 </Project>

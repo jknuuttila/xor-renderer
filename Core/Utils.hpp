@@ -53,7 +53,7 @@ namespace xor
             return *this;
         }
 
-        explicit operator bool() const { return p != NullValue; }
+        explicit operator bool() const { return p != nullptr && p != NullValue; }
 
         T get() { return p; }
         const T get() const { return p; }
@@ -108,12 +108,20 @@ namespace xor
 
         ~Handle()
         {
-            if (m_handle)
-                CloseHandle(m_handle.get());
+            close();
         }
 
         explicit operator bool() const { return static_cast<bool>(m_handle); }
-        HANDLE get() { return m_handle; }
+        HANDLE get() const { return m_handle; }
+
+        void close()
+        {
+            if (m_handle)
+            {
+                CloseHandle(m_handle.get());
+                m_handle = InvalidHandleValue;
+            }
+        }
     };
 
     template <typename T>
@@ -144,14 +152,5 @@ namespace xor
         Timer();
         double seconds() const;
     };
-
-    // TODO: Move these elsewhere
-    std::vector<std::string> listFiles(const std::string &path, const std::string &pattern = "*");
-    std::vector<std::string> searchFiles(const std::string &path, const std::string &pattern);
-
-    std::string fileOpenDialog(const std::string &description, const std::string &pattern);
-    std::string fileSaveDialog(const std::string &description, const std::string &pattern);
-    std::string absolutePath(const std::string &path);
-    std::vector<std::string> splitPath(const std::string &path);
 }
 
