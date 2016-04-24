@@ -19,11 +19,12 @@ namespace xor
 
         ComPtr<IDXGIAdapter3> m_adapter;
         String                m_description;
+        bool                  m_debug = false;
     public:
         Device createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel = D3D_FEATURE_LEVEL_12_0);
     };
 
-    namespace state
+    namespace backend
     {
         struct DeviceState;
         struct CommandListState;
@@ -42,13 +43,13 @@ namespace xor
 
     class SwapChain;
     class CommandList;
-    class Device : private state::SharedState<state::DeviceState>
+    class Device : private backend::SharedState<backend::DeviceState>
     {
         friend class Adapter;
         friend class CommandList;
 
         ID3D12Device *device();
-        std::shared_ptr<state::CommandListState> createCommandList();
+        std::shared_ptr<backend::CommandListState> createCommandList();
         void retireCommandLists();
 
         Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel);
@@ -69,16 +70,18 @@ namespace xor
         void waitUntilCompleted(SeqNum seqNum);
     };
 
-    class Resource : private state::SharedState<state::ResourceState>
+    class Resource : private backend::SharedState<backend::ResourceState>
     {
         friend class Device;
         friend class CommandList;
     public:
         Resource();
         ~Resource();
+
+        ID3D12Resource *get();
     };
 
-    class View : private state::SharedState<state::ViewState>
+    class View : private backend::SharedState<backend::ViewState>
     {
         friend class Device;
         friend class CommandList;
@@ -113,7 +116,7 @@ namespace xor
                        D3D12_RESOURCE_STATES after,
                        uint subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 
-    class SwapChain : private state::SharedState<state::SwapChainState>
+    class SwapChain : private backend::SharedState<backend::SwapChainState>
     {
         friend class Device;
         uint currentIndex();
@@ -122,9 +125,12 @@ namespace xor
         RTV backbuffer();
     };
 
-    class CommandList : private state::SharedState<state::CommandListState>
+    class CommandList : private backend::SharedState<backend::CommandListState>
     {
         friend class Device;
+
+        void close();
+        void reset();
 
         CommandList(Device &device);
         bool hasCompleted();
@@ -147,13 +153,17 @@ namespace xor
     // Global initialization and deinitialization of the Xor renderer.
     class Xor
     {
-        std::vector<Adapter>  m_adapters;
     public:
         enum class DebugLayer
         {
             Enabled,
             Disabled,
         };
+
+    private:
+        std::vector<Adapter>  m_adapters;
+
+    public:
 
         Xor(DebugLayer debugLayer = DebugLayer::Enabled);
         ~Xor();

@@ -44,6 +44,18 @@ namespace xor
         OffsetPool freeDescriptors;
         uint increment = 0;
 
+        ViewHeap() = default;
+        ViewHeap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_DESC desc)
+        {
+            XOR_CHECK_HR(device->CreateDescriptorHeap(
+                &desc,
+                __uuidof(ID3D12DescriptorHeap),
+                &heap));
+
+            freeDescriptors = OffsetPool(desc.NumDescriptors);
+            increment       = device->GetDescriptorHandleIncrementSize(desc.Type);
+        }
+
         Descriptor allocate()
         {
             auto offset = freeDescriptors.allocate();
@@ -71,7 +83,7 @@ namespace xor
         }
     };
 
-    namespace state
+    namespace backend
     {
         struct CommandListState
         {
@@ -84,6 +96,7 @@ namespace xor
             Handle              completedEvent;
 
             SeqNum seqNum = 0;
+            bool closed = false;
         };
 
         struct DeviceState
@@ -129,7 +142,7 @@ namespace xor
         };
     }
 
-    using namespace xor::state;
+    using namespace xor::backend;
 
     Xor::Xor(DebugLayer debugLayer)
     {
@@ -162,6 +175,7 @@ namespace xor
                         DXGI_ADAPTER_DESC2 desc = {};
                         XOR_CHECK_HR(a.m_adapter->GetDesc2(&desc));
                         a.m_description = String(desc.Description);
+                        a.m_debug = debugLayer == DebugLayer::Enabled;
                     }
                     break;
                 case DXGI_ERROR_NOT_FOUND:
@@ -195,7 +209,17 @@ namespace xor
 
     Device Adapter::createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel)
     {
-        return Device(m_adapter, minimumFeatureLevel);
+        Device device = Device(m_adapter, minimumFeatureLevel);
+
+        ComPtr<ID3D12InfoQueue> infoQueue;
+        if (m_debug && device->device.As(&infoQueue) == S_OK)
+        {
+            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR,      TRUE);
+            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING,    TRUE);
+        }
+
+        return device;
     }
 
     Device::Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel)
@@ -228,12 +252,8 @@ namespace xor
             desc.NumDescriptors = MaxRTVs;
             desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
             desc.NodeMask       = 0;
-            XOR_CHECK_HR(device()->CreateDescriptorHeap(
-                &desc,
-                __uuidof(ID3D12DescriptorHeap),
-                &m_state->rtvs.heap));
 
-            m_state->rtvs.freeDescriptors = OffsetPool(MaxRTVs);
+            m_state->rtvs = ViewHeap(device(), desc);
         }
     }
 
@@ -245,6 +265,8 @@ namespace xor
 
         SwapChain swapChain;
         swapChain.makeState();
+
+        swapChain->device = *this;
 
         {
             DXGI_SWAP_CHAIN_DESC1 desc = {};
@@ -332,10 +354,6 @@ namespace xor
             __uuidof(ID3D12GraphicsCommandList),
             &cmd->cmd));
 
-        // Close it when creating so we can always Reset()
-        // it when reusing.
-        cmd->cmd->Close();
-
         XOR_CHECK_HR(dev->CreateFence(
             0,
             D3D12_FENCE_FLAG_NONE, 
@@ -357,7 +375,8 @@ namespace xor
             return this->createCommandList();
         });
 
-        cmd->cmd->Reset(cmd->allocator.Get(), nullptr);
+        cmd.reset();
+
         ++cmd->timesStarted;
         cmd->seqNum = m_state->commandListSequence.start();
 
@@ -366,7 +385,8 @@ namespace xor
 
     void Device::execute(CommandList &cmd)
     {
-        cmd->cmd->Close();
+        cmd.close();
+
         ID3D12CommandList *cmds[] = { cmd->cmd.Get() };
         m_state->graphicsQueue->ExecuteCommandLists(1, cmds);
         m_state->graphicsQueue->Signal(cmd->timesCompleted.Get(), cmd->timesStarted);
@@ -455,6 +475,24 @@ namespace xor
         }
     }
 
+    void CommandList::close()
+    {
+        if (!m_state->closed)
+        {
+            XOR_CHECK_HR(m_state->cmd->Close());
+            m_state->closed = true;
+        }
+    }
+
+    void CommandList::reset()
+    {
+        if (m_state->closed)
+        {
+            XOR_CHECK_HR(m_state->cmd->Reset(m_state->allocator.Get(), nullptr));
+            m_state->closed = false;
+        }
+    }
+
     bool CommandList::hasCompleted()
     {
         auto completed = m_state->timesCompleted->GetCompletedValue();
@@ -468,7 +506,12 @@ namespace xor
     void CommandList::waitUntilCompleted(DWORD timeout)
     {
         while (!hasCompleted())
+        {
+            XOR_CHECK_HR(m_state->timesCompleted->SetEventOnCompletion(
+                m_state->timesStarted,
+                m_state->completedEvent.get()));
             WaitForSingleObject(m_state->completedEvent.get(), timeout);
+        }
     }
 
     CommandList::~CommandList()
@@ -483,15 +526,15 @@ namespace xor
     void CommandList::clearRTV(RTV &rtv, float4 color)
     {
         m_state->cmd->ClearRenderTargetView(rtv->descriptor.cpu,
-                                          color.data(),
-                                          0,
-                                          nullptr);
+                                            color.data(),
+                                            0,
+                                            nullptr);
     }
 
     void CommandList::barrier(std::initializer_list<Barrier> barriers)
     {
         m_state->cmd->ResourceBarrier(static_cast<UINT>(barriers.size()),
-                                    barriers.begin());
+                                      barriers.begin());
     }
 
     uint SwapChain::currentIndex()
@@ -520,7 +563,7 @@ namespace xor
         return m_texture;
     }
 
-    Barrier transition(Resource & resource,
+    Barrier transition(Resource &resource,
                        D3D12_RESOURCE_STATES before,
                        D3D12_RESOURCE_STATES after,
                        uint subresource)
@@ -528,7 +571,7 @@ namespace xor
         Barrier barrier;
         barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         barrier.Flags                  = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-        barrier.Transition.pResource   = nullptr;
+        barrier.Transition.pResource   = resource.get();
         barrier.Transition.StateBefore = before;
         barrier.Transition.StateAfter  = after;
         barrier.Transition.Subresource = subresource;
@@ -541,6 +584,11 @@ namespace xor
 
     Resource::~Resource()
     {
+    }
+
+    ID3D12Resource *Resource::get()
+    {
+        return m_state ? m_state->resource.Get() : nullptr;
     }
 
     View::View()
