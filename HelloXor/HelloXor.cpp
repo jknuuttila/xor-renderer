@@ -19,7 +19,8 @@ public:
         hello     = device.createGraphicsPipeline(
             Pipeline::Graphics()
             .vertexShader("Hello.vs")
-            .pixelShader("Hello.ps"));
+            .pixelShader("Hello.ps")
+            .renderTargetFormats({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB}));
     }
 
     void keyDown(int keyCode) override

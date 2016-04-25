@@ -67,6 +67,11 @@ namespace xor
 
             Graphics &vertexShader(const String &vsName);
             Graphics &pixelShader(const String &psName);
+            Graphics &renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats);
+            Graphics &multisampling(uint samples, uint quality = 0);
+            Graphics &topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
+            Graphics &fill(D3D12_FILL_MODE fillMode);
+            Graphics &cull(D3D12_CULL_MODE cullMode);
         };
     };
 

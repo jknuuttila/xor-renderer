@@ -474,15 +474,17 @@ namespace xor
         RasterizerState.CullMode              = D3D12_CULL_MODE_BACK;
         RasterizerState.FrontCounterClockwise = TRUE;
         RasterizerState.ConservativeRaster    = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+        RasterizerState.DepthClipEnable       = TRUE;
 
         PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        NumRenderTargets      = 1;
-        RTVFormats[0]         = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-        SampleDesc.Count      = 1;
-        SampleDesc.Quality    = 0;
 
-        SampleMask = ~0;
-        BlendState.RenderTarget[0].RenderTargetWriteMask = 0xf;
+        // Depth disabled by default
+
+        multisampling(1, 0);
+
+        SampleMask = ~0u;
+        for (auto &rt : BlendState.RenderTarget)
+            rt.RenderTargetWriteMask = 0xf;
     }
 
     Pipeline::Graphics &Pipeline::Graphics::vertexShader(const String & vsName)
@@ -494,6 +496,39 @@ namespace xor
     Pipeline::Graphics &Pipeline::Graphics::pixelShader(const String & psName)
     {
         m_ps = psName;
+        return *this;
+    }
+
+    Pipeline::Graphics &Pipeline::Graphics::renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats)
+    {
+        NumRenderTargets = static_cast<uint>(formats.size());
+        for (uint i = 0; i < NumRenderTargets; ++i)
+            RTVFormats[i] = formats.begin()[i];
+        return *this;
+    }
+
+    Pipeline::Graphics &Pipeline::Graphics::multisampling(uint samples, uint quality)
+    {
+        SampleDesc.Count   = samples;
+        SampleDesc.Quality = quality;
+        return *this;
+    }
+
+    Pipeline::Graphics & Pipeline::Graphics::topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type)
+    {
+        PrimitiveTopologyType = type;
+        return *this;
+    }
+
+    Pipeline::Graphics &Pipeline::Graphics::fill(D3D12_FILL_MODE fillMode)
+    {
+        RasterizerState.FillMode = fillMode;
+        return *this;
+    }
+
+    Pipeline::Graphics &Pipeline::Graphics::cull(D3D12_CULL_MODE cullMode)
+    {
+        RasterizerState.CullMode = cullMode;
         return *this;
     }
 
