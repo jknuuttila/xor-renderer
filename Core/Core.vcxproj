@@ -16,6 +16,7 @@
     <ClCompile Include="File.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="String.cpp" />
+    <ClCompile Include="TLog.cpp" />
     <ClCompile Include="Utils.cpp" />
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
@@ -31,6 +32,7 @@
     <ClInclude Include="MathVectors.hpp" />
     <ClInclude Include="OS.hpp" />
     <ClInclude Include="String.hpp" />
+    <ClInclude Include="TLog.hpp" />
     <ClInclude Include="Utils.hpp" />
     <ClInclude Include="Window.hpp" />
   </ItemGroup>

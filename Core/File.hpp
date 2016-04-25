@@ -4,8 +4,13 @@
 #include "String.hpp"
 #include "Utils.hpp"
 
+#include <filesystem>
+
 namespace xor
 {
+    using namespace std::experimental::filesystem;
+    // TODO: Move to std::filesystem::path
+
     class File
     {
         Handle         m_file;

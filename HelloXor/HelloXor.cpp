@@ -12,7 +12,7 @@ class HelloXor : public Window
     Timer time;
 public:
     HelloXor()
-        : Window { "Hello, Xor!", { 1600, 900 } }
+        : Window { XOR_PROJECT_NAME, { 1600, 900 } }
     {
         device    = xor.defaultAdapter().createDevice();
         swapChain = device.createSwapChain(*this);
