@@ -480,6 +480,9 @@ namespace xor
         RTVFormats[0]         = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
         SampleDesc.Count      = 1;
         SampleDesc.Quality    = 0;
+
+        SampleMask = ~0;
+        BlendState.RenderTarget[0].RenderTargetWriteMask = 0xf;
     }
 
     Pipeline::Graphics &Pipeline::Graphics::vertexShader(const String & vsName)
@@ -770,11 +773,8 @@ namespace xor
         scissor.right  = static_cast<LONG>(texDesc.Width);
         scissor.bottom = static_cast<LONG>(texDesc.Height);
 
-        cmd()->RSSetViewports(1,
-                              &viewport);
-
-        cmd()->RSSetScissorRects(1,
-                                 &scissor);
+        cmd()->RSSetViewports(1, &viewport);
+        cmd()->RSSetScissorRects(1, &scissor);
     }
 
     void CommandList::barrier(std::initializer_list<Barrier> barriers)
