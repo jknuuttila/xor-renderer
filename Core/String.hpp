@@ -1,6 +1,8 @@
 #pragma once
 
 #include "OS.hpp"
+#include "Utils.hpp"
+#include "Error.hpp"
 
 #include <string>
 #include <vector>
@@ -33,6 +35,27 @@ namespace xor
     {
         const char *m_begin = nullptr;
         const char *m_end   = nullptr;
+
+        int idx(int i) const
+        {
+            int len = length();
+            if (i < 0) i += len;
+            XOR_ASSERT(i >= 0 && i <= len, "index out of range");
+            return i;
+        }
+
+        int findLoop(StringView sub, int start, int end, int inc) const
+        {
+            int L = sub.length();
+
+            for (int i = start; i != end; i += inc)
+            {
+                if (std::memcmp(data() + i, sub.data(), L) == 0)
+                    return i;
+            }
+
+            return -1;
+        }
     public:
         StringView() = default;
 
@@ -74,6 +97,9 @@ namespace xor
 
         const char &operator[](size_t i) const { return m_begin[i]; }
 
+        String str() const;
+        std::wstring wideStr() const;
+
         bool operator==(StringView v) const
         {
             return size() == v.size() &&
@@ -85,90 +111,108 @@ namespace xor
             return !operator==(v);
         }
 
-        int compare(StringView v) const
+        friend int compare(StringView a, StringView b) const
         {
-            size_t s1 = size();
-            size_t s2 = v.size();
-            size_t smaller = std::min(s1, s2);
-            int result = std::memcmp(data(), v.data(), smaller);
+            size_t sa = a.size();
+            size_t sb = b.size();
+            size_t smaller = std::min(sa, sb);
+            int result = std::memcmp(a.data(), b.data(), smaller);
 
             if (result != 0)
                 return result;
-            else if (s1 < s2)
+            else if (sa < sb)
                 return -1;
             else 
-                return static_cast<int>(s1 > s2);
+                return static_cast<int>(sa > sb);
         }
 
-        bool operator< (StringView v) const { return compare(v) <  0; }
-        bool operator<=(StringView v) const { return compare(v) <= 0; }
-        bool operator> (StringView v) const { return compare(v) >  0; }
-        bool operator>=(StringView v) const { return compare(v) >= 0; }
-
-        StringView operator()(int start) const
-        {
-            int len = length();
-            if (start < 0) start += len;
-            XOR_ASSERT(start >= 0 && start <= len, "start out of range");
-
-            return StringView(
-                m_begin + start,
-                m_end);
-        }
+        bool operator< (StringView v) const { return compare(*this, v) <  0; }
+        bool operator<=(StringView v) const { return compare(*this, v) <= 0; }
+        bool operator> (StringView v) const { return compare(*this, v) >  0; }
+        bool operator>=(StringView v) const { return compare(*this, v) >= 0; }
 
         StringView operator()(int start, int end) const
         {
-            int len = length();
-            if (start < 0) start += len;
-            if (end   < 0) end   += len;
-            XOR_ASSERT(start >= 0 && start <= len, "start out of range");
-            XOR_ASSERT(end   >= 0 && end   <= len, "end out of range");
-
             return StringView(
-                m_begin + start,
-                m_begin + end);
+                m_begin + idx(start),
+                m_begin + idx(end));
         }
 
-        StringView first(int count) const
+        StringView from(int start) const
+        {
+            return StringView(
+                m_begin + idx(start),
+                m_end);
+        }
+        StringView until(int end) const
         {
             return StringView(
                 m_begin,
-                m_begin + std::min(count, length()));
+                m_begin + idx(end));
         }
 
-        int find(StringView sub, int start, int end) const;
+        int find(StringView sub, int start, int end) const
         {
-            auto len = length();
-            if (start < 0) start += len;
-            if (end   < 0) end   += len;
+            start = idx(start);
+            end   = idx(end);
 
-            XOR_ASSERT(start >= 0 && start <= len, "start out of range");
-            XOR_ASSERT(end   >= 0 && end   <= len, "end out of range");
-
-            auto subLen = sub.length();
-
-            if (subLen > end)
+            if (end - start < sub.length())
                 return -1;
+            else
+                end -= sub.length();
 
-            auto last = end - subLen;
-            for (int i = 0; i <= last; ++i)
-            {
-                if (std::memcmp(data() + i, sub.data(), subLen) == 0)
-                    return i;
-            }
-
-            return -1;
+            return findLoop(sub, start, end, 1);
         }
-
         int find(StringView sub, int start) const { return find(sub, start, length()); }
         int find(StringView sub) const { return find(sub, 0); }
 
+        bool contains(StringView sub) const
+        {
+            return find(sub) >= 0;
+        }
+
+        int count(StringView sub, int start, int end) const
+        {
+            start = idx(start);
+            end   = idx(end);
+
+            if (end - start < sub.length())
+                return 0;
+            else
+                end -= sub.length();
+
+            int amount = 0;
+            for (;;)
+            {
+                start = findLoop(sub, start, end, 1);
+                if (start < 0)
+                    return amount;
+                else
+                    ++amount;
+            }
+        }
+        int count(StringView sub, int start) const { return count(sub, start, length()); }
+        int count(StringView sub) const { return count(sub, 0); }
+
+        int rfind(StringView sub, int start, int end) const
+        {
+            start = idx(start);
+            end   = idx(end);
+
+            if (end - start < sub.length())
+                return -1;
+            else
+                end -= sub.length();
+
+            return findLoop(sub, end - 1, start - 1, -1);
+        }
+        int rfind(StringView sub, int start) const { return rfind(sub, start, length()); }
+        int rfind(StringView sub) const { return rfind(sub, 0); }
+
+        friend String operator+(StringView a, StringView b);
+
         String string() const;
         String capitalize() const;
-        bool contains(StringView sub) const;
-        int count(StringView sub) const;
-        int count(StringView sub, int start) const;
-        int count(StringView sub, int start, int end = -1) const;
         String lower() const;
         std::vector<String> split(StringView separators = Whitespace, int maxSplit = -1) const;
         String join(StringView separator = " ") const;
@@ -201,14 +245,7 @@ namespace xor
             return format(fmt.c_str(), ts...);
         }
 
-        String operator+(const String &s)
-        {
-            return static_cast<const std::string &>(*this) +
-                static_cast<const std::string &>(s);
-        }
-
         explicit operator bool() const { return !empty(); }
-        std::wstring wideStr() const;
     };
 
     // TODO: Make a StringView class and move these there.
