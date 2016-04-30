@@ -30,6 +30,21 @@ namespace xor
 
     static constexpr char Whitespace[] = " \t\r\n";
 
+    template <size_t N>
+    size_t stringLength(const char (&stringLiteral)[N])
+    {
+        return N - 1;
+    }
+    size_t stringLength(const char *str)
+    {
+        return std::strlen(str);
+    }
+    template <typename T>
+    size_t stringLength(const T &t)
+    {
+        return t.size();
+    }
+
     class String;
     class StringView
     {
@@ -85,6 +100,8 @@ namespace xor
             , m_end(m_begin + str.length())
         {}
 
+        inline StringView(const String &str);
+
         explicit operator bool() const { return m_begin != m_end; }
         bool empty() const { return m_begin == m_end; }
 
@@ -111,7 +128,7 @@ namespace xor
             return !operator==(v);
         }
 
-        friend int compare(StringView a, StringView b) const
+        friend int compare(StringView a, StringView b)
         {
             size_t sa = a.size();
             size_t sb = b.size();
@@ -171,6 +188,16 @@ namespace xor
             return find(sub) >= 0;
         }
 
+        bool contains(char c) const
+        {
+            for (char cc : *this)
+            {
+                if (cc == c)
+                    return true;
+            }
+            return false;
+        }
+
         int count(StringView sub, int start, int end) const
         {
             start = idx(start);
@@ -209,13 +236,23 @@ namespace xor
         int rfind(StringView sub, int start) const { return rfind(sub, start, length()); }
         int rfind(StringView sub) const { return rfind(sub, 0); }
 
+        bool startsWith(StringView prefix) const
+        {
+            if (prefix.length() > length()) return false;
+            return memcmp(data(), prefix.data(), prefix.length()) == 0;
+        }
+
+        bool endsWith(StringView suffix) const
+        {
+            if (suffix.length() > length()) return false;
+            return memcmp(end() - suffix.length(), suffix.data(), suffix.length()) == 0;
+        }
+
         friend String operator+(StringView a, StringView b);
 
-        String string() const;
         String capitalize() const;
         String lower() const;
         std::vector<String> split(StringView separators = Whitespace, int maxSplit = -1) const;
-        String join(StringView separator = " ") const;
         String strip(StringView separators = Whitespace,
                      bool leftStrip = true,
                      bool rightStrip = true) const;
@@ -227,13 +264,38 @@ namespace xor
         String replace(StringView old, StringView replacement, int maxReplace = -1) const;
     };
 
-    class String : public std::string
+    class String : public StringView
     {
+        friend class StringView;
+        // FIXME: Remove const to have move semantics
+        const std::string m_str;
     public:
-        using std::string::string;
-
         String() {}
-        String(const std::string &str) : std::string(str) {}
+        String(const char *str)
+            : m_str(str)
+            , StringView(m_str)
+        {}
+        String(const char *str, size_t length)
+            : m_str(str, length)
+            , StringView(m_str)
+        {}
+        template <typename Iter>
+        String(Iter begin, Iter end)
+            : m_str(begin, end)
+            , StringView(m_str)
+        {}
+        String(const std::string &str)
+            : m_str(str)
+            , StringView(m_str)
+        {}
+        String(std::string &&str)
+            : m_str(std::move(str))
+            , StringView(m_str)
+        {}
+        String(StringView str)
+            : m_str(str.begin(), str.end())
+            , StringView(m_str)
+        {}
         explicit String(const std::wstring &wstr);
         explicit String(const wchar_t *wstr);
 
@@ -245,34 +307,32 @@ namespace xor
             return format(fmt.c_str(), ts...);
         }
 
-        explicit operator bool() const { return !empty(); }
+        const char *cStr() const { return m_str.c_str(); }
+        std::wstring wideStr() const;
+
+        template <typename SpanOfStrings>
+        static String join(const SpanOfStrings &strings, StringView separator = " ")
+        {
+            size_t length = 0;
+            for (auto &s : strings) length += stringLength(s) + separator.length();
+
+            String result;
+            result.m_str.reserve(length + 1);
+
+            using std::begin;
+            using std::end;
+            for (auto &s : strings)
+            {
+                result.m_str.append(begin(s), end(s));
+                result.m_str.append(separator.begin(), separator.end());
+            }
+
+            return result;
+        }
     };
 
-    // TODO: Make a StringView class and move these there.
-    String replaceAll(String s,
-                      const String &replacedString,
-                      const String &replaceWith);
-    std::vector<String> tokenize(const String &s, const String &delimiters);
-
-    template <typename Iter>
-    String join(Iter begin, Iter end, String separator)
-    {
-        String s;
-
-        if (begin == end)
-            return s;
-
-        auto it = begin;
-        s = *it;
-        ++it;
-
-        while (it != end)
-        {
-            s += separator;
-            s += *it;
-            ++it;
-        }
-
-        return s;
-    }
+    inline StringView::StringView(const String &str)
+        : m_begin(str.data())
+        , m_end(m_begin + str.length())
+    {}
 }
