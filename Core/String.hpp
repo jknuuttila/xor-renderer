@@ -148,7 +148,7 @@ namespace xor
         bool operator> (StringView v) const { return compare(*this, v) >  0; }
         bool operator>=(StringView v) const { return compare(*this, v) >= 0; }
 
-        StringView operator()(int start, int end) const
+        StringView slice(int start, int end) const
         {
             return StringView(
                 m_begin + idx(start),
@@ -166,6 +166,11 @@ namespace xor
             return StringView(
                 m_begin,
                 m_begin + idx(end));
+        }
+
+        StringView operator()(int start, int end) const
+        {
+            return slice(start, end);
         }
 
         int find(StringView sub, int start, int end) const
@@ -252,7 +257,40 @@ namespace xor
 
         String capitalize() const;
         String lower() const;
+
+        template <typename F>
+        void splitForEach(F &&f, StringView separators = Whitespace, int maxSplit = -1) const
+        {
+            if (maxSplit < 0) maxSplit = -1;
+
+            int len        = length();
+            int splitStart = 0;
+            int splitEnd   = 0;
+
+            while (splitEnd < len)
+            {
+                if (maxSplit != 0 &&
+                    separators.contains(this->operator[](splitEnd)))
+                {
+                    --maxSplit;
+                    f(slice(splitStart, splitEnd));
+                    ++splitEnd;
+                    splitStart = splitEnd;
+                }
+                else
+                {
+                    ++splitEnd;
+                }
+            }
+
+            if (splitStart != splitEnd)
+            {
+                f(slice(splitStart, splitEnd));
+            }
+        }
+
         std::vector<String> split(StringView separators = Whitespace, int maxSplit = -1) const;
+
         String strip(StringView separators = Whitespace,
                      bool leftStrip = true,
                      bool rightStrip = true) const;

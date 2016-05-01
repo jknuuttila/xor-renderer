@@ -86,7 +86,12 @@ namespace xor
 
     std::vector<String> StringView::split(StringView separators, int maxSplit) const
     {
-        return std::vector<String>();
+        std::vector<String> result;
+        splitForEach([&] (StringView s)
+        {
+            result.emplace_back(s.str());
+        }, separators, maxSplit);
+        return result;
     }
 
     String StringView::strip(StringView separators, bool leftStrip, bool rightStrip) const
