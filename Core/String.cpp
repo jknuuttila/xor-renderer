@@ -58,6 +58,11 @@ namespace xor
         return String(begin(), end());
     }
 
+    std::string StringView::stdString() const
+    {
+        return std::string(begin(), end());
+    }
+
     std::wstring StringView::wideStr() const
     {
         return wConverter.from_bytes(str().m_str);
@@ -72,16 +77,16 @@ namespace xor
 
     String StringView::capitalize() const
     {
-        auto s = str();
-        s.m_str[0] = std::toupper(s.m_str[0]);
-        return s;
+        auto s = stdString();
+        s[0] = std::toupper(s[0]);
+        return String(std::move(s));
     }
 
     String StringView::lower() const
     {
-        auto s = str();
-        for (char &c : s.m_str) c = std::tolower(c);
-        return s;
+        auto s = stdString();
+        for (char &c : s) c = std::tolower(c);
+        return String(std::move(s));
     }
 
     std::vector<String> StringView::split(StringView separators, int maxSplit) const
@@ -122,57 +127,58 @@ namespace xor
 
     String StringView::swapCase() const
     {
-        auto s = str();
-        for (char &c : s.m_str)
+        auto s = stdString();
+        for (char &c : s)
         {
             if (std::isupper(c))
                 c = std::tolower(c);
             else
                 c = std::toupper(c);
         }
-        return s;
+        return String(std::move(s));
     }
 
     String StringView::upper() const
     {
-        auto s = str();
-        for (char &c : s.m_str) c = std::toupper(c);
-        return s;
+        auto s = stdString();
+        for (char &c : s) c = std::toupper(c);
+        return String(std::move(s));
     }
 
     String StringView::leftJustify(int width, char filler) const
     {
         int len = std::max(width, length());
-        String result;
-        result.m_str.reserve(len + 1);
-        result.m_str.append(begin(), end());
+        std::string result;
+        result.reserve(len);
+        result.append(begin(), end());
         for (int i = length(); i < len; ++i)
-            result.m_str.push_back(filler);
-        return result;
+            result.push_back(filler);
+        return String(std::move(result));
     }
 
     String StringView::rightJustify(int width, char filler) const
     {
         int len = std::max(width, length());
-        String result;
-        result.m_str.reserve(len + 1);
+        std::string result;
+        result.reserve(len);
         for (int i = length(); i < len; ++i)
-            result.m_str.push_back(filler);
-        result.m_str.append(begin(), end());
-        return result;
+            result.push_back(filler);
+        result.append(begin(), end());
+        return String(std::move(result));
     }
 
     String StringView::center(int width, char filler) const
     {
         int len   = std::max(width, length());
-        String result;
-        result.m_str.reserve(len + 1);
+        std::string result;
+        result.reserve(len);
         int fill  = len - width;
         int left  = fill / 2;
         int right = fill - left;
-        for (int i = 0; i < left; ++i) result.m_str.push_back(filler);
-        result.m_str.append(begin(), end());
-        for (int i = 0; i < right; ++i) result.m_str.push_back(filler);
+        for (int i = 0; i < left; ++i) result.push_back(filler);
+        result.append(begin(), end());
+        for (int i = 0; i < right; ++i) result.push_back(filler);
+        return String(std::move(result));
     }
 
     String StringView::replace(StringView old, StringView replacement, int maxReplace) const
@@ -188,7 +194,7 @@ namespace xor
         int len  = length() + hits * diff;
 
         std::string result;
-        result.reserve(len + 1);
+        result.reserve(len);
 
         int i = 0;
         while (i < length())
@@ -216,5 +222,7 @@ namespace xor
                 ++i;
             }
         }
+
+        return String(std::move(result));
     }
 }

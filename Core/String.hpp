@@ -115,6 +115,7 @@ namespace xor
         const char &operator[](size_t i) const { return m_begin[i]; }
 
         String str() const;
+        std::string stdString() const;
         std::wstring wideStr() const;
 
         bool operator==(StringView v) const
@@ -305,10 +306,9 @@ namespace xor
     class String : public StringView
     {
         friend class StringView;
-        // FIXME: Remove const to have move semantics
-        const std::string m_str;
+        std::string m_str;
     public:
-        String() {}
+        String() = default;
         String(const char *str)
             : m_str(str)
             , StringView(m_str)
