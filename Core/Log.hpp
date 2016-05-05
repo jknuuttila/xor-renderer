@@ -2,7 +2,8 @@
 
 namespace xor
 {
-    void vlog(const char *fmt, va_list ap);
-    void log(const char *fmt, ...);
+    void vprint(const char *fmt, va_list ap);
+    void print(const char *fmt, ...);
+    void log(const char *tag, const char *fmt, ...);
 }
 

@@ -28,6 +28,7 @@ namespace xor
         enum class Mode
         {
             ReadOnly,
+            ReadMapped,
             ReadWrite,
         };
 
@@ -52,10 +53,14 @@ namespace xor
         void seekRelative(int64_t pos);
 
         void close();
+        HRESULT read(void *dst, size_t bytes, size_t *bytesRead = nullptr);
+        HRESULT write(const void *src, size_t bytes);
         HRESULT read(span<uint8_t> &dst);
         HRESULT write(span<const uint8_t> src);
 
         std::vector<uint8_t> read();
+        String readText();
+        std::wstring readWideText();
     };
 
     std::vector<String> listFiles(const String &path, const String &pattern = "*");

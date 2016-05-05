@@ -5,7 +5,7 @@
 
 namespace xor
 {
-    void vlog(const char * fmt, va_list ap)
+    void vprint(const char * fmt, va_list ap)
     {
         if (IsDebuggerPresent())
         {
@@ -19,11 +19,21 @@ namespace xor
         }
     }
 
-    void log(const char * fmt, ...)
+    void print(const char * fmt, ...)
     {
         va_list ap;
         va_start(ap, fmt);
-        vlog(fmt, ap);
+        vprint(fmt, ap);
+        va_end(ap);
+    }
+
+    void log(const char *tag, const char * fmt, ...)
+    {
+        if (tag)
+            print("[%s]: ", tag);
+        va_list ap;
+        va_start(ap, fmt);
+        vprint(fmt, ap);
         va_end(ap);
     }
 }

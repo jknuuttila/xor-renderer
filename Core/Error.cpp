@@ -11,21 +11,21 @@ namespace xor
         {
             if (!cond)
             {
-                log("ERROR: ");
+                print("ERROR: ");
 
                 if (fmt)
                 {
                     va_list ap;
                     va_start(ap, fmt);
-                    vlog(fmt, ap);
+                    print(fmt, ap);
                     va_end(ap);
                 }
                 else
                 {
-                    log("Unknown error");
+                    print("Unknown error");
                 }
 
-                log("\n");
+                print("\n");
 
                 return false;
             }

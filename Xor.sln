@@ -11,6 +11,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Core", "Core\Core.vcxproj",
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HelloXor", "HelloXor\HelloXor.vcxproj", "{31247FB8-949B-44B6-8C3D-1CEF30478669}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "External", "External", "{EA84D2F7-E324-4EDF-BB41-A738A83F05C8}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SpookyHash", "external\SpookyHash\SpookyHash.vcxproj", "{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -43,8 +47,17 @@ Global
 		{31247FB8-949B-44B6-8C3D-1CEF30478669}.Release|x64.ActiveCfg = Release|x64
 		{31247FB8-949B-44B6-8C3D-1CEF30478669}.Release|x64.Build.0 = Release|x64
 		{31247FB8-949B-44B6-8C3D-1CEF30478669}.Release|x86.ActiveCfg = Release|x64
+		{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D}.Debug|x64.ActiveCfg = Debug|x64
+		{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D}.Debug|x64.Build.0 = Debug|x64
+		{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D}.Debug|x86.ActiveCfg = Debug|x64
+		{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D}.Release|x64.ActiveCfg = Release|x64
+		{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D}.Release|x64.Build.0 = Release|x64
+		{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D}.Release|x86.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
 	EndGlobalSection
 EndGlobal

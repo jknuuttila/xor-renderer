@@ -459,7 +459,7 @@ namespace xor
         }
 
         ShaderBinary(const String &filename)
-            : File(filename)
+            : File(filename, Mode::ReadMapped)
         {
             XOR_CHECK_HR(hr());
             pShaderBytecode = data();

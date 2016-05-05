@@ -16,8 +16,10 @@ namespace xor
         path source;
         // All source files that participated in building the target file.
         std::vector<path> dependencies;
-        // The exact build command that was used to build the target file.
-        String buildCommand;
+        // Path to the build executable
+        path buildExe;
+        // The exact build arguments that were used to build the target file.
+        String buildArgs;
     };
 
     std::vector<BuildInfo> scanBuildInfos(path tlogDirectory, const String &extension = String());

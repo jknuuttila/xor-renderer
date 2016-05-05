@@ -14,13 +14,15 @@ namespace xor
 
     String::String(const std::wstring &wstr)
         : m_str(wConverter.to_bytes(wstr))
-        , StringView(m_str)
-    {}
+    {
+        updateView();
+    }
 
     String::String(const wchar_t *wstr)
         : m_str(wConverter.to_bytes(wstr))
-        , StringView(m_str)
-    {}
+    {
+        updateView();
+    }
 
     static String vformat(const char *fmt, va_list ap)
     {
@@ -97,6 +99,22 @@ namespace xor
             result.emplace_back(s.str());
         }, separators, maxSplit);
         return result;
+    }
+
+    std::vector<String> StringView::splitNonEmpty(StringView separators, int maxSplit) const
+    {
+        std::vector<String> result;
+        splitForEach([&] (StringView s)
+        {
+            if (!s.empty())
+                result.emplace_back(s.str());
+        }, separators, maxSplit);
+        return result;
+    }
+
+    std::vector<String> StringView::lines() const
+    {
+        return replace("\r", "").split("\n");
     }
 
     String StringView::strip(StringView separators, bool leftStrip, bool rightStrip) const

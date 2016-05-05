@@ -25,5 +25,6 @@
     <ClInclude Include="MathFloat.hpp" />
     <ClInclude Include="File.hpp" />
     <ClInclude Include="TLog.hpp" />
+    <ClInclude Include="Hash.hpp" />
   </ItemGroup>
 </Project>

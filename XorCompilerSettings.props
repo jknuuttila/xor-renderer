@@ -7,7 +7,7 @@
     <ClCompile>
       <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)external/gsl/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
-      <PreprocessorDefinitions>XOR_PROJECT_NAME="$(ProjectName)";XOR_PROJECT_DIR="$(ProjectDir)";XOR_PROJECT_TLOG="$(TLogLocation)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>XOR_PROJECT_NAME=R"($(ProjectName))";XOR_PROJECT_DIR=R"($(ProjectDir))";XOR_PROJECT_TLOG=R"($(ProjectDir)$(TLogLocation))";%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>dxgi.lib;d3d12.lib;%(AdditionalDependencies)</AdditionalDependencies>

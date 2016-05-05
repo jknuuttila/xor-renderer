@@ -4,6 +4,7 @@
 
 namespace xor
 {
+#if 0
     std::vector<String> listFiles(const String &path, const String &pattern)
     {
         std::vector<String> files;
@@ -117,6 +118,7 @@ namespace xor
         else
             return String(absPath);
     }
+#endif
 
     File::File(const String &filename, Mode mode, Create create)
     {
@@ -138,11 +140,15 @@ namespace xor
             break;
         }
 
-        m_file = CreateFileA(filename.c_str(),
+        DWORD shareMode = 0;
+        if (mode == Mode::ReadOnly)
+            shareMode = FILE_SHARE_READ;
+
+        m_file = CreateFileA(filename.cStr(),
                              mode == Mode::ReadWrite
                              ? GENERIC_WRITE
                              : GENERIC_READ,
-                             0,
+                             shareMode,
                              nullptr,
                              creation,
                              FILE_ATTRIBUTE_NORMAL,
@@ -153,7 +159,7 @@ namespace xor
         else
             m_hr = S_OK;
 
-        if (m_hr == S_OK && mode == Mode::ReadOnly)
+        if (m_hr == S_OK && mode == Mode::ReadMapped)
         {
             size_t sz    = size();
             DWORD szHigh = static_cast<DWORD>(sz >> 32);
@@ -216,16 +222,16 @@ namespace xor
         *this = File();
     }
 
-    HRESULT File::read(span<uint8_t> &dst)
+    HRESULT File::read(void *dst, size_t bytes, size_t *bytesRead)
     {
-        uint8_t *p   = dst.data();
-        size_t bytes = dst.size_bytes();
+        uint8_t *p = reinterpret_cast<uint8_t *>(dst);
 
-        while (bytes > 0)
+        size_t left = bytes;
+        while (left > 0)
         {
             DWORD amount = static_cast<DWORD>(
                 std::min<size_t>(std::numeric_limits<DWORD>::max(),
-                                 bytes));
+                                 left));
             DWORD got = 0;
             if (!ReadFile(m_file.get(),
                           p,
@@ -236,25 +242,24 @@ namespace xor
                 return HRESULT_FROM_WIN32(GetLastError());
             }
 
-            bytes -= got;
-            p     += got;
+            left -= got;
+            p    += got;
 
             if (got == 0)
                 break;
         }
 
-        if (bytes > 0)
+        if (bytesRead)
         {
-            dst = span<uint8_t>(dst.data(), p);
+            *bytesRead = bytes - left;
         }
 
         return S_OK;
     }
 
-    HRESULT File::write(span<const uint8_t> src)
+    HRESULT File::write(const void *src, size_t bytes)
     {
-        const uint8_t *p = src.data();
-        size_t bytes     = src.size_bytes();
+        const uint8_t *p = reinterpret_cast<const uint8_t *>(src);
 
         while (bytes > 0)
         {
@@ -281,6 +286,27 @@ namespace xor
         return S_OK;
     }
 
+    HRESULT File::read(span<uint8_t>& dst)
+    {
+        size_t amount;
+
+        auto hr = read(dst.data(), dst.size_bytes(), &amount);
+        if (FAILED(hr))
+            return hr;
+
+        dst = dst.subspan(0, static_cast<ptrdiff_t>(amount));
+        return S_OK;
+    }
+
+    HRESULT File::write(span<const uint8_t> src)
+    {
+        auto hr = write(src.data(), src.size_bytes());
+        if (FAILED(hr))
+            return hr;
+        else
+            return S_OK;
+    }
+
     std::vector<uint8_t> File::read()
     {
         std::vector<uint8_t> contents;
@@ -289,6 +315,30 @@ namespace xor
         span<uint8_t> dst = contents;
         XOR_CHECK_HR(read(dst));
         contents.resize(dst.size());
+        return contents;
+    }
+
+    String File::readText()
+    {
+        std::string contents;
+        contents.resize(size());
+        seek(0);
+        size_t length;
+        XOR_CHECK_HR(read(&contents[0], size(), &length));
+        contents.resize(length);
+        return String(std::move(contents));
+    }
+
+    std::wstring File::readWideText()
+    {
+        std::wstring contents;
+        size_t length = size() / sizeof(wchar_t);
+        contents.resize(length);
+        seek(0);
+        size_t bytes;
+        XOR_CHECK_HR(read(&contents[0], sizeBytes(contents), &bytes));
+        length = bytes / sizeof(wchar_t);
+        contents.resize(length);
         return contents;
     }
 }

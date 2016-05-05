@@ -9,10 +9,10 @@
 #include <string>
 #include <type_traits>
 
-using gsl::span;
-
 namespace xor
 {
+    using namespace gsl;
+
     // TODO: move this elsewhere
     using ll   = long long;
     using ull  = unsigned long long;

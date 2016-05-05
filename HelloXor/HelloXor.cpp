@@ -1,4 +1,5 @@
 #include "Core/Core.hpp"
+#include "Core/TLog.hpp"
 #include "Xor/Xor.hpp"
 
 using namespace xor;
@@ -21,6 +22,8 @@ public:
             .vertexShader("Hello.vs")
             .pixelShader("Hello.ps")
             .renderTargetFormats({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB}));
+
+        scanBuildInfos(XOR_PROJECT_TLOG, ".cso");
     }
 
     void keyDown(int keyCode) override

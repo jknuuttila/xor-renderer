@@ -3,9 +3,11 @@
 #include "OS.hpp"
 #include "Utils.hpp"
 #include "Error.hpp"
+#include "Hash.hpp"
 
 #include <string>
 #include <vector>
+#include <filesystem>
 
 #include <cstdlib>
 #include <cstring>
@@ -31,16 +33,16 @@ namespace xor
     static constexpr char Whitespace[] = " \t\r\n";
 
     template <size_t N>
-    size_t stringLength(const char (&stringLiteral)[N])
+    inline size_t stringLength(const char (&stringLiteral)[N])
     {
         return N - 1;
     }
-    size_t stringLength(const char *str)
+    inline size_t stringLength(const char *str)
     {
         return std::strlen(str);
     }
     template <typename T>
-    size_t stringLength(const T &t)
+    inline size_t stringLength(const T &t)
     {
         return t.size();
     }
@@ -59,9 +61,16 @@ namespace xor
             return i;
         }
 
+        static int lastMatchableEnd(StringView sub, int end)
+        {
+            return end + 1 - sub.length();
+        }
+
         int findLoop(StringView sub, int start, int end, int inc) const
         {
             int L = sub.length();
+            if (L == 0)
+                return -1;
 
             for (int i = start; i != end; i += inc)
             {
@@ -93,6 +102,11 @@ namespace xor
         StringView(span<const char> chars)
             : m_begin(chars.data())
             , m_end(chars.data() + chars.size())
+        {}
+
+        explicit StringView(span<const uint8_t> chars)
+            : m_begin(reinterpret_cast<const char *>(chars.data()))
+            , m_end(reinterpret_cast<const char *>(chars.data()) + chars.size())
         {}
 
         StringView(const std::string &str)
@@ -182,7 +196,7 @@ namespace xor
             if (end - start < sub.length())
                 return -1;
             else
-                end -= sub.length();
+                end = lastMatchableEnd(sub, end);
 
             return findLoop(sub, start, end, 1);
         }
@@ -212,16 +226,21 @@ namespace xor
             if (end - start < sub.length())
                 return 0;
             else
-                end -= sub.length();
+                end = lastMatchableEnd(sub, end);
 
             int amount = 0;
             for (;;)
             {
-                start = findLoop(sub, start, end, 1);
-                if (start < 0)
+                int found = findLoop(sub, start, end, 1);
+                if (found < 0)
+                {
                     return amount;
+                }
                 else
+                {
+                    start = found + 1;
                     ++amount;
+                }
             }
         }
         int count(StringView sub, int start) const { return count(sub, start, length()); }
@@ -235,7 +254,7 @@ namespace xor
             if (end - start < sub.length())
                 return -1;
             else
-                end -= sub.length();
+                end = lastMatchableEnd(sub, end);
 
             return findLoop(sub, end - 1, start - 1, -1);
         }
@@ -291,6 +310,8 @@ namespace xor
         }
 
         std::vector<String> split(StringView separators = Whitespace, int maxSplit = -1) const;
+        std::vector<String> splitNonEmpty(StringView separators = Whitespace, int maxSplit = -1) const;
+        std::vector<String> lines() const;
 
         String strip(StringView separators = Whitespace,
                      bool leftStrip = true,
@@ -307,35 +328,92 @@ namespace xor
     {
         friend class StringView;
         std::string m_str;
+
+        void updateView() { static_cast<StringView &>(*this) = m_str; }
     public:
         String() = default;
         String(const char *str)
             : m_str(str)
-            , StringView(m_str)
-        {}
+        {
+            updateView();
+        }
         String(const char *str, size_t length)
             : m_str(str, length)
             , StringView(m_str)
-        {}
+        {
+            updateView();
+        }
+
         template <typename Iter>
         String(Iter begin, Iter end)
             : m_str(begin, end)
-            , StringView(m_str)
-        {}
+        {
+            updateView();
+        }
         String(const std::string &str)
             : m_str(str)
-            , StringView(m_str)
-        {}
+        {
+            updateView();
+        }
+
         String(std::string &&str)
             : m_str(std::move(str))
             , StringView(m_str)
-        {}
+        {
+            updateView();
+        }
         String(StringView str)
             : m_str(str.begin(), str.end())
             , StringView(m_str)
-        {}
+        {
+            updateView();
+        }
         explicit String(const std::wstring &wstr);
         explicit String(const wchar_t *wstr);
+
+        String(const std::experimental::filesystem::path &path)
+            : String(path.c_str())
+        {}
+
+        String(const String &s)
+            : m_str(s.m_str)
+            , StringView(m_str)
+        {
+            updateView();
+        }
+        String(String &&s)
+            : m_str(std::move(s.m_str))
+            , StringView(m_str)
+        {
+            updateView();
+        }
+        String &operator=(const String &s)
+        {
+            if (this != &s)
+            {
+                m_str = s.m_str;
+                updateView();
+            }
+            return *this;
+        }
+        String &operator=(String &&s)
+        {
+            if (this != &s)
+            {
+                m_str = std::move(s.m_str);
+                updateView();
+            }
+            return *this;
+        }
+        String &operator=(StringView s)
+        {
+            if (this != &s)
+            {
+                m_str = s.stdString();
+                updateView();
+            }
+            return *this;
+        }
 
         static String format(const char *fmt, ...);
 
@@ -373,4 +451,25 @@ namespace xor
         : m_begin(str.data())
         , m_end(m_begin + str.length())
     {}
+}
+
+namespace std
+{
+    template <>
+    struct hash<xor::String>
+    {
+        size_t operator()(const xor::String &s) const
+        {
+            return xor::hashBytes(s.begin(), s.end());
+        }
+    };
+
+    template <>
+    struct hash<xor::StringView>
+    {
+        size_t operator()(const xor::StringView &s) const
+        {
+            return xor::hashBytes(s.begin(), s.end());
+        }
+    };
 }
