@@ -193,8 +193,12 @@ namespace xor
                     if (commandListSequence.hasCompleted(top.seqNum))
                     {
                         top.f();
+                        completionCallbacks.pop();
                     }
-                    completionCallbacks.pop();
+                    else
+                    {
+                        break;
+                    }
                 }
             }
 

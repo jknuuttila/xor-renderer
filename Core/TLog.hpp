@@ -5,6 +5,7 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 
 namespace xor
 {
@@ -22,6 +23,6 @@ namespace xor
         String buildArgs;
     };
 
-    std::vector<BuildInfo> scanBuildInfos(path tlogDirectory, const String &extension = String());
+    std::vector<std::shared_ptr<const BuildInfo>> scanBuildInfos(path tlogDirectory, const String &extension = String());
 }
 

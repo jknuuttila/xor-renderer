@@ -186,6 +186,10 @@ namespace xor
         }
     }
 
+    File::File(const path & path, Mode mode, Create create)
+        : File(String(path.string()), mode, create)
+    {}
+
     size_t File::size() const
     {
         LARGE_INTEGER sz = {};
@@ -283,10 +287,13 @@ namespace xor
                 break;
         }
 
-        return S_OK;
+        if (bytes > 0)
+            return E_FAIL;
+        else
+            return S_OK;
     }
 
-    HRESULT File::read(span<uint8_t>& dst)
+    HRESULT File::read(span<uint8_t> dst)
     {
         size_t amount;
 
@@ -294,7 +301,9 @@ namespace xor
         if (FAILED(hr))
             return hr;
 
-        dst = dst.subspan(0, static_cast<ptrdiff_t>(amount));
+        if (amount != dst.size_bytes())
+            return E_FAIL;
+
         return S_OK;
     }
 
@@ -312,9 +321,7 @@ namespace xor
         std::vector<uint8_t> contents;
         contents.resize(size());
         seek(0);
-        span<uint8_t> dst = contents;
-        XOR_CHECK_HR(read(dst));
-        contents.resize(dst.size());
+        XOR_CHECK_HR(read(contents));
         return contents;
     }
 

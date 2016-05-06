@@ -14,7 +14,7 @@ namespace xor
         return String(File(path).readWideText()).lines();
     }
 
-    std::vector<BuildInfo> scanBuildInfos(path tlogDirectory, const String &extension)
+    std::vector<std::shared_ptr<const BuildInfo>> scanBuildInfos(path tlogDirectory, const String &extension)
     {
         static const char tlogExtension[] = ".tlog";
         static const char writeTlog[] = ".write";
@@ -135,10 +135,13 @@ namespace xor
             }
         }
 
-        std::vector<BuildInfo> buildInfos;
+        std::vector<std::shared_ptr<const BuildInfo>> buildInfos;
         buildInfos.reserve(sourceBuildInfos.size());
         for (auto &kv : sourceBuildInfos)
-            buildInfos.emplace_back(std::move(kv.second));
+        {
+            auto info = std::make_shared<BuildInfo>(std::move(kv.second));
+            buildInfos.emplace_back(std::move(info));
+        }
         return buildInfos;
     }
 }

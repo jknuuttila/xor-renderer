@@ -34,6 +34,7 @@ namespace xor
 
         File() = default;
         File(const String &filename, Mode mode = Mode::ReadOnly, Create create = Create::DontCreate);
+        File(const path &path, Mode mode = Mode::ReadOnly, Create create = Create::DontCreate);
 
         File(File &&) = default;
         File &operator=(File &&) = default;
@@ -55,7 +56,7 @@ namespace xor
         void close();
         HRESULT read(void *dst, size_t bytes, size_t *bytesRead = nullptr);
         HRESULT write(const void *src, size_t bytes);
-        HRESULT read(span<uint8_t> &dst);
+        HRESULT read(span<uint8_t> dst);
         HRESULT write(span<const uint8_t> src);
 
         std::vector<uint8_t> read();
