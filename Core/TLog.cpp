@@ -14,7 +14,8 @@ namespace xor
         return String(File(path).readWideText()).lines();
     }
 
-    std::vector<std::shared_ptr<const BuildInfo>> scanBuildInfos(path tlogDirectory, const String &extension)
+    std::vector<std::shared_ptr<const BuildInfo>> scanBuildInfos(const String &tlogDirectory,
+                                                                 const String &extension)
     {
         static const char tlogExtension[] = ".tlog";
         static const char writeTlog[] = ".write";
@@ -25,10 +26,10 @@ namespace xor
         std::vector<String> writeFiles;
         std::vector<String> cmdFiles;
 
-        for (auto &entry : recursive_directory_iterator(tlogDirectory))
+        for (auto &entry : fs::recursive_directory_iterator(tlogDirectory.cStr()))
         {
             auto p = entry.path();
-            String path = StringView(absolute(p)).lower();
+            String path = File::canonicalize(String(p), true);
             String ext  = StringView(p.extension()).lower();
 
             if (ext != tlogExtension)
@@ -54,18 +55,18 @@ namespace xor
                 if (srcPos >= 0)
                 {
                     auto src = l.from(srcPos + 1).lower();
-                    if (exists(path(src.stdString())))
-                        sourceFile = src;
+                    if (File::exists(src))
+                        sourceFile = File::canonicalize(src);
                 }
                 else if (sourceFile)
                 {
-                    auto target = l.lower();
+                    auto target = File::canonicalize(l);
 
                     if (!target.contains(extension))
                         continue;
 
-                    sourceBuildInfos[sourceFile].source = path(sourceFile.cStr());
-                    sourceBuildInfos[sourceFile].target = path(target.cStr());
+                    sourceBuildInfos[sourceFile].source = sourceFile;
+                    sourceBuildInfos[sourceFile].target = target;
                     log("TLog", "%s -> %s\n", sourceFile.cStr(), target.cStr());
                 }
             }
@@ -81,7 +82,7 @@ namespace xor
                 int srcPos = l.find("^");
                 if (srcPos >= 0)
                 {
-                    auto sourceFile = l.from(srcPos + 1).lower();
+                    auto sourceFile = File::canonicalize(l.from(srcPos + 1));
                     auto it = sourceBuildInfos.find(sourceFile);
                     if (it != sourceBuildInfos.end())
                     {
@@ -96,16 +97,16 @@ namespace xor
                 }
                 else if (buildInfo && firstReadDep)
                 {
-                    auto exe = l.lower();
-                    buildInfo->buildExe = path(exe.cStr());
-                    log("TLog", "%S was built with executable %s\n", buildInfo->source.c_str(), exe.cStr());
+                    auto exe = File::canonicalize(l);
+                    buildInfo->buildExe = exe;
+                    log("TLog", "%s was built with executable %s\n", buildInfo->source.cStr(), exe.cStr());
                     firstReadDep = false;
                 }
                 else if (buildInfo)
                 {
-                    auto dep = l.lower();
-                    buildInfo->dependencies.emplace_back(path(dep.cStr()));
-                    log("TLog", "%S depends on %s\n", buildInfo->source.c_str(), dep.cStr());
+                    auto dep = File::canonicalize(l);
+                    buildInfo->dependencies.emplace_back(dep.cStr());
+                    log("TLog", "%s depends on %s\n", buildInfo->source.cStr(), dep.cStr());
                 }
             }
         }
@@ -119,7 +120,7 @@ namespace xor
                 int srcPos = l.find("^");
                 if (srcPos >= 0)
                 {
-                    auto sourceFile = l.from(srcPos + 1).lower();
+                    auto sourceFile = File::canonicalize(l.from(srcPos + 1));
                     auto it = sourceBuildInfos.find(sourceFile);
                     if (it != sourceBuildInfos.end())
                         buildInfo = &it->second;
@@ -130,7 +131,7 @@ namespace xor
                 {
                     auto &args = l;
                     buildInfo->buildArgs = args;
-                    log("TLog", "%S was built with arguments %s\n", buildInfo->source.c_str(), args.cStr());
+                    log("TLog", "%s was built with arguments %s\n", buildInfo->source.cStr(), args.cStr());
                 }
             }
         }
@@ -143,5 +144,21 @@ namespace xor
             buildInfos.emplace_back(std::move(info));
         }
         return buildInfos;
+    }
+
+    bool BuildInfo::isTargetOutOfDate() const
+    {
+        uint64_t targetTimestamp = File::lastWritten(target);
+
+        if (File::lastWritten(source) > targetTimestamp)
+            return true;
+
+        for (auto &dep : dependencies)
+        {
+            if (File::lastWritten(dep) > targetTimestamp)
+                return true;
+        }
+
+        return false;
     }
 }

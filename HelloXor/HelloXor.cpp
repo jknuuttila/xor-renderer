@@ -15,6 +15,8 @@ public:
     HelloXor()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
     {
+        xor.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
+
         device    = xor.defaultAdapter().createDevice();
         swapChain = device.createSwapChain(*this);
         hello     = device.createGraphicsPipeline(
@@ -22,8 +24,6 @@ public:
             .vertexShader("Hello.vs")
             .pixelShader("Hello.ps")
             .renderTargetFormats({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB}));
-
-        scanBuildInfos(XOR_PROJECT_TLOG, ".cso");
     }
 
     void keyDown(int keyCode) override

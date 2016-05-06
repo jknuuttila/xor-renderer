@@ -13,21 +13,12 @@
 namespace xor
 {
     class Device;
-    class Adapter
-    {
-        friend class Xor;
-
-        ComPtr<IDXGIAdapter3> m_adapter;
-        String                m_description;
-        bool                  m_debug = false;
-    public:
-        Device createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel = D3D_FEATURE_LEVEL_12_0);
-    };
 
     namespace backend
     {
         struct Descriptor;
         struct ViewHeap;
+        struct ShaderLoader;
         struct DeviceState;
         struct CommandListState;
         struct SwapChainState;
@@ -47,6 +38,18 @@ namespace xor
         };
     }
 
+    class Adapter
+    {
+        friend class Xor;
+
+        ComPtr<IDXGIAdapter3>                  m_adapter;
+        std::shared_ptr<backend::ShaderLoader> m_shaderLoader;
+        String                                 m_description;
+        bool                                   m_debug = false;
+    public:
+        Device createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel = D3D_FEATURE_LEVEL_12_0);
+    };
+
     class SwapChain;
     class CommandList;
 
@@ -60,6 +63,8 @@ namespace xor
         class Graphics : public D3D12_GRAPHICS_PIPELINE_STATE_DESC
         {
             friend class Device;
+            friend class Pipeline;
+            friend struct backend::PipelineState;
             String m_vs;
             String m_ps;
         public:
@@ -94,7 +99,9 @@ namespace xor
         std::shared_ptr<backend::CommandListState> createCommandList();
         void collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
 
-        Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel);
+        Device(ComPtr<IDXGIAdapter3> adapter,
+               D3D_FEATURE_LEVEL minimumFeatureLevel,
+               std::shared_ptr<backend::ShaderLoader> shaderLoader);
     public:
         Device() = default;
 
@@ -216,7 +223,8 @@ namespace xor
         };
 
     private:
-        std::vector<Adapter>  m_adapters;
+        std::vector<Adapter>                   m_adapters;
+        std::shared_ptr<backend::ShaderLoader> m_shaderLoader;
 
     public:
 
@@ -225,6 +233,9 @@ namespace xor
 
         span<Adapter> adapters();
         Adapter &defaultAdapter();
+
+        void registerShaderTlog(StringView projectName,
+                                StringView shaderTlogPath);
     };
 }
 

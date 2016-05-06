@@ -1,9 +1,16 @@
 #include "Xor.hpp"
 
+#include "Core/TLog.hpp"
+
+#include <unordered_map>
+#include <unordered_set>
+
 namespace xor
 {
     namespace backend
     {
+        static const char ShaderFileExtension[] = ".cso";
+
         static ComPtr<IDXGIFactory4> dxgiFactory()
         {
             ComPtr<IDXGIFactory4> factory;
@@ -19,6 +26,43 @@ namespace xor
         {
             object->SetName(name.wideStr().c_str());
         }
+
+        static bool compileShader(const BuildInfo &shaderBuildInfo)
+        {
+            log("Pipeline", "Compiling shader %s\n", shaderBuildInfo.target.cStr());
+
+            String output;
+            String errors;
+
+            int returnCode = shellCommand(
+                shaderBuildInfo.buildExe,
+                shaderBuildInfo.buildArgs,
+                &output,
+                &errors);
+
+            if (output) log(nullptr, "%s", output.cStr());
+            if (errors) log(nullptr, "%s", errors.cStr());
+
+            return returnCode == 0;
+        }
+
+        struct ShaderBinary : public D3D12_SHADER_BYTECODE
+        {
+            std::vector<uint8_t> bytecode;
+
+            ShaderBinary()
+            {
+                pShaderBytecode = nullptr;
+                BytecodeLength  = 0;
+            }
+
+            ShaderBinary(const String &filename)
+            {
+                bytecode = File(filename).read();
+                pShaderBytecode = bytecode.data();
+                BytecodeLength  = bytecode.size();
+            }
+        };
 
         struct CompletionCallback
         {
@@ -98,6 +142,23 @@ namespace xor
             }
         };
 
+        struct ShaderLoader
+        {
+            struct ShaderData
+            {
+                std::shared_ptr<const BuildInfo> buildInfo;
+                std::unordered_map<PipelineState *, std::weak_ptr<PipelineState>> users;
+
+                void rebuildPipelines();
+            };
+
+            std::unordered_map<String, std::shared_ptr<ShaderData>> shaderData;
+            std::vector<String> shaderScanQueue;
+            size_t shaderScanIndex = 0;
+
+            void scanChangedSources();
+        };
+
         struct CommandListState
         {
             Device::Weak        device;
@@ -128,6 +189,8 @@ namespace xor
             ViewHeap rtvs;
 
             std::priority_queue<CompletionCallback> completionCallbacks;
+
+            std::shared_ptr<ShaderLoader> shaderLoader;
 
             ~DeviceState()
             {
@@ -252,16 +315,124 @@ namespace xor
             }
         };
 
-        struct PipelineState
+        struct PipelineState : public std::enable_shared_from_this<PipelineState>
         {
             Device::Weak device;
+            std::shared_ptr<Pipeline::Graphics> graphicsInfo;
             ComPtr<ID3D12PipelineState> pso;
+
+            ShaderBinary loadShader(Device &device, StringView name)
+            {
+                if (!name)
+                    return ShaderBinary();
+
+                String shaderPath = File::canonicalize(name + ShaderFileExtension, true);
+
+                auto &loader = *device->shaderLoader;
+                if (auto data = loader.shaderData[shaderPath])
+                {
+                    if (data->buildInfo->isTargetOutOfDate())
+                        compileShader(*data->buildInfo);
+
+                    data->users[this] = shared_from_this();
+                }
+
+                log("Pipeline", "Loading shader %s\n", shaderPath.cStr());
+                return ShaderBinary(shaderPath);
+            }
+
+            void reload()
+            {
+                auto dev = Device::parent(device);
+
+                log("Pipeline", "Rebuilding PSO.\n");
+
+                D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = *graphicsInfo;
+
+                ShaderBinary vs = loadShader(dev, graphicsInfo->m_vs);
+                ShaderBinary ps = loadShader(dev, graphicsInfo->m_ps);
+
+                if (graphicsInfo->m_vs)
+                {
+                    dev.collectRootSignature(vs);
+                    desc.VS = vs;
+                }
+                else
+                {
+                    zero(desc.VS);
+                }
+
+                if (graphicsInfo->m_ps)
+                {
+                    dev.collectRootSignature(ps);
+                    desc.PS = ps;
+                }
+                else
+                {
+                    zero(desc.PS);
+                }
+
+                releasePSO();
+
+                XOR_CHECK_HR(dev.device()->CreateGraphicsPipelineState(
+                    &desc,
+                    __uuidof(ID3D12PipelineState),
+                    &pso));
+            }
+
+            void releasePSO()
+            {
+                if (!pso)
+                    return;
+
+                Device::parent(device).whenCompleted([pso = std::move(pso)] {});
+            }
 
             ~PipelineState()
             {
-                Device::parent(device).whenCompleted([pso = std::move(pso)] {});
+                releasePSO();
             }
         };
+
+        void ShaderLoader::scanChangedSources()
+        {
+            if (shaderScanQueue.empty())
+                return;
+
+            shaderScanIndex = (shaderScanIndex + 1) % shaderScanQueue.size();
+            auto &shader = shaderScanQueue[shaderScanIndex];
+            auto it = shaderData.find(shader);
+            if (it != shaderData.end())
+            {
+                auto &data = *it->second;
+                if (data.buildInfo->isTargetOutOfDate())
+                {
+                    log("ShaderLoader",
+                        "%s is out of date.\n",
+                        data.buildInfo->target.cStr());
+
+                    data.rebuildPipelines();
+                }
+            }
+        }
+
+        void ShaderLoader::ShaderData::rebuildPipelines()
+        {
+            std::vector<std::shared_ptr<PipelineState>> pipelinesToRebuild;
+            pipelinesToRebuild.reserve(users.size());
+            for (auto &kv : users)
+            {
+                if (auto p = kv.second.lock())
+                    pipelinesToRebuild.emplace_back(std::move(p));
+            }
+
+            users.clear();
+            for (auto &p : pipelinesToRebuild)
+            {
+                p->reload();
+                users[p.get()] = p;
+            }
+        }
     }
 
     using namespace xor::backend;
@@ -278,6 +449,8 @@ namespace xor
         }
 
         auto factory = dxgiFactory();
+
+        m_shaderLoader = std::make_shared<ShaderLoader>();
 
         {
             uint i = 0;
@@ -296,8 +469,9 @@ namespace xor
                         XOR_CHECK_HR(adapter.As(&a.m_adapter));
                         DXGI_ADAPTER_DESC2 desc = {};
                         XOR_CHECK_HR(a.m_adapter->GetDesc2(&desc));
-                        a.m_description = String(desc.Description);
-                        a.m_debug = debugLayer == DebugLayer::Enabled;
+                        a.m_description  = String(desc.Description);
+                        a.m_debug        = debugLayer == DebugLayer::Enabled;
+                        a.m_shaderLoader = m_shaderLoader;
                     }
                     break;
                 case DXGI_ERROR_NOT_FOUND:
@@ -329,9 +503,26 @@ namespace xor
         return m_adapters[0];
     }
 
+    void Xor::registerShaderTlog(StringView projectName, StringView shaderTlogPath)
+    {
+        for (auto &buildInfo : scanBuildInfos(shaderTlogPath, ShaderFileExtension))
+        {
+            auto &shaderPath = buildInfo->target;
+            auto &data = m_shaderLoader->shaderData[shaderPath];
+
+            if (!data)
+            {
+                data = std::make_shared<ShaderLoader::ShaderData>();
+                m_shaderLoader->shaderScanQueue.emplace_back(shaderPath);
+                data->buildInfo = buildInfo;
+                log("ShaderLoader", "Registering shader %s for tracking.\n", shaderPath.cStr());
+            }
+        }
+    }
+
     Device Adapter::createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel)
     {
-        Device device = Device(m_adapter, minimumFeatureLevel);
+        Device device = Device(m_adapter, minimumFeatureLevel, m_shaderLoader);
 
         ComPtr<ID3D12InfoQueue> infoQueue;
         if (false && m_debug && device->device.As(&infoQueue) == S_OK)
@@ -344,11 +535,14 @@ namespace xor
         return device;
     }
 
-    Device::Device(ComPtr<IDXGIAdapter3> adapter, D3D_FEATURE_LEVEL minimumFeatureLevel)
+    Device::Device(ComPtr<IDXGIAdapter3> adapter,
+                   D3D_FEATURE_LEVEL minimumFeatureLevel,
+                   std::shared_ptr<ShaderLoader> shaderLoader)
     {
         makeState();
 
-        m_state->adapter = std::move(adapter);
+        m_state->adapter      = std::move(adapter);
+        m_state->shaderLoader = std::move(shaderLoader);
 
         XOR_CHECK_HR(D3D12CreateDevice(
             m_state->adapter.Get(),
@@ -454,23 +648,6 @@ namespace xor
         return swapChain;
     }
 
-    struct ShaderBinary : public File, public D3D12_SHADER_BYTECODE
-    {
-        ShaderBinary()
-        {
-            pShaderBytecode = nullptr;
-            BytecodeLength  = 0;
-        }
-
-        ShaderBinary(const String &filename)
-            : File(filename, Mode::ReadMapped)
-        {
-            XOR_CHECK_HR(hr());
-            pShaderBytecode = data();
-            BytecodeLength  = size();
-        }
-    };
-
     Pipeline::Graphics::Graphics()
         : D3D12_GRAPHICS_PIPELINE_STATE_DESC {}
     {
@@ -538,29 +715,12 @@ namespace xor
 
     Pipeline Device::createGraphicsPipeline(const Pipeline::Graphics &info)
     {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = info;
-
-        ShaderBinary vs;
-        ShaderBinary ps;
-
-        static const char ShaderFileExtension[] = ".cso";
-        if (info.m_vs) vs = ShaderBinary(info.m_vs + ShaderFileExtension);
-        if (info.m_ps) ps = ShaderBinary(info.m_ps + ShaderFileExtension);
-
-        collectRootSignature(vs);
-        collectRootSignature(ps);
-
-        desc.VS = vs;
-        desc.PS = ps;
 
         Pipeline pipeline;
         pipeline.makeState();
-        pipeline->device = weak();
-        XOR_CHECK_HR(device()->CreateGraphicsPipelineState(
-            &desc,
-            __uuidof(ID3D12PipelineState),
-            &pipeline->pso));
-
+        pipeline->device       = weak();
+        pipeline->graphicsInfo = std::make_shared<Pipeline::Graphics>(info);
+        pipeline->reload();
         return pipeline;
     }
 
@@ -665,6 +825,7 @@ namespace xor
         // been started but not executed. Otherwise, deadlock could result.
         backbuffer.seqNum = m_state->newestExecuted;
         swapChain->swapChain->Present(vsync ? 1 : 0, 0);
+        m_state->shaderLoader->scanChangedSources();
         m_state->retireCommandLists();
     }
 

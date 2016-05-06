@@ -8,8 +8,7 @@
 
 namespace xor
 {
-    using namespace std::experimental::filesystem;
-    // TODO: Move to std::filesystem::path
+    namespace fs = std::experimental::filesystem;
 
     class File
     {
@@ -34,7 +33,6 @@ namespace xor
 
         File() = default;
         File(const String &filename, Mode mode = Mode::ReadOnly, Create create = Create::DontCreate);
-        File(const path &path, Mode mode = Mode::ReadOnly, Create create = Create::DontCreate);
 
         File(File &&) = default;
         File &operator=(File &&) = default;
@@ -62,7 +60,16 @@ namespace xor
         std::vector<uint8_t> read();
         String readText();
         std::wstring readWideText();
+
+        static bool exists(const String &path);
+        static uint64_t lastWritten(const String &path);
+        static String canonicalize(const String &path, bool absolute = false);
     };
+
+    int shellCommand(const String &exe, StringView args,
+                     String *stdOut      = nullptr,
+                     String *stdErr      = nullptr,
+                     const String *stdIn = nullptr);
 
     std::vector<String> listFiles(const String &path, const String &pattern = "*");
     std::vector<String> searchFiles(const String &path, const String &pattern);

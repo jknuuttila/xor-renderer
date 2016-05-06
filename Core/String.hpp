@@ -417,14 +417,12 @@ namespace xor
 
         static String format(const char *fmt, ...);
 
-        template <typename... Ts>
-        static String format(const String &fmt, Ts... ts)
-        {
-            return format(fmt.c_str(), ts...);
-        }
-
         const char *cStr() const { return m_str.c_str(); }
         std::wstring wideStr() const;
+        std::experimental::filesystem::path path() const
+        {
+            return std::experimental::filesystem::path(wideStr());
+        }
 
         template <typename SpanOfStrings>
         static String join(const SpanOfStrings &strings, StringView separator = " ")

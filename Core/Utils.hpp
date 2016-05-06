@@ -114,6 +114,12 @@ namespace xor
         explicit operator bool() const { return static_cast<bool>(m_handle); }
         HANDLE get() const { return m_handle; }
 
+        HANDLE *outRef()
+        {
+            close();
+            return &m_handle.p;
+        }
+
         void close()
         {
             if (m_handle)

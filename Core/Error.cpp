@@ -17,7 +17,7 @@ namespace xor
                 {
                     va_list ap;
                     va_start(ap, fmt);
-                    print(fmt, ap);
+                    vprint(fmt, ap);
                     va_end(ap);
                 }
                 else

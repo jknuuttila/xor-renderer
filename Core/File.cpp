@@ -186,10 +186,6 @@ namespace xor
         }
     }
 
-    File::File(const path & path, Mode mode, Create create)
-        : File(String(path.string()), mode, create)
-    {}
-
     size_t File::size() const
     {
         LARGE_INTEGER sz = {};
@@ -347,5 +343,153 @@ namespace xor
         length = bytes / sizeof(wchar_t);
         contents.resize(length);
         return contents;
+    }
+
+    bool File::exists(const String & path)
+    {
+        return fs::exists(fs::path(path.cStr()));
+    }
+
+    uint64_t File::lastWritten(const String & path)
+    {
+        WIN32_FILE_ATTRIBUTE_DATA info = {};
+
+        if (!GetFileAttributesExA(path.cStr(), GetFileExInfoStandard, &info))
+            return 0;
+
+        return (static_cast<uint64_t>(info.ftLastWriteTime.dwHighDateTime) << 32)
+            | static_cast<uint64_t>(info.ftLastWriteTime.dwLowDateTime);
+    }
+
+    String File::canonicalize(const String &path, bool absolute)
+    {
+        String absPath;
+        if (absolute)
+            absPath = fs::absolute(path.cStr());
+
+        // TODO: Proper casing
+        return absPath ? absPath.lower() : path.lower();
+    }
+
+    struct Pipe
+    {
+        Handle read;
+        Handle write;
+
+        Pipe() = default;
+        static Pipe create()
+        {
+            Pipe p;
+
+            SECURITY_ATTRIBUTES security = {};
+            security.nLength              = sizeof(security);
+            security.lpSecurityDescriptor = nullptr;
+            security.bInheritHandle       = true;
+
+            if (!CreatePipe(p.read.outRef(), p.write.outRef(), &security, 0))
+                XOR_CHECK_LAST_ERROR();
+
+            return p;
+        }
+
+        explicit operator bool() const
+        {
+            return read && write;
+        }
+
+        void writeTo(StringView text)
+        {
+            if (!WriteFile(write.get(),
+                           text.data(), static_cast<DWORD>(text.size()),
+                           nullptr,
+                           nullptr))
+                XOR_CHECK_LAST_ERROR();
+        }
+
+        String readFrom()
+        {
+            static const DWORD ChunkSize = 4096;
+
+            size_t len = 0;
+            std::string s;
+
+            for (;;)
+            {
+                DWORD bytes = 0;
+                if (!PeekNamedPipe(read.get(),
+                                   nullptr, 0, nullptr,
+                                   &bytes, nullptr))
+                    XOR_CHECK_LAST_ERROR();
+
+                if (bytes == 0)
+                    break;
+
+                auto toRead = std::min(bytes, ChunkSize);
+                auto tail = s.size();
+
+                s.resize(s.size() + toRead);
+
+                DWORD got = 0;
+                if (!ReadFile(read.get(), &s[tail], toRead, &got, nullptr))
+                    XOR_CHECK_LAST_ERROR();
+
+                len += got;
+            }
+            s.resize(len);
+            return String(std::move(s));
+        }
+    };
+
+    int shellCommand(const String &exe, StringView args,
+                     String * stdOut,
+                     String * stdErr,
+                     const String * stdIn)
+    {
+        std::string commandLine = String::format(
+            "\"%s\" %s", exe.cStr(), args.str().cStr()).stdString();
+
+        STARTUPINFOA startupInfo = {};
+        startupInfo.cb      = sizeof(startupInfo);
+        startupInfo.dwFlags = STARTF_USESTDHANDLES;
+
+        Pipe out               = Pipe::create();
+        Pipe err               = Pipe::create();
+        Pipe in                = Pipe::create();
+        startupInfo.hStdOutput = out.write.get();
+        startupInfo.hStdError  = err.write.get();
+        startupInfo.hStdOutput = in.read.get();
+
+        PROCESS_INFORMATION procInfo = {};
+        if (!CreateProcessA(
+            exe.cStr(),
+            &commandLine[0],
+            nullptr,
+            nullptr,
+            true,
+            0,
+            nullptr,
+            nullptr,
+            &startupInfo,
+            &procInfo))
+            XOR_CHECK_LAST_ERROR();
+
+        if (stdIn)
+            in.writeTo(*stdIn);
+
+        WaitForSingleObject(procInfo.hProcess, INFINITE);
+
+        if (stdErr)
+            *stdErr = err.readFrom();
+        if (stdOut)
+            *stdOut = out.readFrom();
+
+        DWORD exitCode = 0;
+        if (!GetExitCodeProcess(procInfo.hProcess, &exitCode))
+            XOR_CHECK_LAST_ERROR();
+
+        CloseHandle(procInfo.hProcess);
+        CloseHandle(procInfo.hThread);
+
+        return static_cast<int>(exitCode);
     }
 }
