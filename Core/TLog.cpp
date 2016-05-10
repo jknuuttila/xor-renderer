@@ -148,17 +148,21 @@ namespace xor
 
     bool BuildInfo::isTargetOutOfDate() const
     {
-        uint64_t targetTimestamp = File::lastWritten(target);
+        return targetTimestamp() < sourceTimestamp();
+    }
 
-        if (File::lastWritten(source) > targetTimestamp)
-            return true;
+    uint64_t BuildInfo::targetTimestamp() const
+    {
+        return File::lastWritten(target);
+    }
+
+    uint64_t BuildInfo::sourceTimestamp() const
+    {
+        uint64_t timestamp = File::lastWritten(source);
 
         for (auto &dep : dependencies)
-        {
-            if (File::lastWritten(dep) > targetTimestamp)
-                return true;
-        }
+            timestamp = std::max(timestamp, File::lastWritten(dep));
 
-        return false;
+        return timestamp;
     }
 }

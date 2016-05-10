@@ -23,6 +23,8 @@ namespace xor
         String buildArgs;
 
         bool isTargetOutOfDate() const;
+        uint64_t targetTimestamp() const;
+        uint64_t sourceTimestamp() const;
     };
 
     std::vector<std::shared_ptr<const BuildInfo>> scanBuildInfos(const String &tlogDirectory, const String &extension = String());

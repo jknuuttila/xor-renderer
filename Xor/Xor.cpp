@@ -148,8 +148,13 @@ namespace xor
             {
                 std::shared_ptr<const BuildInfo> buildInfo;
                 std::unordered_map<PipelineState *, std::weak_ptr<PipelineState>> users;
+                uint64_t timestamp = 0;
 
                 void rebuildPipelines();
+                bool isOutOfDate() const
+                {
+                    return timestamp < buildInfo->sourceTimestamp();
+                }
             };
 
             std::unordered_map<String, std::shared_ptr<ShaderData>> shaderData;
@@ -157,6 +162,7 @@ namespace xor
             size_t shaderScanIndex = 0;
 
             void scanChangedSources();
+            void registerBuildInfo(std::shared_ptr<const BuildInfo> buildInfo);
         };
 
         struct CommandListState
@@ -331,8 +337,20 @@ namespace xor
                 auto &loader = *device->shaderLoader;
                 if (auto data = loader.shaderData[shaderPath])
                 {
-                    if (data->buildInfo->isTargetOutOfDate())
+                    if (data->timestamp == 0)
+                        data->timestamp = data->buildInfo->targetTimestamp();
+
+                    uint64_t sourceTimestamp = data->buildInfo->sourceTimestamp();
+
+                    if (data->timestamp < sourceTimestamp)
+                    {
                         compileShader(*data->buildInfo);
+                        data->timestamp = sourceTimestamp;
+                    }
+                    else
+                    {
+                        log("Pipeline", "Shader has not been modified since last compile.\n");
+                    }
 
                     data->users[this] = shared_from_this();
                 }
@@ -405,7 +423,7 @@ namespace xor
             if (it != shaderData.end())
             {
                 auto &data = *it->second;
-                if (data.buildInfo->isTargetOutOfDate())
+                if (data.isOutOfDate())
                 {
                     log("ShaderLoader",
                         "%s is out of date.\n",
@@ -413,6 +431,21 @@ namespace xor
 
                     data.rebuildPipelines();
                 }
+            }
+        }
+
+        void ShaderLoader::registerBuildInfo(std::shared_ptr<const BuildInfo> buildInfo)
+        {
+            auto &shaderPath = buildInfo->target;
+            auto &data = shaderData[shaderPath];
+
+            if (!data)
+            {
+                data = std::make_shared<ShaderLoader::ShaderData>();
+                shaderScanQueue.emplace_back(shaderPath);
+                data->buildInfo = buildInfo;
+                data->timestamp = data->buildInfo->targetTimestamp();
+                log("ShaderLoader", "Registering shader %s for tracking.\n", shaderPath.cStr());
             }
         }
 
@@ -506,18 +539,7 @@ namespace xor
     void Xor::registerShaderTlog(StringView projectName, StringView shaderTlogPath)
     {
         for (auto &buildInfo : scanBuildInfos(shaderTlogPath, ShaderFileExtension))
-        {
-            auto &shaderPath = buildInfo->target;
-            auto &data = m_shaderLoader->shaderData[shaderPath];
-
-            if (!data)
-            {
-                data = std::make_shared<ShaderLoader::ShaderData>();
-                m_shaderLoader->shaderScanQueue.emplace_back(shaderPath);
-                data->buildInfo = buildInfo;
-                log("ShaderLoader", "Registering shader %s for tracking.\n", shaderPath.cStr());
-            }
-        }
+            m_shaderLoader->registerBuildInfo(buildInfo);
     }
 
     Device Adapter::createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel)
