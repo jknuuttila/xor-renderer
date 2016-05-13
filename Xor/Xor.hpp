@@ -47,7 +47,7 @@ namespace xor
         String                                 m_description;
         bool                                   m_debug = false;
     public:
-        Device createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel = D3D_FEATURE_LEVEL_12_0);
+        Device createDevice();
     };
 
     class SwapChain;
@@ -100,10 +100,12 @@ namespace xor
         void collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
 
         Device(ComPtr<IDXGIAdapter3> adapter,
-               D3D_FEATURE_LEVEL minimumFeatureLevel,
+               ComPtr<ID3D12Device> device,
                std::shared_ptr<backend::ShaderLoader> shaderLoader);
     public:
         Device() = default;
+
+        explicit operator bool() const { return static_cast<bool>(m_state); }
 
         SwapChain createSwapChain(Window &window);
         Pipeline createGraphicsPipeline(const Pipeline::Graphics &info);
@@ -233,6 +235,7 @@ namespace xor
 
         span<Adapter> adapters();
         Adapter &defaultAdapter();
+        Device defaultDevice();
 
         void registerShaderTlog(StringView projectName,
                                 StringView shaderTlogPath);

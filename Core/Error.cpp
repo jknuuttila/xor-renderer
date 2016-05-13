@@ -1,5 +1,6 @@
 #include "Error.hpp"
 #include "Log.hpp"
+#include "String.hpp"
 
 #include <comdef.h>
 
@@ -55,4 +56,9 @@ namespace xor
 
     }
 
+    String errorMessage(HRESULT hr)
+    {
+        _com_error err(hr);
+        return String(err.ErrorMessage());
+    }
 }

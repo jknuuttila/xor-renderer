@@ -533,7 +533,20 @@ namespace xor
     Adapter & Xor::defaultAdapter()
     {
         XOR_CHECK(!m_adapters.empty(), "No adapters detected!");
-        return m_adapters[0];
+        return m_adapters.front();
+    }
+
+    Device Xor::defaultDevice()
+    {
+        for (auto &adapter : m_adapters)
+        {
+            if (Device device = adapter.createDevice())
+                return device;
+        }
+
+        XOR_CHECK(false, "Failed to find a Direct3D 12 device.");
+
+        return Device();
     }
 
     void Xor::registerShaderTlog(StringView projectName, StringView shaderTlogPath)
@@ -542,37 +555,44 @@ namespace xor
             m_shaderLoader->registerBuildInfo(buildInfo);
     }
 
-    Device Adapter::createDevice(D3D_FEATURE_LEVEL minimumFeatureLevel)
+    Device Adapter::createDevice()
     {
-        Device device = Device(m_adapter, minimumFeatureLevel, m_shaderLoader);
+        ComPtr<ID3D12Device> device;
+
+        auto hr = D3D12CreateDevice(
+            m_adapter.Get(),
+            D3D_FEATURE_LEVEL_12_0,
+            __uuidof(ID3D12Device),
+            &device);
+
+        if (FAILED(hr))
+        {
+            log("Adapter", "Failed to create device: %s\n", errorMessage(hr).cStr());
+            return Device();
+        }
+
+        setName(device, "Device");
 
         ComPtr<ID3D12InfoQueue> infoQueue;
-        if (false && m_debug && device->device.As(&infoQueue) == S_OK)
+        if (m_debug && device.As(&infoQueue) == S_OK)
         {
             infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
             infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR,      TRUE);
             infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING,    TRUE);
         }
 
-        return device;
+        return Device(m_adapter, std::move(device), m_shaderLoader);
     }
 
     Device::Device(ComPtr<IDXGIAdapter3> adapter,
-                   D3D_FEATURE_LEVEL minimumFeatureLevel,
+                   ComPtr<ID3D12Device> dev,
                    std::shared_ptr<ShaderLoader> shaderLoader)
     {
         makeState();
 
         m_state->adapter      = std::move(adapter);
         m_state->shaderLoader = std::move(shaderLoader);
-
-        XOR_CHECK_HR(D3D12CreateDevice(
-            m_state->adapter.Get(),
-            minimumFeatureLevel,
-            __uuidof(ID3D12Device),
-            &m_state->device));
-
-        setName(m_state->device, "Device");
+        m_state->device       = std::move(dev);
 
         {
             D3D12_COMMAND_QUEUE_DESC desc = {};

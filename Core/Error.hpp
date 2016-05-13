@@ -26,6 +26,8 @@ namespace xor
         bool checkLastErrorImpl();
     }
 
+    class String;
+    String errorMessage(HRESULT hr);
 }
 
 #define XOR_CHECK(cond, ...)   XOR_DEBUG_BREAK_IF_FALSE(::xor::detail::checkImpl(cond, ## __VA_ARGS__))

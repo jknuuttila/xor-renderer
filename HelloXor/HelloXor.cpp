@@ -17,7 +17,7 @@ public:
     {
         xor.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
 
-        device    = xor.defaultAdapter().createDevice();
+        device    = xor.defaultDevice();
         swapChain = device.createSwapChain(*this);
         hello     = device.createGraphicsPipeline(
             Pipeline::Graphics()
