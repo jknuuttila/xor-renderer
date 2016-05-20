@@ -210,6 +210,12 @@ namespace xor
 
                     executedCommandLists.front().waitUntilCompleted();
                 }
+
+                // When using WARP, the debug layer often complains
+                // about releasing stuff too early, even if all command lists
+                // executed by us have finished. Waiting a while seems to
+                // work around this issue.
+                Sleep(50);
 #if 0
                 ComPtr<ID3D12DebugDevice> debug;
                 XOR_CHECK_HR(device.As(&debug));
@@ -307,12 +313,12 @@ namespace xor
             }
         };
 
-        struct ViewState
+        struct DescriptorViewState
         {
             Device::Weak device;
             Descriptor descriptor;
 
-            ~ViewState()
+            ~DescriptorViewState()
             {
                 Device::parent(device).whenCompleted([device = device, descriptor = descriptor] () mutable
                 {

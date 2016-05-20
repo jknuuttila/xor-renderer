@@ -23,8 +23,9 @@ namespace xor
         struct CommandListState;
         struct SwapChainState;
         struct ResourceState;
-        struct ViewState;
+        struct DescriptorViewState;
         struct PipelineState;
+        struct BufferState;
 
         template <typename T>
         struct SharedState
@@ -80,17 +81,126 @@ namespace xor
         };
     };
 
+    class Resource : private backend::SharedState<backend::ResourceState>
+    {
+        friend class Device;
+        friend class CommandList;
+        ID3D12Resource *get();
+    public:
+        Resource() = default;
+
+        D3D12_RESOURCE_DESC desc() const;
+    };
+
+    class Format
+    {
+        uint16_t m_dxgiFormat  = static_cast<uint16_t>(DXGI_FORMAT_UNKNOWN);
+        uint16_t m_elementSize = 0;
+    public:
+        Format(DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN)
+            : m_dxgiFormat(static_cast<uint16_t>(format))
+        {}
+
+        static Format structure(size_t structSize)
+        {
+            Format f;
+            XOR_ASSERT(structSize <= std::numeric_limits<uint16_t>::max(),
+                       "Struct sizes above 64k not supported.");
+            f.m_elementSize = static_cast<uint16_t>(structSize);
+            return f;
+        }
+        template <typename T>
+        static Format structure() { return structure(sizeof(T)); }
+
+        DXGI_FORMAT dxgiFormat() const
+        {
+            return static_cast<DXGI_FORMAT>(m_dxgiFormat);
+        }
+
+        explicit operator bool() const
+        {
+            return (dxgiFormat() != DXGI_FORMAT_UNKNOWN) || m_elementSize;
+        }
+
+        operator DXGI_FORMAT() const { return dxgiFormat(); }
+    };
+
+    class Buffer : public Resource
+    {
+        friend class Device;
+        friend class CommandList;
+    public:
+        Buffer() = default;
+
+        class Info
+        {
+            std::function<void(CommandList &cmd)> m_initializer;
+            D3D12_RESOURCE_DESC get();
+        public:
+            size_t size = 0;
+            Format format;
+
+            Info() = default;
+            Info(size_t sizeBytes);
+            Info(size_t size, Format format);
+            Info(span<const uint8_t> data, Format format);
+
+            template <typename T>
+            Info(span<const T> data, Format format = Format::structure<T>())
+                : Info(as_bytes(data), format)
+            {}
+        };
+    private:
+        std::shared_ptr<Info> m_info;
+    };
+
+    class Texture : public Resource
+    {
+        friend class Device;
+        friend class CommandList;
+    public:
+        Texture() = default;
+    };
+
+    class DescriptorView : private backend::SharedState<backend::DescriptorViewState>
+    {
+        friend class Device;
+        friend class CommandList;
+    public:
+        DescriptorView() = default;
+    };
+
+    class RTV : public DescriptorView
+    {
+        friend class Device;
+        friend class CommandList;
+        Texture m_texture;
+    public:
+        Texture texture();
+    };
+
+    class BufferVBV
+    {
+        friend class Device;
+        friend class CommandList;
+        Buffer m_buffer;
+        D3D12_VERTEX_BUFFER_VIEW m_vbv;
+    public:
+        BufferVBV() = default;
+        Buffer buffer();
+    };
+
     class Device : private backend::SharedState<backend::DeviceState>
     {
         friend class Adapter;
         friend class CommandList;
-        friend class View;
+        friend class DescriptorView;
         friend class SwapChain;
         friend struct backend::DeviceState;
         friend struct backend::CommandListState;
         friend struct backend::SwapChainState;
         friend struct backend::ResourceState;
-        friend struct backend::ViewState;
+        friend struct backend::DescriptorViewState;
         friend struct backend::PipelineState;
 
         static Device parent(Weak &parentDevice);
@@ -110,6 +220,10 @@ namespace xor
         SwapChain createSwapChain(Window &window);
         Pipeline createGraphicsPipeline(const Pipeline::Graphics &info);
 
+        Buffer    createBuffer(const Buffer::Info &info);
+        BufferVBV createBufferVBV(Buffer buffer                 , const BufferVBV::Info &viewInfo = BufferVBV::Info());
+        BufferVBV createBufferVBV(const Buffer::Info &bufferInfo, const BufferVBV::Info &viewInfo = BufferVBV::Info());
+
         CommandList graphicsCommandList();
 
         void execute(CommandList &cmd);
@@ -121,42 +235,6 @@ namespace xor
         bool hasCompleted(SeqNum seqNum);
         void waitUntilCompleted(SeqNum seqNum);
         void waitUntilDrained();
-    };
-
-    class Resource : private backend::SharedState<backend::ResourceState>
-    {
-        friend class Device;
-        friend class CommandList;
-    public:
-        Resource() = default;
-
-        D3D12_RESOURCE_DESC desc() const;
-        ID3D12Resource *get();
-    };
-
-    class View : private backend::SharedState<backend::ViewState>
-    {
-        friend class Device;
-        friend class CommandList;
-    public:
-        View() = default;
-    };
-
-    class Texture : public Resource
-    {
-        friend class Device;
-        friend class CommandList;
-    public:
-        Texture() = default;
-    };
-
-    class RTV : public View
-    {
-        friend class Device;
-        friend class CommandList;
-        Texture m_texture;
-    public:
-        Texture texture();
     };
 
     class Barrier : public D3D12_RESOURCE_BARRIER

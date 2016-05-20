@@ -10,7 +10,16 @@ class HelloXor : public Window
     Device device;
     SwapChain swapChain;
     Pipeline hello;
+    BufferVBV vertexBuffer;
     Timer time;
+
+    struct Vertex
+    {
+        float2 pos;
+        float2 uv;
+        float3 color;
+    };
+
 public:
     HelloXor()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
@@ -24,6 +33,16 @@ public:
             .vertexShader("Hello.vs")
             .pixelShader("Hello.ps")
             .renderTargetFormats({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB}));
+
+        static const float D = .75f;
+        Vertex vertices[] = {
+            { float2(-D, +D), float2(0, 0), float3(1, 0, 0) },
+            { float2(-D, -D), float2(0, 1), float3(0, 1, 0) },
+            { float2(+D, -D), float2(1, 0), float3(0, 0, 1) },
+            { float2(+D,  D), float2(1, 1), float3(1, 0, 1) },
+        };
+
+        vertexBuffer = device.createBufferVBV(as_span(vertices));
     }
 
     void keyDown(int keyCode) override
