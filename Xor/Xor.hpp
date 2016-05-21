@@ -14,6 +14,39 @@ namespace xor
 {
     class Device;
 
+    class Format
+    {
+        uint16_t m_dxgiFormat  = static_cast<uint16_t>(DXGI_FORMAT_UNKNOWN);
+        uint16_t m_elementSize = 0;
+    public:
+        Format(DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN)
+            : m_dxgiFormat(static_cast<uint16_t>(format))
+        {}
+
+        static Format structure(size_t structSize)
+        {
+            Format f;
+            XOR_ASSERT(structSize <= std::numeric_limits<uint16_t>::max(),
+                       "Struct sizes above 64k not supported.");
+            f.m_elementSize = static_cast<uint16_t>(structSize);
+            return f;
+        }
+        template <typename T>
+        static Format structure() { return structure(sizeof(T)); }
+
+        DXGI_FORMAT dxgiFormat() const
+        {
+            return static_cast<DXGI_FORMAT>(m_dxgiFormat);
+        }
+
+        explicit operator bool() const
+        {
+            return (dxgiFormat() != DXGI_FORMAT_UNKNOWN) || m_elementSize;
+        }
+
+        operator DXGI_FORMAT() const { return dxgiFormat(); }
+    };
+
     namespace backend
     {
         struct Descriptor;
@@ -35,7 +68,26 @@ namespace xor
             std::shared_ptr<T> m_state;
             void makeState() { m_state = std::make_shared<T>(); }
             Weak weak() { return m_state; }
-            T *operator->() { return m_state.get(); }
+            T &S() { return *m_state; }
+        };
+
+        class BufferViewInfo
+        {
+        public:
+            size_t firstElement = 0;
+            size_t numElements  = 0;
+            Format format;
+        };
+
+        class BufferViewInfoBuilder : public BufferViewInfo 
+        {
+        public:
+            BufferViewInfoBuilder() = default;
+            BufferViewInfoBuilder(const BufferViewInfo &info) : BufferViewInfo(info) {}
+
+            BufferViewInfoBuilder &firstElement(size_t index) { BufferViewInfo::firstElement = index; return *this; }
+            BufferViewInfoBuilder &numElements(size_t count) { BufferViewInfo::numElements = count; return *this; }
+            BufferViewInfoBuilder &format(Format format) { BufferViewInfo::format = format; return *this; }
         };
     }
 
@@ -85,44 +137,11 @@ namespace xor
     {
         friend class Device;
         friend class CommandList;
-        ID3D12Resource *get();
     public:
         Resource() = default;
 
         D3D12_RESOURCE_DESC desc() const;
-    };
-
-    class Format
-    {
-        uint16_t m_dxgiFormat  = static_cast<uint16_t>(DXGI_FORMAT_UNKNOWN);
-        uint16_t m_elementSize = 0;
-    public:
-        Format(DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN)
-            : m_dxgiFormat(static_cast<uint16_t>(format))
-        {}
-
-        static Format structure(size_t structSize)
-        {
-            Format f;
-            XOR_ASSERT(structSize <= std::numeric_limits<uint16_t>::max(),
-                       "Struct sizes above 64k not supported.");
-            f.m_elementSize = static_cast<uint16_t>(structSize);
-            return f;
-        }
-        template <typename T>
-        static Format structure() { return structure(sizeof(T)); }
-
-        DXGI_FORMAT dxgiFormat() const
-        {
-            return static_cast<DXGI_FORMAT>(m_dxgiFormat);
-        }
-
-        explicit operator bool() const
-        {
-            return (dxgiFormat() != DXGI_FORMAT_UNKNOWN) || m_elementSize;
-        }
-
-        operator DXGI_FORMAT() const { return dxgiFormat(); }
+        ID3D12Resource *get();
     };
 
     class Buffer : public Resource
@@ -141,8 +160,11 @@ namespace xor
             Format format;
 
             Info() = default;
-            Info(size_t sizeBytes);
-            Info(size_t size, Format format);
+            Info(size_t sizeBytes) : size(sizeBytes) {}
+            Info(size_t size, Format format)
+                : size(size)
+                , format(format)
+            {}
             Info(span<const uint8_t> data, Format format);
 
             template <typename T>
@@ -150,8 +172,19 @@ namespace xor
                 : Info(as_bytes(data), format)
             {}
         };
+
+        class Builder : public Info
+        {
+        public:
+            Builder() = default;
+            Builder(const Info &info) : Info(info) {}
+            Builder &size(size_t sz)    { Info::size = sz; return *this; }
+            Builder &format(Format fmt) { Info::format = fmt; return *this; }
+        };
+
+        const Info *operator->() const { return m_info.get(); }
     private:
-        std::shared_ptr<Info> m_info;
+        std::shared_ptr<const Info> m_info;
     };
 
     class Texture : public Resource
@@ -183,11 +216,14 @@ namespace xor
     {
         friend class Device;
         friend class CommandList;
-        Buffer m_buffer;
+        Buffer                   m_buffer;
         D3D12_VERTEX_BUFFER_VIEW m_vbv;
     public:
         BufferVBV() = default;
         Buffer buffer();
+
+        using Info    = backend::BufferViewInfo;
+        using Builder = backend::BufferViewInfoBuilder;
     };
 
     class Device : private backend::SharedState<backend::DeviceState>

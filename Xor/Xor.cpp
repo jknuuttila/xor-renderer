@@ -255,7 +255,7 @@ namespace xor
                 for (uint i = 0; i < completedLists; ++i)
                 {
                     auto &cmd = executedCommandLists[i];
-                    commandListSequence.complete(cmd->seqNum);
+                    commandListSequence.complete(cmd.S().seqNum);
                 }
 
                 // This will also return the command list states to the pool
@@ -322,7 +322,7 @@ namespace xor
             {
                 Device::parent(device).whenCompleted([device = device, descriptor = descriptor] () mutable
                 {
-                    Device::parent(device)->releaseDescriptor(descriptor);
+                    Device::parent(device).S().releaseDescriptor(descriptor);
                 });
             }
         };
@@ -340,7 +340,7 @@ namespace xor
 
                 String shaderPath = File::canonicalize(name + ShaderFileExtension, true);
 
-                auto &loader = *device->shaderLoader;
+                auto &loader = *device.S().shaderLoader;
                 if (auto data = loader.shaderData[shaderPath])
                 {
                     if (data->timestamp == 0)
@@ -634,7 +634,7 @@ namespace xor
         SwapChain swapChain;
         swapChain.makeState();
 
-        swapChain->device = weak();
+        swapChain.S().device = weak();
 
         {
             DXGI_SWAP_CHAIN_DESC1 desc = {};
@@ -660,7 +660,7 @@ namespace xor
                 nullptr,
                 &swapChain1));
 
-            XOR_CHECK_HR(swapChain1.As(&swapChain->swapChain));
+            XOR_CHECK_HR(swapChain1.As(&swapChain.S().swapChain));
         }
 
         for (uint i = 0; i < BufferCount; ++i)
@@ -669,15 +669,15 @@ namespace xor
 
             auto &tex = bb.rtv.m_texture;
             tex.makeState();
-            tex->device = weak();
-            XOR_CHECK_HR(swapChain->swapChain->GetBuffer(
+            tex.S().device = weak();
+            XOR_CHECK_HR(swapChain.S().swapChain->GetBuffer(
                 i,
                 __uuidof(ID3D12Resource),
-                &tex->resource));
+                &tex.S().resource));
 
             bb.rtv.makeState();
-            bb.rtv->device = weak();
-            bb.rtv->descriptor = m_state->rtvs.allocate();
+            bb.rtv.S().device = weak();
+            bb.rtv.S().descriptor = m_state->rtvs.allocate();
             {
                 D3D12_RENDER_TARGET_VIEW_DESC desc = {};
                 desc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -685,12 +685,12 @@ namespace xor
                 desc.Texture2D.MipSlice   = 0;
                 desc.Texture2D.PlaneSlice = 0;
                 device()->CreateRenderTargetView(
-                    tex->resource.Get(),
+                    tex.S().resource.Get(),
                     &desc,
-                    bb.rtv->descriptor.cpu);
+                    bb.rtv.S().descriptor.cpu);
             }
 
-            swapChain->backbuffers.emplace_back(std::move(bb));
+            swapChain.S().backbuffers.emplace_back(std::move(bb));
         }
 
         return swapChain;
@@ -766,9 +766,9 @@ namespace xor
 
         Pipeline pipeline;
         pipeline.makeState();
-        pipeline->device       = weak();
-        pipeline->graphicsInfo = std::make_shared<Pipeline::Graphics>(info);
-        pipeline->reload();
+        pipeline.S().device       = weak();
+        pipeline.S().graphicsInfo = std::make_shared<Pipeline::Graphics>(info);
+        pipeline.S().reload();
         return pipeline;
     }
 
@@ -844,11 +844,11 @@ namespace xor
         });
 
         cmd.reset();
-        cmd->cmd->SetGraphicsRootSignature(m_state->rootSignature.Get());
-        cmd->cmd->SetComputeRootSignature(m_state->rootSignature.Get());
+        cmd.S().cmd->SetGraphicsRootSignature(m_state->rootSignature.Get());
+        cmd.S().cmd->SetComputeRootSignature(m_state->rootSignature.Get());
 
-        ++cmd->timesStarted;
-        cmd->seqNum = m_state->commandListSequence.start();
+        ++cmd.S().timesStarted;
+        cmd.S().seqNum = m_state->commandListSequence.start();
 
         return cmd;
     }
@@ -857,22 +857,22 @@ namespace xor
     {
         cmd.close();
 
-        ID3D12CommandList *cmds[] = { cmd->cmd.Get() };
+        ID3D12CommandList *cmds[] = { cmd.S().cmd.Get() };
         m_state->graphicsQueue->ExecuteCommandLists(1, cmds);
-        m_state->graphicsQueue->Signal(cmd->timesCompleted.Get(), cmd->timesStarted);
+        m_state->graphicsQueue->Signal(cmd.S().timesCompleted.Get(), cmd.S().timesStarted);
 
-        m_state->newestExecuted = std::max(m_state->newestExecuted, cmd->seqNum);
+        m_state->newestExecuted = std::max(m_state->newestExecuted, cmd.S().seqNum);
         m_state->executedCommandLists.emplace_back(std::move(cmd));
     }
 
     void Device::present(SwapChain & swapChain, bool vsync)
     {
-        auto &backbuffer = swapChain->backbuffers[swapChain.currentIndex()];
+        auto &backbuffer = swapChain.S().backbuffers[swapChain.currentIndex()];
         // The backbuffer is assumed to depend on all command lists
         // that have been executed, but not on those which have
         // been started but not executed. Otherwise, deadlock could result.
         backbuffer.seqNum = m_state->newestExecuted;
-        swapChain->swapChain->Present(vsync ? 1 : 0, 0);
+        swapChain.S().swapChain->Present(vsync ? 1 : 0, 0);
         m_state->shaderLoader->scanChangedSources();
         m_state->retireCommandLists();
     }
@@ -971,19 +971,19 @@ namespace xor
     {
         if (m_state)
         {
-            auto &freeCmds = Device::parent(m_state->device)->freeGraphicsCommandLists;
+            auto &freeCmds = Device::parent(m_state->device).S().freeGraphicsCommandLists;
             freeCmds.release(std::move(m_state));
         }
     }
 
     void CommandList::bind(Pipeline &pipeline)
     {
-        cmd()->SetPipelineState(pipeline->pso.Get());
+        cmd()->SetPipelineState(pipeline.S().pso.Get());
     }
 
     void CommandList::clearRTV(RTV &rtv, float4 color)
     {
-        cmd()->ClearRenderTargetView(rtv->descriptor.cpu,
+        cmd()->ClearRenderTargetView(rtv.S().descriptor.cpu,
                                      color.data(),
                                      0,
                                      nullptr);
@@ -1000,7 +1000,7 @@ namespace xor
     void CommandList::setRenderTargets(RTV &rtv)
     {
         cmd()->OMSetRenderTargets(1,
-                                  &rtv->descriptor.cpu,
+                                  &rtv.S().descriptor.cpu,
                                   FALSE,
                                   nullptr);
 
