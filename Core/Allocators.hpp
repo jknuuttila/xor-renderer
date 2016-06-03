@@ -42,7 +42,7 @@ namespace xor
         {}
 
         // Allow access to objects, for e.g. initialization.
-        span<T> span() { return m_objects; }
+        Span<T> span() { return m_objects; }
 
         bool empty() const       { return m_objects.empty(); }
         bool full() const        { return spaceLeft() == size(); }

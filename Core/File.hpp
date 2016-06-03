@@ -54,8 +54,8 @@ namespace xor
         void close();
         HRESULT read(void *dst, size_t bytes, size_t *bytesRead = nullptr);
         HRESULT write(const void *src, size_t bytes);
-        HRESULT read(span<uint8_t> dst);
-        HRESULT write(span<const uint8_t> src);
+        HRESULT read(Span<uint8_t> dst);
+        HRESULT write(Span<const uint8_t> src);
 
         std::vector<uint8_t> read();
         String readText();

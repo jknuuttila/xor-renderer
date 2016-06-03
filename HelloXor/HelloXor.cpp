@@ -42,7 +42,7 @@ public:
             { float2(+D,  D), float2(1, 1), float3(1, 0, 1) },
         };
 
-        vertexBuffer = device.createBufferVBV(as_span(vertices));
+        vertexBuffer = device.createBufferVBV(asConstSpan(vertices));
     }
 
     void keyDown(int keyCode) override

@@ -165,11 +165,11 @@ namespace xor
                 : size(size)
                 , format(format)
             {}
-            Info(span<const uint8_t> data, Format format);
+            Info(Span<const uint8_t> data, Format format);
 
             template <typename T>
-            Info(span<const T> data, Format format = Format::structure<T>())
-                : Info(as_bytes(data), format)
+            Info(Span<const T> data, Format format = Format::structure<T>())
+                : Info(asBytes(data), format)
             {}
         };
 
@@ -323,7 +323,7 @@ namespace xor
         void setRenderTargets();
         void setRenderTargets(RTV &rtv);
 
-        void barrier(std::initializer_list<Barrier> barriers);
+        void barrier(Span<const Barrier> barriers);
 
         void draw(uint vertices, uint startVertex = 0);
     };
@@ -347,7 +347,7 @@ namespace xor
         Xor(DebugLayer debugLayer = DebugLayer::Enabled);
         ~Xor();
 
-        span<Adapter> adapters();
+        Span<Adapter> adapters();
         Adapter &defaultAdapter();
         Device defaultDevice();
 

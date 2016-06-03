@@ -83,8 +83,8 @@ namespace xor
                     (*this)[i] = v[i];
             }
 
-            gsl::span<T, N> span() { return gsl::span<T, N>(&x, N); }
-            constexpr gsl::span<const T, N> span() const { return gsl::span<const T, N>(&x, N); }
+            Span<T> span() { return Span<T>(&x, N); }
+            constexpr Span<const T> span() const { return Span<const T>(&x, N); }
 
             T *data() { return &x; }
             constexpr const T *data() const { return &x; }

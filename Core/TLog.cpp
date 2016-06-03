@@ -30,7 +30,7 @@ namespace xor
         {
             auto p = entry.path();
             String path = File::canonicalize(String(p), true);
-            String ext  = StringView(p.extension()).lower();
+            String ext  = String(p.extension()).lower();
 
             if (ext != tlogExtension)
                 continue;

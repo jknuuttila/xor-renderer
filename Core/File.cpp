@@ -289,23 +289,23 @@ namespace xor
             return S_OK;
     }
 
-    HRESULT File::read(span<uint8_t> dst)
+    HRESULT File::read(Span<uint8_t> dst)
     {
         size_t amount;
 
-        auto hr = read(dst.data(), dst.size_bytes(), &amount);
+        auto hr = read(dst.data(), dst.sizeBytes(), &amount);
         if (FAILED(hr))
             return hr;
 
-        if (amount != dst.size_bytes())
+        if (amount != dst.sizeBytes())
             return E_FAIL;
 
         return S_OK;
     }
 
-    HRESULT File::write(span<const uint8_t> src)
+    HRESULT File::write(Span<const uint8_t> src)
     {
-        auto hr = write(src.data(), src.size_bytes());
+        auto hr = write(src.data(), src.sizeBytes());
         if (FAILED(hr))
             return hr;
         else

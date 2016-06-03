@@ -531,7 +531,7 @@ namespace xor
     {
     }
 
-    span<Adapter> Xor::adapters()
+    Span<Adapter> Xor::adapters()
     {
         return m_adapters;
     }
@@ -1025,7 +1025,7 @@ namespace xor
         cmd()->RSSetScissorRects(1, &scissor);
     }
 
-    void CommandList::barrier(std::initializer_list<Barrier> barriers)
+    void CommandList::barrier(Span<const Barrier> barriers)
     {
         cmd()->ResourceBarrier(static_cast<UINT>(barriers.size()),
                                barriers.begin());

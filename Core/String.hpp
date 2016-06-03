@@ -99,12 +99,12 @@ namespace xor
             , m_end(end)
         {}
 
-        StringView(span<const char> chars)
+        StringView(Span<const char> chars)
             : m_begin(chars.data())
             , m_end(chars.data() + chars.size())
         {}
 
-        explicit StringView(span<const uint8_t> chars)
+        explicit StringView(Span<const uint8_t> chars)
             : m_begin(reinterpret_cast<const char *>(chars.data()))
             , m_end(reinterpret_cast<const char *>(chars.data()) + chars.size())
         {}

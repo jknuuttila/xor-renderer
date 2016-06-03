@@ -2,17 +2,13 @@
 
 #include "OS.hpp"
 
-#include "span.h"
-#include "string_span.h"
-
 #include <vector>
 #include <string>
+#include <initializer_list>
 #include <type_traits>
 
 namespace xor
 {
-    using namespace gsl;
-
     // TODO: move this elsewhere
     using ll   = long long;
     using ull  = unsigned long long;
@@ -96,7 +92,7 @@ namespace xor
 
     class Handle
     {
-        static constexpr HANDLE InvalidHandleValue = INVALID_HANDLE_VALUE;
+        constexpr static HANDLE InvalidHandleValue = INVALID_HANDLE_VALUE;
         MovingPtr<HANDLE, InvalidHandleValue> m_handle;
     public:
         Handle(HANDLE handle = INVALID_HANDLE_VALUE)
@@ -158,5 +154,84 @@ namespace xor
         Timer();
         double seconds() const;
     };
+
+    template <typename T>
+    class Span
+    {
+        T *m_begin = nullptr;
+        T *m_end   = nullptr;
+    public:
+        Span() = default;
+
+        template <typename U>
+        Span(U &&u) : Span(std::begin(u), std::end(u)) {}
+
+        Span(std::initializer_list<T> init) : Span(std::begin(init), std::end(init)) {}
+
+        template <typename Iter>
+        Span(Iter begin, Iter end)
+            : m_begin(begin == end ? nullptr : std::addressof(*begin))
+            , m_end(m_begin + (end - begin))
+        {}
+
+        Span(T *ptr, size_t size)
+            : m_begin(ptr)
+            , m_end(ptr + size)
+        {}
+
+        bool empty() const { return m_begin == m_end; }
+        size_t size() const { return m_end - m_begin; }
+        size_t sizeBytes() const { return size() * sizeof(T); }
+
+        T *begin() { return m_begin; }
+        T *end()   { return m_end; }
+        const T *begin() const { return m_begin; }
+        const T *end()   const { return m_end; }
+
+        T *data() { return begin(); }
+        const T *data() const { return begin(); }
+
+        T &operator[](size_t i) { return m_begin[i]; }
+        const T &operator[](size_t i) const { return m_begin[i]; }
+
+        Span<T> operator()(int64_t begin, int64_t end)
+        {
+            if (end < 0) end += size();
+            return Span<T>(m_begin + begin, m_begin + end);
+        }
+        Span<const T> operator()(int64_t begin, int64_t end) const
+        {
+            if (end < 0) end += size();
+            return Span<const T>(m_begin + begin, m_begin + end);
+        }
+        Span<T> operator()(int64_t begin) { return operator()(begin, size()); }
+        Span<const T> operator()(int64_t begin) const { return operator()(begin, size()); }
+    };
+
+    template <typename T>
+    auto asSpan(T &&t)
+    {
+        return Span<std::remove_reference_t<decltype(t[0])>>(std::forward<T>(t));
+    }
+
+    template <typename T>
+    auto asConstSpan(T &&t)
+    {
+        return Span<const std::remove_reference_t<decltype(t[0])>>(std::forward<T>(t));
+    }
+
+    template <typename T>
+    Span<uint8_t> asRWBytes(T &&t)
+    {
+        auto begin = reinterpret_cast<uint8_t *>(asSpan(std::forward<T>(t)).data());
+        return Span<uint8_t>(begin, sizeBytes(t));
+    }
+
+    template <typename T>
+    Span<const uint8_t> asBytes(const T &t)
+    {
+        auto begin = reinterpret_cast<const uint8_t *>(asSpan(t).data());
+        return Span<const uint8_t>(begin, sizeBytes(t));
+    }
 }
 
