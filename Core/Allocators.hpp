@@ -91,5 +91,54 @@ namespace xor
             m_objects.emplace_back(std::move(object));
         }
     };
+
+    class OffsetRing
+    {
+        // The oldest allocated element, unless equal to tail.
+        int64_t m_head = 0;
+        // The first free element.
+        int64_t m_tail = 0;
+        // Amount of space in the ring.
+        int64_t m_size = 0;
+        // Always false unless head == tail. If head == tail,
+        // the ring is completely empty if m_full == false,
+        // and completely full if m_full == true.
+        bool    m_full = false;
+    public:
+        OffsetRing() = default;
+        OffsetRing(size_t size) : m_size(static_cast<int64_t>(size)) {}
+
+        void clear()
+        {
+            m_head = 0;
+            m_tail = 0;
+            m_full = false;
+        }
+
+        bool empty() const { return m_head == m_tail && !m_full; }
+        bool full() const  { return m_full; }
+        size_t size() const { return m_size; }
+        size_t freeSpace() const;
+
+        int64_t allocate();
+        int64_t allocateContiguous(size_t amount);
+        void releaseEnd(int64_t onePastLastOffset);
+
+        void releaseUntil(int64_t lastOffset)
+        {
+            int64_t end = lastOffset + 1;
+            if (end == m_size)
+                end = 0;
+            releaseEnd(end);
+        }
+
+        void release(int64_t offset, size_t amount = 1)
+        {
+            int64_t end = offset + static_cast<int64_t>(amount);
+            if (end >= m_size)
+                end -= m_size;
+            releaseEnd(end);
+        }
+    };
 }
 
