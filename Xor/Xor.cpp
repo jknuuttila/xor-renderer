@@ -835,6 +835,74 @@ namespace xor
             &m_state->rootSignature));
     }
 
+    CommandList Device::initializerCommandList()
+    {
+        return graphicsCommandList();
+    }
+
+    Buffer Device::createBuffer(const Buffer::Info & info)
+    {
+        Buffer buffer;
+        buffer.makeState();
+        buffer.S().device = weak();
+
+        D3D12_HEAP_PROPERTIES heap = {};
+        heap.Type                 = D3D12_HEAP_TYPE_DEFAULT;
+        heap.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE;
+        heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        heap.CreationNodeMask     = 0;
+        heap.VisibleNodeMask      = 0;
+
+        D3D12_RESOURCE_DESC desc = {};
+        desc.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Alignment          = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+        desc.Width              = info.size;
+        desc.Height             = 1;
+        desc.DepthOrArraySize   = 1;
+        desc.MipLevels          = 1;
+        desc.Format             = info.format;
+        desc.SampleDesc.Count   = 1;
+        desc.SampleDesc.Quality = 0;
+        desc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        desc.Flags              = D3D12_RESOURCE_FLAG_NONE;
+
+        XOR_CHECK_HR(device()->CreateCommittedResource(
+            &heap,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_COMMON,
+            nullptr,
+            __uuidof(ID3D12Resource),
+            &buffer.S().resource));
+
+        if (info.m_initializer)
+        {
+            auto initCmd = initializerCommandList();
+            info.m_initializer(initCmd, buffer);
+            execute(initCmd);
+        }
+
+        return buffer;
+    }
+
+    BufferVBV Device::createBufferVBV(Buffer buffer, const BufferVBV::Info & viewInfo)
+    {
+        BufferVBV vbv;
+
+        vbv.m_buffer              = buffer;
+        vbv.m_vbv.BufferLocation  = buffer.S().resource->GetGPUVirtualAddress();
+        vbv.m_vbv.BufferLocation += viewInfo.firstElement * viewInfo.format.size();
+        vbv.m_vbv.SizeInBytes     = static_cast<UINT>(viewInfo.numElements  * viewInfo.format.size());
+        vbv.m_vbv.StrideInBytes   = static_cast<UINT>(viewInfo.format.size());
+
+        return vbv;
+    }
+
+    BufferVBV Device::createBufferVBV(const Buffer::Info & bufferInfo, const BufferVBV::Info & viewInfo)
+    {
+        return createBufferVBV(createBuffer(bufferInfo), viewInfo);
+    }
+
     CommandList Device::graphicsCommandList()
     {
         CommandList cmd;
@@ -1088,5 +1156,15 @@ namespace xor
     ID3D12Resource *Resource::get()
     {
         return m_state ? m_state->resource.Get() : nullptr;
+    }
+
+    Buffer::Info::Info(Span<const uint8_t> data, Format format)
+        : size(data.size())
+        , format(format)
+    {
+        m_initializer = [data] (CommandList &cmd, Buffer &buf) 
+        {
+            cmd.updateBuffer(buf, data);
+        };
     }
 }

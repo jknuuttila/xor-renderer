@@ -45,6 +45,12 @@ namespace xor
         }
 
         operator DXGI_FORMAT() const { return dxgiFormat(); }
+
+        size_t size() const
+        {
+            XOR_ASSERT(m_elementSize > 0, "DXGI_FORMAT size not implemented");
+            return m_elementSize;
+        }
     };
 
     namespace backend
@@ -153,8 +159,9 @@ namespace xor
 
         class Info
         {
-            std::function<void(CommandList &cmd)> m_initializer;
+            std::function<void(CommandList &cmd, Buffer &buf)> m_initializer;
             D3D12_RESOURCE_DESC get();
+            friend class Device;
         public:
             size_t size = 0;
             Format format;
@@ -165,12 +172,15 @@ namespace xor
                 : size(size)
                 , format(format)
             {}
+
             Info(Span<const uint8_t> data, Format format);
 
             template <typename T>
             Info(Span<const T> data, Format format = Format::structure<T>())
                 : Info(asBytes(data), format)
             {}
+
+            size_t sizeBytes() const;
         };
 
         class Builder : public Info
@@ -244,6 +254,8 @@ namespace xor
         ID3D12Device *device();
         std::shared_ptr<backend::CommandListState> createCommandList();
         void collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
+
+        CommandList initializerCommandList();
 
         Device(ComPtr<IDXGIAdapter3> adapter,
                ComPtr<ID3D12Device> device,
@@ -326,6 +338,10 @@ namespace xor
         void barrier(Span<const Barrier> barriers);
 
         void draw(uint vertices, uint startVertex = 0);
+
+        void updateBuffer(Buffer &buffer,
+                          Span<const uint8_t> data,
+                          size_t offset = 0);
     };
 
     // Global initialization and deinitialization of the Xor renderer.
