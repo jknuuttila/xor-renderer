@@ -65,6 +65,7 @@ namespace xor
         struct DescriptorViewState;
         struct PipelineState;
         struct BufferState;
+        struct GPUProgressTracking;
 
         template <typename T>
         struct SharedState
@@ -160,7 +161,6 @@ namespace xor
         class Info
         {
             std::function<void(CommandList &cmd, Buffer &buf)> m_initializer;
-            D3D12_RESOURCE_DESC get();
             friend class Device;
         public:
             size_t size = 0;
@@ -310,6 +310,7 @@ namespace xor
     {
         friend class Device;
         friend struct backend::DeviceState;
+        friend struct backend::GPUProgressTracking;
 
         ID3D12GraphicsCommandList *cmd();
         void close();
@@ -328,6 +329,8 @@ namespace xor
 
         CommandList(const CommandList &) = delete;
         CommandList& operator=(const CommandList &) = delete;
+
+        SeqNum number() const;
 
         void bind(Pipeline &pipeline);
 

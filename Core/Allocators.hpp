@@ -92,6 +92,15 @@ namespace xor
         }
     };
 
+    struct Block
+    {
+        int64_t begin = -1;
+        int64_t end   = -1;
+
+        bool valid() const { return begin >= 0; }
+        explicit operator bool() const { return valid(); }
+    };
+
     class OffsetRing
     {
         // The oldest allocated element, unless equal to tail.
@@ -120,6 +129,20 @@ namespace xor
         size_t size() const { return m_size; }
         size_t freeSpace() const;
 
+        int64_t oldest() const { return empty() ? -1 : m_head; }
+        int64_t newest() const
+        {
+            if (empty())
+                return -1;
+
+            int64_t newest = m_tail - 1;
+
+            if (newest < 0)
+                newest += m_size;
+
+            return newest;
+        }
+
         int64_t allocate();
         int64_t allocateContiguous(size_t amount);
         void releaseEnd(int64_t onePastLastOffset);
@@ -138,6 +161,18 @@ namespace xor
             if (end >= m_size)
                 end -= m_size;
             releaseEnd(end);
+        }
+
+        Block allocateBlock(size_t amount)
+        {
+            Block block;
+            block.begin = allocateContiguous(amount);
+            block.end   = block.begin + static_cast<int64_t>(amount);
+            return block;
+        }
+        void release(Block block)
+        {
+            release(block.begin, static_cast<size_t>(block.end - block.begin));
         }
     };
 }

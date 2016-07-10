@@ -64,6 +64,66 @@ namespace xor
             }
         };
 
+
+        class GPUMemoryRingbuffer
+        {
+        private:
+            OffsetRing            m_memoryRing;
+            OffsetRing            m_metadataRing;
+
+            struct Metadata
+            {
+                Block block;
+                SeqNum allocatedBy;
+            };
+            std::vector<Metadata> m_metadata;
+        public:
+            GPUMemoryRingbuffer() = default;
+            GPUMemoryRingbuffer(size_t memory,
+                                size_t metadataEntries)
+                : m_memoryRing(memory)
+                , m_metadataRing(metadataEntries)
+                , m_metadata(metadataEntries)
+            {}
+
+            Block allocate(size_t amount, SeqNum cmdList)
+            {
+                Metadata m;
+                m.block = m_memoryRing.allocateBlock(amount);
+
+                if (m.block.begin < 0)
+                    return Block();
+
+                m.allocatedBy = cmdList;
+
+                auto metadataOffset = m_metadataRing.allocate();
+                XOR_ASSERT(metadataOffset >= 0,
+                           "Out of metadata space, increase ringbuffer size.");
+
+                m_metadata[metadataOffset] = m;
+
+                return m.block;
+            }
+
+            SeqNum oldestCmdList() const
+            {
+                if (m_metadataRing.empty())
+                    return -1;
+                else
+                    return m_metadata[m_metadataRing.oldest()].allocatedBy;
+            }
+
+            void releaseOldestAllocation()
+            {
+                XOR_ASSERT(!m_metadataRing.empty(), "Tried to release when ringbuffer empty.");
+                XOR_ASSERT(!m_memoryRing.empty(), "Tried to release when ringbuffer empty.");
+                auto allocOffset = m_metadataRing.oldest();
+                auto &alloc = m_metadata[allocOffset];
+                m_memoryRing.release(alloc.block);
+                m_metadataRing.release(allocOffset);
+            }
+        };
+
         struct CompletionCallback
         {
             SeqNum seqNum = InvalidSeqNum;
@@ -142,6 +202,206 @@ namespace xor
             }
         };
 
+        struct GPUProgressTracking
+        {
+            SequenceTracker commandListSequence;
+            std::vector<CommandList> executedCommandLists;
+            SeqNum newestExecuted = 0;
+            std::priority_queue<CompletionCallback> completionCallbacks;
+
+            SeqNum startNewCommandList()
+            {
+                return commandListSequence.start();
+            }
+
+            void executeCommandList(CommandList &&cmd)
+            {
+                newestExecuted = std::max(newestExecuted, cmd.number());
+                executedCommandLists.emplace_back(std::move(cmd));
+            }
+
+            void retireCommandLists()
+            {
+                uint completedLists = 0;
+
+                for (auto &cmd : executedCommandLists)
+                {
+                    if (cmd.hasCompleted())
+                        ++completedLists;
+                    else
+                        break;
+                }
+
+                for (uint i = 0; i < completedLists; ++i)
+                {
+                    auto &cmd = executedCommandLists[i];
+                    commandListSequence.complete(cmd.number());
+                }
+
+                // This will also return the command list states to the pool
+                executedCommandLists.erase(executedCommandLists.begin(),
+                                           executedCommandLists.begin() + completedLists);
+
+                while (!completionCallbacks.empty())
+                {
+                    auto &top = completionCallbacks.top();
+                    if (commandListSequence.hasCompleted(top.seqNum))
+                    {
+                        top.f();
+                        completionCallbacks.pop();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+
+            SeqNum now()
+            {
+                return commandListSequence.newestStarted();
+            }
+
+            void whenCompleted(std::function<void()> f)
+            {
+                whenCompleted(std::move(f), now());
+            }
+
+            void whenCompleted(std::function<void()> f, SeqNum seqNum)
+            {
+                if (hasCompleted(seqNum))
+                    f();
+                else
+                    completionCallbacks.emplace(seqNum, std::move(f));
+            }
+
+            bool hasCompleted(SeqNum seqNum)
+            {
+                retireCommandLists();
+                return commandListSequence.hasCompleted(seqNum);
+            }
+
+            void waitUntilCompleted(SeqNum seqNum)
+            {
+                while (!hasCompleted(seqNum))
+                {
+                    auto &executed = executedCommandLists;
+                    XOR_CHECK(!executed.empty(), "Nothing to wait for, deadlock!");
+                    executed.front().waitUntilCompleted();
+                }
+            }
+
+            void waitUntilDrained()
+            {
+                for (;;)
+                {
+                    auto newest = commandListSequence.newestStarted();
+                    if (hasCompleted(newest))
+                        break;
+                    else
+                        waitUntilCompleted(newest);
+                }
+
+                // When using WARP, the debug layer often complains
+                // about releasing stuff too early, even if all command lists
+                // executed by us have finished. Waiting a while seems to
+                // work around this issue.
+                Sleep(50);
+            }
+        };
+
+        struct UploadHeap
+        {
+            static const size_t UploadHeapSize = 128 * 1024 * 1024;
+            static const size_t UploadMetadataEntries = 4096;
+
+            ComPtr<ID3D12Resource> heap;
+            GPUMemoryRingbuffer ringbuffer;
+            uint8_t *mapped;
+
+            UploadHeap(ID3D12Device *device)
+                : ringbuffer(UploadHeapSize, UploadMetadataEntries)
+            {
+                D3D12_HEAP_PROPERTIES heapDesc = {};
+                heapDesc.Type                 = D3D12_HEAP_TYPE_UPLOAD;
+                heapDesc.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
+                heapDesc.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+                heapDesc.CreationNodeMask     = 0;
+                heapDesc.VisibleNodeMask      = 0;
+
+                D3D12_RESOURCE_DESC desc = {};
+                desc.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
+                desc.Alignment          = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+                desc.Width              = UploadHeapSize;
+                desc.Height             = 1;
+                desc.DepthOrArraySize   = 1;
+                desc.MipLevels          = 1;
+                desc.Format             = DXGI_FORMAT_R8_UINT;
+                desc.SampleDesc.Count   = 1;
+                desc.SampleDesc.Quality = 0;
+                desc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+                desc.Flags              = D3D12_RESOURCE_FLAG_NONE;
+
+                XOR_CHECK_HR(device->CreateCommittedResource(
+                    &heapDesc,
+                    D3D12_HEAP_FLAG_NONE,
+                    &desc,
+                    D3D12_RESOURCE_STATE_COMMON,
+                    nullptr,
+                    __uuidof(ID3D12Resource),
+                    &heap));
+
+                mapHeap();
+            }
+            
+            ~UploadHeap()
+            {
+                heap->Unmap(0, nullptr);
+            }
+
+            void mapHeap()
+            {
+                D3D12_RANGE dontRead;
+                dontRead.Begin = 0;
+                dontRead.End   = 0;
+                void *p        = nullptr;
+                XOR_CHECK_HR(heap->Map(0, &dontRead, &p));
+                mapped = reinterpret_cast<uint8_t *>(p);
+            }
+
+            void flushBlock(Block block)
+            {
+                D3D12_RANGE flushRange;
+                flushRange.Begin = static_cast<size_t>(block.begin);
+                flushRange.End   = static_cast<size_t>(block.end);
+                heap->Unmap(0, &flushRange);
+                mapHeap();
+            }
+
+            Block uploadBytes(GPUProgressTracking &progress, Span<const uint8_t> bytes, SeqNum cmdListNumber)
+            {
+                auto block = ringbuffer.allocate(bytes.sizeBytes(), cmdListNumber);
+
+                while (!block)
+                {
+                    auto oldest = ringbuffer.oldestCmdList();
+
+                    XOR_CHECK(oldest >= 0, "Ringbuffer not big enough to hold %llu bytes.",
+                              static_cast<llu>(bytes.sizeBytes()));
+
+                    progress.waitUntilCompleted(oldest);
+                    ringbuffer.releaseOldestAllocation();
+
+                    block = ringbuffer.allocate(bytes.sizeBytes(), cmdListNumber);
+                }
+
+                // If we got here, we got space from the ringbuffer, memcpy it in and flush.
+                memcpy(mapped + block.begin, bytes.data(), bytes.sizeBytes());
+                flushBlock(block);
+                return block;
+            }
+        };
+
         struct ShaderLoader
         {
             struct ShaderData
@@ -187,35 +447,15 @@ namespace xor
             ComPtr<ID3D12RootSignature> rootSignature;
 
             GrowingPool<std::shared_ptr<CommandListState>> freeGraphicsCommandLists;
-
-            SequenceTracker commandListSequence;
-            std::vector<CommandList> executedCommandLists;
-            SeqNum newestExecuted = 0;
+            GPUProgressTracking progress;
 
             ViewHeap rtvs;
-
-            std::priority_queue<CompletionCallback> completionCallbacks;
 
             std::shared_ptr<ShaderLoader> shaderLoader;
 
             ~DeviceState()
             {
-                // Drain the GPU of all work before destroying objects.
-                for (;;)
-                {
-                    retireCommandLists();
-
-                    if (executedCommandLists.empty())
-                        break;
-
-                    executedCommandLists.front().waitUntilCompleted();
-                }
-
-                // When using WARP, the debug layer often complains
-                // about releasing stuff too early, even if all command lists
-                // executed by us have finished. Waiting a while seems to
-                // work around this issue.
-                Sleep(50);
+                progress.waitUntilDrained();
 #if 0
                 ComPtr<ID3D12DebugDevice> debug;
                 XOR_CHECK_HR(device.As(&debug));
@@ -238,43 +478,6 @@ namespace xor
             void releaseDescriptor(Descriptor descriptor)
             {
                 viewHeap(descriptor.type).release(descriptor);
-            }
-
-            void retireCommandLists()
-            {
-                uint completedLists = 0;
-
-                for (auto &cmd : executedCommandLists)
-                {
-                    if (cmd.hasCompleted())
-                        ++completedLists;
-                    else
-                        break;
-                }
-
-                for (uint i = 0; i < completedLists; ++i)
-                {
-                    auto &cmd = executedCommandLists[i];
-                    commandListSequence.complete(cmd.S().seqNum);
-                }
-
-                // This will also return the command list states to the pool
-                executedCommandLists.erase(executedCommandLists.begin(),
-                                           executedCommandLists.begin() + completedLists);
-
-                while (!completionCallbacks.empty())
-                {
-                    auto &top = completionCallbacks.top();
-                    if (commandListSequence.hasCompleted(top.seqNum))
-                    {
-                        top.f();
-                        completionCallbacks.pop();
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
             }
 
         };
@@ -916,7 +1119,7 @@ namespace xor
         cmd.S().cmd->SetComputeRootSignature(m_state->rootSignature.Get());
 
         ++cmd.S().timesStarted;
-        cmd.S().seqNum = m_state->commandListSequence.start();
+        cmd.S().seqNum = m_state->progress.startNewCommandList();
 
         return cmd;
     }
@@ -929,8 +1132,7 @@ namespace xor
         m_state->graphicsQueue->ExecuteCommandLists(1, cmds);
         m_state->graphicsQueue->Signal(cmd.S().timesCompleted.Get(), cmd.S().timesStarted);
 
-        m_state->newestExecuted = std::max(m_state->newestExecuted, cmd.S().seqNum);
-        m_state->executedCommandLists.emplace_back(std::move(cmd));
+        m_state->progress.executeCommandList(std::move(cmd));
     }
 
     void Device::present(SwapChain & swapChain, bool vsync)
@@ -939,15 +1141,15 @@ namespace xor
         // The backbuffer is assumed to depend on all command lists
         // that have been executed, but not on those which have
         // been started but not executed. Otherwise, deadlock could result.
-        backbuffer.seqNum = m_state->newestExecuted;
+        backbuffer.seqNum = m_state->progress.newestExecuted;
         swapChain.S().swapChain->Present(vsync ? 1 : 0, 0);
         m_state->shaderLoader->scanChangedSources();
-        m_state->retireCommandLists();
+        m_state->progress.retireCommandLists();
     }
 
     SeqNum Device::now()
     {
-        return m_state->commandListSequence.newestStarted();
+        return m_state->progress.now();
     }
 
     void Device::whenCompleted(std::function<void()> f)
@@ -957,38 +1159,22 @@ namespace xor
 
     void Device::whenCompleted(std::function<void()> f, SeqNum seqNum)
     {
-        if (hasCompleted(seqNum))
-            f();
-        else
-            m_state->completionCallbacks.emplace(seqNum, std::move(f));
+        m_state->progress.whenCompleted(std::move(f), seqNum);
     }
 
     bool Device::hasCompleted(SeqNum seqNum)
     {
-        m_state->retireCommandLists();
-        return m_state->commandListSequence.hasCompleted(seqNum);
+        return m_state->progress.hasCompleted(seqNum);
     }
 
     void Device::waitUntilCompleted(SeqNum seqNum)
     {
-        while (!hasCompleted(seqNum))
-        {
-            auto &executed = m_state->executedCommandLists;
-            XOR_CHECK(!executed.empty(), "Nothing to wait for, deadlock!");
-            executed.front().waitUntilCompleted();
-        }
+        m_state->progress.waitUntilCompleted(seqNum);
     }
 
     void Device::waitUntilDrained()
     {
-        for (;;)
-        {
-            auto newest = m_state->commandListSequence.newestStarted();
-            if (hasCompleted(newest))
-                return;
-            else
-                waitUntilCompleted(newest);
-        }
+        m_state->progress.waitUntilDrained();
     }
 
     ID3D12GraphicsCommandList *CommandList::cmd()

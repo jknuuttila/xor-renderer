@@ -11,7 +11,7 @@ namespace xor
 {
     // TODO: move this elsewhere
     using ll   = long long;
-    using ull  = unsigned long long;
+    using llu  = unsigned long long;
 
     // Pointer wrapper that becomes nullptr when moved from.
     // Helpful for concisely implementing Movable types.
