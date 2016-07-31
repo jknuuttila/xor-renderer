@@ -324,7 +324,7 @@ namespace xor
             {
                 D3D12_HEAP_PROPERTIES heapDesc = {};
                 heapDesc.Type                 = D3D12_HEAP_TYPE_UPLOAD;
-                heapDesc.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
+                heapDesc.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
                 heapDesc.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
                 heapDesc.CreationNodeMask     = 0;
                 heapDesc.VisibleNodeMask      = 0;
@@ -336,7 +336,7 @@ namespace xor
                 desc.Height             = 1;
                 desc.DepthOrArraySize   = 1;
                 desc.MipLevels          = 1;
-                desc.Format             = DXGI_FORMAT_R8_UINT;
+                desc.Format             = DXGI_FORMAT_UNKNOWN;
                 desc.SampleDesc.Count   = 1;
                 desc.SampleDesc.Quality = 0;
                 desc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
@@ -346,7 +346,7 @@ namespace xor
                     &heapDesc,
                     D3D12_HEAP_FLAG_NONE,
                     &desc,
-                    D3D12_RESOURCE_STATE_COMMON,
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
                     nullptr,
                     __uuidof(ID3D12Resource),
                     &heap));
@@ -448,6 +448,7 @@ namespace xor
 
             GrowingPool<std::shared_ptr<CommandListState>> freeGraphicsCommandLists;
             GPUProgressTracking progress;
+            std::shared_ptr<UploadHeap> uploadHeap;
 
             ViewHeap rtvs;
 
@@ -817,6 +818,8 @@ namespace xor
 
         setName(m_state->graphicsQueue, "Graphics Queue");
 
+        m_state->uploadHeap = std::make_shared<UploadHeap>(m_state->device.Get());
+
         {
             D3D12_DESCRIPTOR_HEAP_DESC desc = {};
             desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
@@ -1051,7 +1054,7 @@ namespace xor
 
         D3D12_HEAP_PROPERTIES heap = {};
         heap.Type                 = D3D12_HEAP_TYPE_DEFAULT;
-        heap.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE;
+        heap.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
         heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
         heap.CreationNodeMask     = 0;
         heap.VisibleNodeMask      = 0;
@@ -1230,6 +1233,11 @@ namespace xor
         }
     }
 
+    SeqNum CommandList::number() const
+    {
+        return m_state->seqNum;
+    }
+
     void CommandList::bind(Pipeline &pipeline)
     {
         cmd()->SetPipelineState(pipeline.S().pso.Get());
@@ -1289,6 +1297,24 @@ namespace xor
     {
         cmd()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         cmd()->DrawInstanced(vertices, 1, startVertex, 0);
+    }
+
+    void CommandList::updateBuffer(Buffer & buffer,
+                                   Span<const uint8_t> data,
+                                   size_t offset)
+    {
+        auto &s          = S();
+        auto &dev        = Device::parent(m_state->device).S();
+        auto &uploadHeap = *dev.uploadHeap;
+
+        auto block       = uploadHeap.uploadBytes(dev.progress, data, number());
+
+        m_state->cmd->CopyBufferRegion(
+            buffer.get(),
+            offset,
+            uploadHeap.heap.Get(),
+            static_cast<UINT64>(block.begin),
+            block.size());
     }
 
     uint SwapChain::currentIndex()

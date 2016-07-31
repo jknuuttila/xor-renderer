@@ -99,6 +99,8 @@ namespace xor
 
         bool valid() const { return begin >= 0; }
         explicit operator bool() const { return valid(); }
+
+        size_t size() const { return static_cast<size_t>(end - begin); }
     };
 
     class OffsetRing
