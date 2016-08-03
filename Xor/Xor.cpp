@@ -689,9 +689,14 @@ namespace xor
                 info.format = bufferInfo.format;
 
             if (info.numElements == 0)
-                info.numElements = bufferInfo.size;
+                info.numElements = static_cast<uint>(bufferInfo.size);
 
             return info;
+        }
+
+        uint BufferViewInfo::sizeBytes() const
+        {
+            return numElements * format.size();
         }
 
         BufferInfo::BufferInfo(Span<const uint8_t> data, Format format)
@@ -1114,7 +1119,7 @@ namespace xor
         desc.Height             = 1;
         desc.DepthOrArraySize   = 1;
         desc.MipLevels          = 1;
-        desc.Format             = info.format;
+        desc.Format             = DXGI_FORMAT_UNKNOWN;
         desc.SampleDesc.Count   = 1;
         desc.SampleDesc.Quality = 0;
         desc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
@@ -1148,8 +1153,8 @@ namespace xor
         vbv.m_buffer              = buffer;
         vbv.m_vbv.BufferLocation  = buffer.S().resource->GetGPUVirtualAddress();
         vbv.m_vbv.BufferLocation += info.firstElement * info.format.size();
-        vbv.m_vbv.SizeInBytes     = static_cast<UINT>(info.numElements  * info.format.size());
-        vbv.m_vbv.StrideInBytes   = static_cast<UINT>(info.format.size());
+        vbv.m_vbv.SizeInBytes     = info.sizeBytes();
+        vbv.m_vbv.StrideInBytes   = info.format.size();
 
         return vbv;
     }
@@ -1157,6 +1162,26 @@ namespace xor
     BufferVBV Device::createBufferVBV(const Buffer::Info & bufferInfo, const BufferVBV::Info & viewInfo)
     {
         return createBufferVBV(createBuffer(bufferInfo), viewInfo);
+    }
+
+    BufferIBV Device::createBufferIBV(Buffer buffer, const BufferIBV::Info & viewInfo)
+    {
+        auto info = viewInfo.defaults(buffer.info());
+
+        BufferIBV ibv;
+
+        ibv.m_buffer              = buffer;
+        ibv.m_ibv.BufferLocation  = buffer.S().resource->GetGPUVirtualAddress();
+        ibv.m_ibv.BufferLocation += info.firstElement * info.format.size();
+        ibv.m_ibv.SizeInBytes     = info.sizeBytes();
+        ibv.m_ibv.Format          = info.format;
+
+        return ibv;
+    }
+
+    BufferIBV Device::createBufferIBV(const Buffer::Info & bufferInfo, const BufferIBV::Info & viewInfo)
+    {
+        return createBufferIBV(createBuffer(bufferInfo), viewInfo);
     }
 
     CommandList Device::graphicsCommandList()
@@ -1342,6 +1367,16 @@ namespace xor
         cmd()->IASetVertexBuffers(0, 1, &vbv.m_vbv);
     }
 
+    void CommandList::setIBV(const BufferIBV & ibv)
+    {
+        cmd()->IASetIndexBuffer(&ibv.m_ibv);
+    }
+
+    void CommandList::setTopology(D3D_PRIMITIVE_TOPOLOGY topology)
+    {
+        cmd()->IASetPrimitiveTopology(topology);
+    }
+
     void CommandList::barrier(Span<const Barrier> barriers)
     {
         cmd()->ResourceBarrier(static_cast<UINT>(barriers.size()),
@@ -1350,8 +1385,12 @@ namespace xor
 
     void CommandList::draw(uint vertices, uint startVertex)
     {
-        cmd()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
         cmd()->DrawInstanced(vertices, 1, startVertex, 0);
+    }
+
+    void CommandList::drawIndexed(uint indices, uint startIndex)
+    {
+        cmd()->DrawIndexedInstanced(indices, 1, startIndex, 0, 0); 
     }
 
     void CommandList::updateBuffer(Buffer & buffer,
@@ -1425,8 +1464,19 @@ namespace xor
         return m_state ? m_state->resource.Get() : nullptr;
     }
 
-    Buffer BufferVBV::buffer()
+    uint Format::size() const
     {
-        return m_buffer;
+        if (m_elementSize)
+            return m_elementSize;
+
+        switch (m_dxgiFormat)
+        {
+        case DXGI_FORMAT_R32_UINT:
+            return 4;
+        default:
+            XOR_CHECK(false, "Unknown format");
+        }
+
+        return 0;
     }
 }

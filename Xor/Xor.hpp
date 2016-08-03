@@ -10,6 +10,12 @@
 #include <queue>
 #include <memory>
 
+// TODO: Unify all Info classes
+// TODO: makeState() should support proper constructors
+// TODO: DeviceChild subclass for SharedState to get rid of some boilerplate
+// TODO: More convenience subclasses for SharedState to allow easy access to stuff
+// TODO: Split into multiple headers and cpps
+
 namespace xor
 {
     class Device;
@@ -48,10 +54,7 @@ namespace xor
 
         operator DXGI_FORMAT() const { return dxgiFormat(); }
 
-        size_t size() const
-        {
-            return m_elementSize;
-        }
+        uint size() const;
     };
 
     namespace backend
@@ -119,10 +122,11 @@ namespace xor
         {
         public:
             size_t firstElement = 0;
-            size_t numElements  = 0;
+            uint   numElements  = 0;
             Format format;
 
             BufferViewInfo defaults(const BufferInfo &bufferInfo) const;
+            uint sizeBytes() const;
         };
 
         class BufferViewInfoBuilder : public BufferViewInfo 
@@ -132,7 +136,7 @@ namespace xor
             BufferViewInfoBuilder(const BufferViewInfo &info) : BufferViewInfo(info) {}
 
             BufferViewInfoBuilder &firstElement(size_t index) { BufferViewInfo::firstElement = index; return *this; }
-            BufferViewInfoBuilder &numElements(size_t count) { BufferViewInfo::numElements = count; return *this; }
+            BufferViewInfoBuilder &numElements(uint count) { BufferViewInfo::numElements = count; return *this; }
             BufferViewInfoBuilder &format(Format format) { BufferViewInfo::format = format; return *this; }
         };
 
@@ -273,7 +277,21 @@ namespace xor
         D3D12_VERTEX_BUFFER_VIEW m_vbv;
     public:
         BufferVBV() = default;
-        Buffer buffer();
+        Buffer buffer() { return m_buffer; }
+
+        using Info    = info::BufferViewInfo;
+        using Builder = info::BufferViewInfoBuilder;
+    };
+
+    class BufferIBV
+    {
+        friend class Device;
+        friend class CommandList;
+        Buffer                  m_buffer;
+        D3D12_INDEX_BUFFER_VIEW m_ibv;
+    public:
+        BufferIBV() = default;
+        Buffer buffer() { return m_buffer; }
 
         using Info    = info::BufferViewInfo;
         using Builder = info::BufferViewInfoBuilder;
@@ -314,6 +332,8 @@ namespace xor
         Buffer    createBuffer(const Buffer::Info &info);
         BufferVBV createBufferVBV(Buffer buffer                 , const BufferVBV::Info &viewInfo = BufferVBV::Info());
         BufferVBV createBufferVBV(const Buffer::Info &bufferInfo, const BufferVBV::Info &viewInfo = BufferVBV::Info());
+        BufferIBV createBufferIBV(Buffer buffer                 , const BufferIBV::Info &viewInfo = BufferIBV::Info());
+        BufferIBV createBufferIBV(const Buffer::Info &bufferInfo, const BufferIBV::Info &viewInfo = BufferIBV::Info());
 
         CommandList graphicsCommandList();
 
@@ -381,10 +401,13 @@ namespace xor
         void setRenderTargets();
         void setRenderTargets(RTV &rtv);
         void setVBV(const BufferVBV &vbv);
+        void setIBV(const BufferIBV &ibv);
+        void setTopology(D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
         void barrier(Span<const Barrier> barriers);
 
         void draw(uint vertices, uint startVertex = 0);
+        void drawIndexed(uint indices, uint startIndex = 0);
 
         void updateBuffer(Buffer &buffer,
                           Span<const uint8_t> data,

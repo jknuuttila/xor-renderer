@@ -11,6 +11,7 @@ class HelloXor : public Window
     SwapChain swapChain;
     Pipeline hello;
     BufferVBV vertexBuffer;
+    BufferIBV indexBuffer;
     Timer time;
 
     struct Vertex
@@ -47,6 +48,8 @@ public:
         };
 
         vertexBuffer = device.createBufferVBV(asConstSpan(vertices));
+        indexBuffer  = device.createBufferIBV(
+            Buffer::Info({ 0, 1, 2, 1, 3, 2, }, DXGI_FORMAT_R32_UINT));
     }
 
     void keyDown(int keyCode) override
@@ -78,7 +81,9 @@ public:
         cmd.setRenderTargets({backbuffer});
         cmd.bind(hello);
         cmd.setVBV(vertexBuffer);
-        cmd.draw(4);
+        cmd.setIBV(indexBuffer);
+        cmd.setTopology();
+        cmd.drawIndexed(6);
         cmd.setRenderTargets();
 
 #endif
