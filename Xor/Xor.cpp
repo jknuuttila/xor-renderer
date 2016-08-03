@@ -575,7 +575,7 @@ namespace xor
 
                 log("Pipeline", "Rebuilding PSO.\n");
 
-                D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = *graphicsInfo;
+                D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = graphicsInfo->desc();
 
                 ShaderBinary vs = loadShader(dev, graphicsInfo->m_vs);
                 ShaderBinary ps = loadShader(dev, graphicsInfo->m_ps);
@@ -675,6 +675,41 @@ namespace xor
                 p->reload();
                 users[p.get()] = p;
             }
+        }
+
+    }
+
+    namespace info
+    {
+        BufferViewInfo BufferViewInfo::defaults(const BufferInfo & bufferInfo) const
+        {
+            BufferViewInfo info = *this;
+
+            if (!info.format)
+                info.format = bufferInfo.format;
+
+            if (info.numElements == 0)
+                info.numElements = bufferInfo.size;
+
+            return info;
+        }
+
+        BufferInfo::BufferInfo(Span<const uint8_t> data, Format format)
+            : size(data.size())
+            , format(format)
+        {
+            m_initializer = [data] (CommandList &cmd, Buffer &buf) 
+            {
+                cmd.updateBuffer(buf, data);
+            };
+        }
+
+        D3D12_INPUT_LAYOUT_DESC InputLayoutInfo::desc() const
+        {
+            D3D12_INPUT_LAYOUT_DESC d;
+            d.NumElements        = static_cast<UINT>(m_elements.size());
+            d.pInputElementDescs = m_elements.data();
+            return d;
         }
     }
 
@@ -922,6 +957,11 @@ namespace xor
             rt.RenderTargetWriteMask = 0xf;
     }
 
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC Pipeline::Graphics::desc() const
+    {
+        return *this;
+    }
+
     Pipeline::Graphics &Pipeline::Graphics::vertexShader(const String & vsName)
     {
         m_vs = vsName;
@@ -939,6 +979,13 @@ namespace xor
         NumRenderTargets = static_cast<uint>(formats.size());
         for (uint i = 0; i < NumRenderTargets; ++i)
             RTVFormats[i] = formats.begin()[i];
+        return *this;
+    }
+
+    Pipeline::Graphics & Pipeline::Graphics::inputLayout(const info::InputLayoutInfo & ilInfo)
+    {
+        m_inputLayout = ilInfo;
+        InputLayout = m_inputLayout.desc();
         return *this;
     }
 
@@ -1049,6 +1096,7 @@ namespace xor
     Buffer Device::createBuffer(const Buffer::Info & info)
     {
         Buffer buffer;
+        buffer.m_info = std::make_shared<Buffer::Info>(info);
         buffer.makeState();
         buffer.S().device = weak();
 
@@ -1093,13 +1141,15 @@ namespace xor
 
     BufferVBV Device::createBufferVBV(Buffer buffer, const BufferVBV::Info & viewInfo)
     {
+        auto info = viewInfo.defaults(buffer.info());
+
         BufferVBV vbv;
 
         vbv.m_buffer              = buffer;
         vbv.m_vbv.BufferLocation  = buffer.S().resource->GetGPUVirtualAddress();
-        vbv.m_vbv.BufferLocation += viewInfo.firstElement * viewInfo.format.size();
-        vbv.m_vbv.SizeInBytes     = static_cast<UINT>(viewInfo.numElements  * viewInfo.format.size());
-        vbv.m_vbv.StrideInBytes   = static_cast<UINT>(viewInfo.format.size());
+        vbv.m_vbv.BufferLocation += info.firstElement * info.format.size();
+        vbv.m_vbv.SizeInBytes     = static_cast<UINT>(info.numElements  * info.format.size());
+        vbv.m_vbv.StrideInBytes   = static_cast<UINT>(info.format.size());
 
         return vbv;
     }
@@ -1287,6 +1337,11 @@ namespace xor
         cmd()->RSSetScissorRects(1, &scissor);
     }
 
+    void CommandList::setVBV(const BufferVBV & vbv)
+    {
+        cmd()->IASetVertexBuffers(0, 1, &vbv.m_vbv);
+    }
+
     void CommandList::barrier(Span<const Barrier> barriers)
     {
         cmd()->ResourceBarrier(static_cast<UINT>(barriers.size()),
@@ -1295,7 +1350,7 @@ namespace xor
 
     void CommandList::draw(uint vertices, uint startVertex)
     {
-        cmd()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmd()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
         cmd()->DrawInstanced(vertices, 1, startVertex, 0);
     }
 
@@ -1370,13 +1425,8 @@ namespace xor
         return m_state ? m_state->resource.Get() : nullptr;
     }
 
-    Buffer::Info::Info(Span<const uint8_t> data, Format format)
-        : size(data.size())
-        , format(format)
+    Buffer BufferVBV::buffer()
     {
-        m_initializer = [data] (CommandList &cmd, Buffer &buf) 
-        {
-            cmd.updateBuffer(buf, data);
-        };
+        return m_buffer;
     }
 }

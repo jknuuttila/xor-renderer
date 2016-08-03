@@ -1,5 +1,6 @@
 #include "Xor/Shaders.h.hlsl"
 
+#if 0
 static const float P = .75f;
 
 static const float4 Positions[] =
@@ -15,6 +16,14 @@ static const float4 Colors[] =
     float4(0, 1, 0, 1),
     float4(0, 0, 1, 1),
 };
+#endif
+
+struct VSInput
+{
+    float2 pos   : POSITION0;
+    float2 uv    : TEXCOORD0;
+    float3 color : COLOR0;
+};
 
 struct VSOutput
 {
@@ -23,13 +32,12 @@ struct VSOutput
 };
 
 [RootSignature(XOR_ROOT_SIGNATURE)]
-VSOutput main(uint id : SV_VertexID)
+VSOutput main(VSInput i)
 {
-    id %= 3;
-
     VSOutput o;
-    o.color = Colors[id];
-    o.pos   = Positions[id];
+
+    o.color = float4(i.color, 1);
+    o.pos   = float4(i.pos, 0, 1);
 
 	return o;
 }

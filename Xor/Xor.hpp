@@ -13,6 +13,8 @@
 namespace xor
 {
     class Device;
+    class CommandList;
+    class Buffer;
 
     class Format
     {
@@ -48,7 +50,6 @@ namespace xor
 
         size_t size() const
         {
-            XOR_ASSERT(m_elementSize > 0, "DXGI_FORMAT size not implemented");
             return m_elementSize;
         }
     };
@@ -77,6 +78,42 @@ namespace xor
             Weak weak() { return m_state; }
             T &S() { return *m_state; }
         };
+    }
+
+    namespace info
+    {
+        class BufferInfo
+        {
+        protected:
+            std::function<void(CommandList &cmd, Buffer &buf)> m_initializer;
+            friend class Device;
+        public:
+            size_t size = 0;
+            Format format;
+
+            BufferInfo() = default;
+            BufferInfo(size_t sizeBytes) : size(sizeBytes) {}
+            BufferInfo(size_t size, Format format)
+                : size(size)
+                , format(format)
+            {}
+
+            BufferInfo(Span<const uint8_t> data, Format format);
+
+            template <typename T>
+            BufferInfo(Span<const T> data, Format format = Format::structure<T>())
+                : BufferInfo(asBytes(data), format)
+            {}
+        };
+
+        class BufferInfoBuilder : public BufferInfo
+        {
+        public:
+            BufferInfoBuilder() = default;
+            BufferInfoBuilder(const BufferInfo &info) : BufferInfo(info) {}
+            BufferInfoBuilder &size(size_t sz)    { BufferInfo::size = sz; return *this; }
+            BufferInfoBuilder &format(Format fmt) { BufferInfo::format = fmt; return *this; }
+        };
 
         class BufferViewInfo
         {
@@ -84,6 +121,8 @@ namespace xor
             size_t firstElement = 0;
             size_t numElements  = 0;
             Format format;
+
+            BufferViewInfo defaults(const BufferInfo &bufferInfo) const;
         };
 
         class BufferViewInfoBuilder : public BufferViewInfo 
@@ -95,6 +134,36 @@ namespace xor
             BufferViewInfoBuilder &firstElement(size_t index) { BufferViewInfo::firstElement = index; return *this; }
             BufferViewInfoBuilder &numElements(size_t count) { BufferViewInfo::numElements = count; return *this; }
             BufferViewInfoBuilder &format(Format format) { BufferViewInfo::format = format; return *this; }
+        };
+
+        class InputLayoutInfo
+        {
+        protected:
+            std::vector<D3D12_INPUT_ELEMENT_DESC> m_elements;
+            friend class Device;
+        public:
+            D3D12_INPUT_LAYOUT_DESC desc() const;
+        };
+
+        class InputLayoutInfoBuilder : public InputLayoutInfo
+        {
+        public:
+            InputLayoutInfoBuilder &element(const char *semantic, uint index,
+                                            Format format,
+                                            uint inputSlot = 0,
+                                            uint offset = D3D12_APPEND_ALIGNED_ELEMENT)
+            {
+                m_elements.emplace_back();
+                auto &e                = m_elements.back();
+                e.SemanticName         = semantic;
+                e.SemanticIndex        = index;
+                e.Format               = format;
+                e.InputSlot            = inputSlot;
+                e.AlignedByteOffset    = offset;
+                e.InputSlotClass       = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
+                e.InstanceDataStepRate = 0;
+                return *this;
+            }
         };
     }
 
@@ -120,19 +189,23 @@ namespace xor
     public:
         Pipeline() = default;
 
-        class Graphics : public D3D12_GRAPHICS_PIPELINE_STATE_DESC
+        class Graphics : private D3D12_GRAPHICS_PIPELINE_STATE_DESC
         {
             friend class Device;
             friend class Pipeline;
             friend struct backend::PipelineState;
-            String m_vs;
-            String m_ps;
+            String                m_vs;
+            String                m_ps;
+            info::InputLayoutInfo m_inputLayout;
         public:
             Graphics();
+
+            D3D12_GRAPHICS_PIPELINE_STATE_DESC desc() const;
 
             Graphics &vertexShader(const String &vsName);
             Graphics &pixelShader(const String &psName);
             Graphics &renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats);
+            Graphics &inputLayout(const info::InputLayoutInfo &ilInfo);
             Graphics &multisampling(uint samples, uint quality = 0);
             Graphics &topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
             Graphics &fill(D3D12_FILL_MODE fillMode);
@@ -158,40 +231,10 @@ namespace xor
     public:
         Buffer() = default;
 
-        class Info
-        {
-            std::function<void(CommandList &cmd, Buffer &buf)> m_initializer;
-            friend class Device;
-        public:
-            size_t size = 0;
-            Format format;
+        using Info    = info::BufferInfo;
+        using Builder = info::BufferInfoBuilder;
 
-            Info() = default;
-            Info(size_t sizeBytes) : size(sizeBytes) {}
-            Info(size_t size, Format format)
-                : size(size)
-                , format(format)
-            {}
-
-            Info(Span<const uint8_t> data, Format format);
-
-            template <typename T>
-            Info(Span<const T> data, Format format = Format::structure<T>())
-                : Info(asBytes(data), format)
-            {}
-
-            size_t sizeBytes() const;
-        };
-
-        class Builder : public Info
-        {
-        public:
-            Builder() = default;
-            Builder(const Info &info) : Info(info) {}
-            Builder &size(size_t sz)    { Info::size = sz; return *this; }
-            Builder &format(Format fmt) { Info::format = fmt; return *this; }
-        };
-
+        const Info &info() const { return *m_info; }
         const Info *operator->() const { return m_info.get(); }
     private:
         std::shared_ptr<const Info> m_info;
@@ -232,8 +275,8 @@ namespace xor
         BufferVBV() = default;
         Buffer buffer();
 
-        using Info    = backend::BufferViewInfo;
-        using Builder = backend::BufferViewInfoBuilder;
+        using Info    = info::BufferViewInfo;
+        using Builder = info::BufferViewInfoBuilder;
     };
 
     class Device : private backend::SharedState<backend::DeviceState>
@@ -337,6 +380,7 @@ namespace xor
         void clearRTV(RTV &rtv, float4 color = 0);
         void setRenderTargets();
         void setRenderTargets(RTV &rtv);
+        void setVBV(const BufferVBV &vbv);
 
         void barrier(Span<const Barrier> barriers);
 

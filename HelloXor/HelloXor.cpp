@@ -32,14 +32,18 @@ public:
             Pipeline::Graphics()
             .vertexShader("Hello.vs")
             .pixelShader("Hello.ps")
+            .inputLayout(info::InputLayoutInfoBuilder()
+                         .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT)
+                         .element("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT)
+                         .element("COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT))
             .renderTargetFormats({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB}));
 
         static const float D = .75f;
         Vertex vertices[] = {
             { float2(-D, +D), float2(0, 0), float3(1, 0, 0) },
             { float2(-D, -D), float2(0, 1), float3(0, 1, 0) },
-            { float2(+D, -D), float2(1, 0), float3(0, 0, 1) },
-            { float2(+D,  D), float2(1, 1), float3(1, 0, 1) },
+            { float2(+D, +D), float2(1, 0), float3(0, 0, 1) },
+            { float2(+D, -D), float2(1, 1), float3(1, 0, 1) },
         };
 
         vertexBuffer = device.createBufferVBV(asConstSpan(vertices));
@@ -73,7 +77,8 @@ public:
 
         cmd.setRenderTargets({backbuffer});
         cmd.bind(hello);
-        cmd.draw(3);
+        cmd.setVBV(vertexBuffer);
+        cmd.draw(4);
         cmd.setRenderTargets();
 
 #endif
