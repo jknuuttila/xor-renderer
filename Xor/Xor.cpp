@@ -699,14 +699,21 @@ namespace xor
             return numElements * format.size();
         }
 
-        BufferInfo::BufferInfo(Span<const uint8_t> data, Format format)
-            : size(data.size())
-            , format(format)
+        BufferInfo BufferInfo::fromBytes(Span<const uint8_t> data, Format format)
         {
-            m_initializer = [data] (CommandList &cmd, Buffer &buf) 
+            XOR_ASSERT(data.size() % format.size() == 0,
+                       "Initializer data size is not a multiple of the element type size.");
+
+            auto numElements = data.size() / format.size();
+
+            BufferInfo info(numElements, format);
+
+            info.m_initializer = [data] (CommandList &cmd, Buffer &buf) 
             {
                 cmd.updateBuffer(buf, data);
             };
+
+            return info;
         }
 
         D3D12_INPUT_LAYOUT_DESC InputLayoutInfo::desc() const
@@ -989,8 +996,10 @@ namespace xor
 
     Pipeline::Graphics & Pipeline::Graphics::inputLayout(const info::InputLayoutInfo & ilInfo)
     {
-        m_inputLayout = ilInfo;
-        InputLayout = m_inputLayout.desc();
+        // Put the input layout info object behind a pointer so the element addresses
+        // do not change even if the pipeline info object is copied.
+        m_inputLayout = std::make_shared<info::InputLayoutInfo>(ilInfo);
+        InputLayout   = m_inputLayout->desc();
         return *this;
     }
 
@@ -1115,7 +1124,7 @@ namespace xor
         D3D12_RESOURCE_DESC desc = {};
         desc.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
         desc.Alignment          = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
-        desc.Width              = info.size;
+        desc.Width              = info.sizeBytes();
         desc.Height             = 1;
         desc.DepthOrArraySize   = 1;
         desc.MipLevels          = 1;

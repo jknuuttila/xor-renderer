@@ -211,13 +211,13 @@ namespace xor
     template <typename T>
     auto asSpan(T &&t)
     {
-        return Span<std::remove_reference_t<decltype(t[0])>>(std::forward<T>(t));
+        return Span<std::remove_reference_t<decltype(*std::begin(t))>>(std::forward<T>(t));
     }
 
     template <typename T>
     auto asConstSpan(T &&t)
     {
-        return Span<const std::remove_reference_t<decltype(t[0])>>(std::forward<T>(t));
+        return Span<const std::remove_reference_t<decltype(*std::begin(t))>>(std::forward<T>(t));
     }
 
     template <typename T>

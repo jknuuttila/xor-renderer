@@ -95,18 +95,25 @@ namespace xor
             Format format;
 
             BufferInfo() = default;
-            BufferInfo(size_t sizeBytes) : size(sizeBytes) {}
             BufferInfo(size_t size, Format format)
                 : size(size)
                 , format(format)
             {}
 
-            BufferInfo(Span<const uint8_t> data, Format format);
+            static BufferInfo fromBytes(Span<const uint8_t> data, Format format);
 
             template <typename T>
             BufferInfo(Span<const T> data, Format format = Format::structure<T>())
-                : BufferInfo(asBytes(data), format)
+            {
+                *this = fromBytes(asBytes(data), format);
+            }
+
+            template <typename T>
+            BufferInfo(std::initializer_list<T> data, Format format = Format::structure<T>())
+                : BufferInfo(asConstSpan(data), format)
             {}
+
+            size_t sizeBytes() const { return size * format.size(); }
         };
 
         class BufferInfoBuilder : public BufferInfo
@@ -198,9 +205,9 @@ namespace xor
             friend class Device;
             friend class Pipeline;
             friend struct backend::PipelineState;
-            String                m_vs;
-            String                m_ps;
-            info::InputLayoutInfo m_inputLayout;
+            String                                 m_vs;
+            String                                 m_ps;
+            std::shared_ptr<info::InputLayoutInfo> m_inputLayout;
         public:
             Graphics();
 
