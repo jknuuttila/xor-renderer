@@ -3,8 +3,13 @@
   <ItemGroup>
     <ClInclude Include="Xor.hpp" />
     <ClInclude Include="Shaders.h.hlsl" />
+    <ClInclude Include="Image.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
+    <ClCompile Include="Image.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\external\FreeImage\FreeImage.dll" />
   </ItemGroup>
 </Project>

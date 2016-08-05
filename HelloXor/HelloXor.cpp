@@ -50,6 +50,9 @@ public:
         vertexBuffer = device.createBufferVBV(asConstSpan(vertices));
         indexBuffer  = device.createBufferIBV(
             Buffer::Info({ 0, 1, 2, 1, 3, 2, }, DXGI_FORMAT_R32_UINT));
+
+        Image lena(XOR_DATA "/Lena.png");
+        log("HelloXor", "Loaded image %u x %u\n", lena.size().x, lena.size().y);
     }
 
     void keyDown(int keyCode) override

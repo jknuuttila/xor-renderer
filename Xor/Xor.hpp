@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/Core.hpp"
+#include "Xor/Image.hpp"
 
 #include <d3d12.h>
 #include <dxgi1_5.h>
