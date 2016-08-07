@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <string>
+#include <memory>
 #include <initializer_list>
 #include <type_traits>
 
@@ -233,5 +234,91 @@ namespace xor
         auto begin = reinterpret_cast<const uint8_t *>(asSpan(t).data());
         return Span<const uint8_t>(begin, sizeBytes(t));
     }
+
+    template <typename T>
+    class DynamicBuffer
+    {
+        static_assert(std::is_pod<T>::value,
+                      "DynamicBuffer only supports POD types");
+
+        std::unique_ptr<T[]> m_data = nullptr;
+        size_t               m_size = 0;
+    public:
+        DynamicBuffer() = default;
+
+        DynamicBuffer(size_t size)
+        {
+            resize(size);
+        }
+
+        DynamicBuffer(size_t size, T value)
+        {
+            resize(size, value);
+        }
+
+        bool empty() const
+        {
+            return m_size == 0;
+        }
+
+        explicit operator bool() const
+        {
+            return !!m_size;
+        }
+
+        size_t size() const
+        {
+            return m_size;
+        }
+
+        size_t sizeBytes() const
+        {
+            return m_size * sizeof(T);
+        }
+
+        void clear()
+        {
+            resize(0);
+        }
+
+        void resize(size_t size)
+        {
+            m_size = size;
+
+            if (size)
+                m_data = std::unique_ptr<T[]>(new T[size]);
+            else
+                m_data = nullptr;
+        }
+
+        void resize(size_t size, T value)
+        {
+            resize(size);
+            fill(value);
+        }
+
+        void fill(T value)
+        {
+            if (sizeof(T) == 1)
+            {
+                memset(m_data.get(), value, size);
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                    m_data[i] = value;
+            }
+        }
+
+        T *begin() { return m_data.get(); }
+        T *end()   { return begin() + m_size; }
+        T *data()  { return begin(); } 
+        const T *begin() const { return m_data.get(); }
+        const T *end()   const { return begin() + m_size; }
+        const T *data()  const { return begin(); } 
+
+        T &operator[](size_t i) { return m_data[i]; }
+        const T &operator[](size_t i) const { return m_data[i]; }
+    };
 }
 

@@ -28,10 +28,10 @@
       <FileType>Document</FileType>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Copying FreeImage DLL</Message>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Copying FreeImage DLL</Message>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">xcopy "$(SolutionDir)external\FreeImage\FreeImage.dll" "$(OutDir)" /y</Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">xcopy "$(SolutionDir)external\FreeImage\FreeImage.dll" "$(OutDir)" /y</Command>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">FreeImage.dll</Outputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">FreeImage.dll</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">robocopy $(SolutionDir)external\FreeImage $(OutDir) FreeImage.dll /XO /NJH /NJS </Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">robocopy $(SolutionDir)external\FreeImage $(OutDir) FreeImage.dll /XO /NJH /NJS </Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)FreeImage.dll</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)FreeImage.dll</Outputs>
     </CustomBuild>
   </ItemGroup>
   <PropertyGroup Label="Globals">
