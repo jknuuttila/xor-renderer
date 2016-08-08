@@ -4,10 +4,12 @@
     <ClInclude Include="Xor.hpp" />
     <ClInclude Include="Shaders.h.hlsl" />
     <ClInclude Include="Image.hpp" />
+    <ClInclude Include="Format.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
     <ClCompile Include="Image.cpp" />
+    <ClCompile Include="Format.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\external\FreeImage\FreeImage.dll" />

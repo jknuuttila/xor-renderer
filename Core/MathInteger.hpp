@@ -14,4 +14,9 @@ namespace xor
         else
             return -1;
     }
+
+    template <typename T> T roundUpToMultiple(T value, T multiplier)
+    {
+        return ((value + (multiplier - 1)) / multiplier) * multiplier;
+    }
 }

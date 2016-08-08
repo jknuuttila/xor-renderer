@@ -62,6 +62,12 @@ namespace xor
         const T *operator->() const { return get(); }
     };
 
+    template <typename T, typename Deleter>
+    auto raiiPtr(T *t, Deleter &&deleter)
+    {
+        return std::unique_ptr<T, Deleter>(t, deleter);
+    }
+
     // Assigns monotonically increasing consecutive non-negative sequence numbers,
     // and keeps track of which ones have completed. Sequence numbers
     // can complete in arbitrary order.
@@ -233,6 +239,20 @@ namespace xor
     {
         auto begin = reinterpret_cast<const uint8_t *>(asSpan(t).data());
         return Span<const uint8_t>(begin, sizeBytes(t));
+    }
+
+    template <typename T, typename S>
+    Span<T> reinterpretSpan(S &&s)
+    {
+        auto begin = reinterpret_cast<T *>(asSpan(s).data());
+        return Span<T>(begin, sizeBytes(s) / sizeof(T));
+    }
+
+    template <typename T, typename S>
+    Span<const T> reinterpretSpan(const S &s)
+    {
+        auto begin = reinterpret_cast<const T *>(asConstSpan(s).data());
+        return Span<const T>(begin, sizeBytes(s) / sizeof(T));
     }
 
     template <typename T>

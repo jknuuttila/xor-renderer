@@ -1472,20 +1472,4 @@ namespace xor
     {
         return m_state ? m_state->resource.Get() : nullptr;
     }
-
-    uint Format::size() const
-    {
-        if (m_elementSize)
-            return m_elementSize;
-
-        switch (m_dxgiFormat)
-        {
-        case DXGI_FORMAT_R32_UINT:
-            return 4;
-        default:
-            XOR_CHECK(false, "Unknown format");
-        }
-
-        return 0;
-    }
 }

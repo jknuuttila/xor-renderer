@@ -11,10 +11,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Format.hpp" />
     <ClInclude Include="Image.hpp" />
     <ClInclude Include="Xor.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Format.cpp" />
     <ClCompile Include="Image.cpp" />
     <ClCompile Include="Xor.cpp" />
   </ItemGroup>
