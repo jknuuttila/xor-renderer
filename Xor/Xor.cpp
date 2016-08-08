@@ -378,9 +378,13 @@ namespace xor
                 mapHeap();
             }
 
-            Block uploadBytes(GPUProgressTracking &progress, Span<const uint8_t> bytes, SeqNum cmdListNumber)
+            Block uploadBytes(GPUProgressTracking &progress,
+                              Span<const uint8_t> bytes,
+                              SeqNum cmdListNumber,
+                              uint alignment = 1)
             {
-                auto block = ringbuffer.allocate(bytes.sizeBytes(), cmdListNumber);
+                auto size = bytes.sizeBytes() + (alignment - 1);
+                auto block = ringbuffer.allocate(size, cmdListNumber);
 
                 while (!block)
                 {
@@ -392,8 +396,10 @@ namespace xor
                     progress.waitUntilCompleted(oldest);
                     ringbuffer.releaseOldestAllocation();
 
-                    block = ringbuffer.allocate(bytes.sizeBytes(), cmdListNumber);
+                    block = ringbuffer.allocate(size, cmdListNumber);
                 }
+
+                block.begin = roundUpToMultiple<int64_t>(block.begin, alignment);
 
                 // If we got here, we got space from the ringbuffer, memcpy it in and flush.
                 memcpy(mapped + block.begin, bytes.data(), bytes.sizeBytes());
@@ -491,7 +497,7 @@ namespace xor
             struct Backbuffer
             {
                 SeqNum seqNum = InvalidSeqNum;
-                RTV rtv;
+                TextureRTV rtv;
             };
             std::vector<Backbuffer> backbuffers;
 
@@ -723,6 +729,29 @@ namespace xor
             d.pInputElementDescs = m_elements.data();
             return d;
         }
+
+        TextureInfo::TextureInfo(const Image & image, Format fmt)
+        {
+            size = image.size();
+            if (fmt)
+                format = fmt;
+            else
+                format = image.format();
+
+            m_initializer = [&image] (CommandList &cmd, Texture &tex) 
+            {
+                cmd.updateTexture(tex, image.subresource(0));
+            };
+        }
+
+        TextureInfo::TextureInfo(ID3D12Resource * texture)
+        {
+            auto desc = texture->GetDesc();
+            XOR_CHECK(desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                      "Expected a texture");
+            size   = { static_cast<uint>(desc.Width), desc.Height };
+            format = desc.Format;
+        }
     }
 
     using namespace xor::backend;
@@ -928,6 +957,8 @@ namespace xor
                 __uuidof(ID3D12Resource),
                 &tex.S().resource));
 
+            tex.makeInfo() = Texture::Info(tex.S().resource.Get());
+
             bb.rtv.makeState();
             bb.rtv.S().device = weak();
             bb.rtv.S().descriptor = m_state->rtvs.allocate();
@@ -1110,7 +1141,7 @@ namespace xor
     Buffer Device::createBuffer(const Buffer::Info & info)
     {
         Buffer buffer;
-        buffer.m_info = std::make_shared<Buffer::Info>(info);
+        buffer.makeInfo() = info;
         buffer.makeState();
         buffer.S().device = weak();
 
@@ -1191,6 +1222,64 @@ namespace xor
     BufferIBV Device::createBufferIBV(const Buffer::Info & bufferInfo, const BufferIBV::Info & viewInfo)
     {
         return createBufferIBV(createBuffer(bufferInfo), viewInfo);
+    }
+
+    Texture Device::createTexture(const Texture::Info & info)
+    {
+        Texture texture;
+        texture.makeInfo() = info;
+        texture.makeState();
+        texture.S().device = weak();
+
+        D3D12_HEAP_PROPERTIES heap = {};
+        heap.Type                 = D3D12_HEAP_TYPE_DEFAULT;
+        heap.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        heap.CreationNodeMask     = 0;
+        heap.VisibleNodeMask      = 0;
+
+        D3D12_RESOURCE_DESC desc = {};
+        desc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        desc.Alignment          = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+        desc.Width              = info.size.x;
+        desc.Height             = info.size.y;
+        desc.DepthOrArraySize   = 1;
+        desc.MipLevels          = 1;
+        desc.Format             = info.format;
+        desc.SampleDesc.Count   = 1;
+        desc.SampleDesc.Quality = 0;
+        desc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        desc.Flags              = D3D12_RESOURCE_FLAG_NONE;
+
+        XOR_CHECK_HR(device()->CreateCommittedResource(
+            &heap,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_COMMON,
+            nullptr,
+            __uuidof(ID3D12Resource),
+            &texture.S().resource));
+
+        if (info.m_initializer)
+        {
+            auto initCmd = initializerCommandList();
+            info.m_initializer(initCmd, texture);
+            execute(initCmd);
+        }
+
+        return texture;
+    }
+
+    TextureSRV Device::createTextureSRV(Texture texture, const TextureSRV::Info & viewInfo)
+    {
+        TextureSRV srv;
+        srv.m_texture = texture;
+        return srv;
+    }
+
+    TextureSRV Device::createTextureSRV(const Texture::Info & textureInfo, const TextureSRV::Info & viewInfo)
+    {
+        return createTextureSRV(createTexture(textureInfo), viewInfo);
     }
 
     CommandList Device::graphicsCommandList()
@@ -1327,7 +1416,7 @@ namespace xor
         cmd()->SetPipelineState(pipeline.S().pso.Get());
     }
 
-    void CommandList::clearRTV(RTV &rtv, float4 color)
+    void CommandList::clearRTV(TextureRTV &rtv, float4 color)
     {
         cmd()->ClearRenderTargetView(rtv.S().descriptor.cpu,
                                      color.data(),
@@ -1343,7 +1432,7 @@ namespace xor
                                   nullptr);
     }
 
-    void CommandList::setRenderTargets(RTV &rtv)
+    void CommandList::setRenderTargets(TextureRTV &rtv)
     {
         cmd()->OMSetRenderTargets(1,
                                   &rtv.S().descriptor.cpu,
@@ -1353,10 +1442,10 @@ namespace xor
         D3D12_VIEWPORT viewport = {};
         D3D12_RECT scissor = {};
 
-        auto texDesc      = rtv.texture().desc();
+        auto tex = rtv.texture();
 
-        viewport.Width    = static_cast<float>(texDesc.Width);
-        viewport.Height   = static_cast<float>(texDesc.Height);
+        viewport.Width    = static_cast<float>(tex->size.x);
+        viewport.Height   = static_cast<float>(tex->size.y);
         viewport.MinDepth = D3D12_MIN_DEPTH;
         viewport.MaxDepth = D3D12_MAX_DEPTH;
         viewport.TopLeftX = 0;
@@ -1364,8 +1453,8 @@ namespace xor
 
         scissor.left   = 0;
         scissor.top    = 0;
-        scissor.right  = static_cast<LONG>(texDesc.Width);
-        scissor.bottom = static_cast<LONG>(texDesc.Height);
+        scissor.right  = static_cast<LONG>(tex->size.x);
+        scissor.bottom = static_cast<LONG>(tex->size.y);
 
         cmd()->RSSetViewports(1, &viewport);
         cmd()->RSSetScissorRects(1, &scissor);
@@ -1420,6 +1509,37 @@ namespace xor
             block.size());
     }
 
+    void CommandList::updateTexture(Texture & texture, ImageData data, uint2 pos, Subresource sr)
+    {
+        auto &s          = S();
+        auto &dev        = Device::parent(m_state->device).S();
+        auto &uploadHeap = *dev.uploadHeap;
+
+        auto block       = uploadHeap.uploadBytes(dev.progress, data.data, number(),
+                                                  D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
+
+        D3D12_TEXTURE_COPY_LOCATION dst = {};
+        dst.pResource                   = texture.get();
+        dst.Type                        = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        dst.SubresourceIndex            = sr.index(1);
+
+        D3D12_TEXTURE_COPY_LOCATION src = {};
+        src.pResource                          = uploadHeap.heap.Get();
+        src.Type                               = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        src.PlacedFootprint.Offset             = static_cast<UINT64>(block.begin);
+        src.PlacedFootprint.Footprint.Format   = data.format;
+        src.PlacedFootprint.Footprint.Width    = data.size.x;
+        src.PlacedFootprint.Footprint.Height   = data.size.y;
+        src.PlacedFootprint.Footprint.Depth    = 1;
+        src.PlacedFootprint.Footprint.RowPitch = data.pitch;
+
+        m_state->cmd->CopyTextureRegion(
+            &dst,
+            pos.x, pos.y, 0,
+            &src,
+            nullptr);
+    }
+
     uint SwapChain::currentIndex()
     {
         // Block until the current backbuffer has finished rendering.
@@ -1438,12 +1558,12 @@ namespace xor
         }
     }
 
-    RTV SwapChain::backbuffer()
+    TextureRTV SwapChain::backbuffer()
     {
         return m_state->backbuffers[currentIndex()].rtv;
     }
 
-    Texture RTV::texture()
+    Texture TextureView::texture()
     {
         return m_texture;
     }
@@ -1461,11 +1581,6 @@ namespace xor
         barrier.Transition.StateAfter  = after;
         barrier.Transition.Subresource = subresource;
         return barrier;
-    }
-
-    D3D12_RESOURCE_DESC Resource::desc() const
-    {
-        return m_state->resource->GetDesc();
     }
 
     ID3D12Resource *Resource::get()

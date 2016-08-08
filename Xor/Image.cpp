@@ -143,6 +143,24 @@ namespace xor
         return m_state->size;
     }
 
+    Format Image::format() const
+    {
+        return m_state->format;
+    }
+
+    ImageData Image::subresource(Subresource sr) const
+    {
+        (void)sr;
+
+        ImageData data;
+        data.format    = format();
+        data.size      = size();
+        data.pitch     = m_state->pitch;
+        data.pixelSize = data.format.size();
+        data.data      = m_state->data;
+        return data;
+    }
+
     Span<uint8_t> Image::State::scanline(uint y)
     {
         return Span<uint8_t>(data.data() + y * pitch, pitch);

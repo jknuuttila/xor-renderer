@@ -12,6 +12,7 @@ class HelloXor : public Window
     Pipeline hello;
     BufferVBV vertexBuffer;
     BufferIBV indexBuffer;
+    TextureSRV lena;
     Timer time;
 
     struct Vertex
@@ -51,8 +52,7 @@ public:
         indexBuffer  = device.createBufferIBV(
             Buffer::Info({ 0, 1, 2, 1, 3, 2, }, DXGI_FORMAT_R32_UINT));
 
-        Image lena(XOR_DATA "/Lena.png");
-        log("HelloXor", "Loaded image %u x %u\n", lena.size().x, lena.size().y);
+        lena = device.createTextureSRV(Image(XOR_DATA "/Lena.png"));
     }
 
     void keyDown(int keyCode) override

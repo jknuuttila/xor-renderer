@@ -22,6 +22,7 @@ namespace xor
     class Device;
     class CommandList;
     class Buffer;
+    class Texture;
 
     namespace backend
     {
@@ -85,6 +86,8 @@ namespace xor
         class BufferInfoBuilder : public BufferInfo
         {
         public:
+            using Info = BufferInfo;
+
             BufferInfoBuilder() = default;
             BufferInfoBuilder(const BufferInfo &info) : BufferInfo(info) {}
             BufferInfoBuilder &size(size_t sz)    { BufferInfo::size = sz; return *this; }
@@ -105,12 +108,56 @@ namespace xor
         class BufferViewInfoBuilder : public BufferViewInfo 
         {
         public:
+            using Info = BufferViewInfo;
+
             BufferViewInfoBuilder() = default;
             BufferViewInfoBuilder(const BufferViewInfo &info) : BufferViewInfo(info) {}
 
             BufferViewInfoBuilder &firstElement(size_t index) { BufferViewInfo::firstElement = index; return *this; }
             BufferViewInfoBuilder &numElements(uint count) { BufferViewInfo::numElements = count; return *this; }
             BufferViewInfoBuilder &format(Format format) { BufferViewInfo::format = format; return *this; }
+        };
+
+        class TextureInfo
+        {
+        protected:
+            std::function<void(CommandList &cmd, Texture &tex)> m_initializer;
+            friend class Device;
+        public:
+            uint2 size;
+            Format format;
+
+            TextureInfo() = default;
+            TextureInfo(uint2 size, Format format)
+                : size(size)
+                , format(format)
+            {}
+            TextureInfo(const Image &image, Format fmt = Format());
+            TextureInfo(ID3D12Resource *texture);
+        };
+
+        class TextureInfoBuilder : public TextureInfo
+        {
+        public:
+            using Info = TextureInfo;
+
+            TextureInfoBuilder() = default;
+            TextureInfoBuilder(const TextureInfo &info) : TextureInfo(info) {}
+        };
+
+        class TextureViewInfo
+        {
+        public:
+            TextureViewInfo defaults(const TextureInfo &bufferInfo) const;
+        };
+
+        class TextureViewInfoBuilder : public TextureViewInfo 
+        {
+        public:
+            using Info = TextureViewInfo;
+
+            TextureViewInfoBuilder() = default;
+            TextureViewInfoBuilder(const TextureViewInfo &info) : TextureViewInfo(info) {}
         };
 
         class InputLayoutInfo
@@ -197,30 +244,38 @@ namespace xor
     public:
         Resource() = default;
 
-        D3D12_RESOURCE_DESC desc() const;
         ID3D12Resource *get();
     };
 
-    class Buffer : public Resource
+    template <typename ResourceInfoBuilder>
+    class ResourceWithInfo : public Resource
     {
         friend class Device;
         friend class CommandList;
     public:
-        Buffer() = default;
-
-        using Info    = info::BufferInfo;
-        using Builder = info::BufferInfoBuilder;
+        using Info    = typename ResourceInfoBuilder::Info;
+        using Builder = ResourceInfoBuilder;
 
         const Info &info() const { return *m_info; }
         const Info *operator->() const { return m_info.get(); }
-    private:
-        std::shared_ptr<const Info> m_info;
+
+    protected:
+        std::shared_ptr<Info> m_info;
+        Info &makeInfo()
+        {
+            m_info = std::make_shared<Info>();
+            return *m_info;
+        }
     };
 
-    class Texture : public Resource
+    class Buffer : public ResourceWithInfo<info::BufferInfoBuilder>
     {
-        friend class Device;
-        friend class CommandList;
+    public:
+        Buffer() = default;
+    };
+
+    class Texture : public ResourceWithInfo<info::TextureInfoBuilder>
+    {
     public:
         Texture() = default;
     };
@@ -233,13 +288,26 @@ namespace xor
         DescriptorView() = default;
     };
 
-    class RTV : public DescriptorView
+    class TextureView : public DescriptorView
     {
         friend class Device;
         friend class CommandList;
         Texture m_texture;
     public:
+        using Info    = info::TextureViewInfo;
+        using Builder = info::TextureViewInfoBuilder;
+
         Texture texture();
+    };
+
+    class TextureRTV : public TextureView
+    {
+    public:
+    };
+
+    class TextureSRV : public TextureView
+    {
+    public:
     };
 
     class BufferVBV
@@ -308,6 +376,10 @@ namespace xor
         BufferIBV createBufferIBV(Buffer buffer                 , const BufferIBV::Info &viewInfo = BufferIBV::Info());
         BufferIBV createBufferIBV(const Buffer::Info &bufferInfo, const BufferIBV::Info &viewInfo = BufferIBV::Info());
 
+        Texture    createTexture(const Texture::Info &info);
+        TextureSRV createTextureSRV(Texture texture                 , const TextureSRV::Info &viewInfo = TextureSRV::Info());
+        TextureSRV createTextureSRV(const Texture::Info &textureInfo, const TextureSRV::Info &viewInfo = TextureSRV::Info());
+
         CommandList graphicsCommandList();
 
         void execute(CommandList &cmd);
@@ -339,7 +411,7 @@ namespace xor
     public:
         SwapChain() = default;
 
-        RTV backbuffer();
+        TextureRTV backbuffer();
     };
 
     class CommandList : private backend::SharedState<backend::CommandListState>
@@ -370,9 +442,9 @@ namespace xor
 
         void bind(Pipeline &pipeline);
 
-        void clearRTV(RTV &rtv, float4 color = 0);
+        void clearRTV(TextureRTV &rtv, float4 color = 0);
         void setRenderTargets();
-        void setRenderTargets(RTV &rtv);
+        void setRenderTargets(TextureRTV &rtv);
         void setVBV(const BufferVBV &vbv);
         void setIBV(const BufferIBV &ibv);
         void setTopology(D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -385,6 +457,10 @@ namespace xor
         void updateBuffer(Buffer &buffer,
                           Span<const uint8_t> data,
                           size_t offset = 0);
+        void updateTexture(Texture &texture,
+                           ImageData data,
+                           uint2 pos = 0,
+                           Subresource sr = 0);
     };
 
     // Global initialization and deinitialization of the Xor renderer.
