@@ -39,15 +39,54 @@ namespace xor
         struct GPUProgressTracking;
 
         template <typename T>
-        struct SharedState
+        class SharedState
         {
-            using Weak = std::weak_ptr<T>;
-
             std::shared_ptr<T> m_state;
-            void makeState() { m_state = std::make_shared<T>(); }
-            Weak weak() { return m_state; }
+        public:
+
+            template <typename... Ts>
+            T &makeState(Ts &&... ts)
+            {
+                m_state = std::make_shared<T>(std::forward<Ts>(ts)...);
+                return S();
+            }
+
             T &S() { return *m_state; }
+
+            bool valid() const { return !!m_state; }
         };
+
+        class Resource : private backend::SharedState<backend::ResourceState>
+        {
+            friend class Device;
+            friend class CommandList;
+        public:
+            Resource() = default;
+
+            ID3D12Resource *get();
+        };
+
+        template <typename ResourceInfoBuilder>
+        class ResourceWithInfo : public Resource
+        {
+            friend class Device;
+            friend class CommandList;
+        public:
+            using Info    = typename ResourceInfoBuilder::Info;
+            using Builder = ResourceInfoBuilder;
+
+            const Info &info() const { return *m_info; }
+            const Info *operator->() const { return m_info.get(); }
+
+        protected:
+            std::shared_ptr<Info> m_info;
+            Info &makeInfo()
+            {
+                m_info = std::make_shared<Info>();
+                return *m_info;
+            }
+        };
+
     }
 
     namespace info
@@ -237,44 +276,13 @@ namespace xor
         };
     };
 
-    class Resource : private backend::SharedState<backend::ResourceState>
-    {
-        friend class Device;
-        friend class CommandList;
-    public:
-        Resource() = default;
-
-        ID3D12Resource *get();
-    };
-
-    template <typename ResourceInfoBuilder>
-    class ResourceWithInfo : public Resource
-    {
-        friend class Device;
-        friend class CommandList;
-    public:
-        using Info    = typename ResourceInfoBuilder::Info;
-        using Builder = ResourceInfoBuilder;
-
-        const Info &info() const { return *m_info; }
-        const Info *operator->() const { return m_info.get(); }
-
-    protected:
-        std::shared_ptr<Info> m_info;
-        Info &makeInfo()
-        {
-            m_info = std::make_shared<Info>();
-            return *m_info;
-        }
-    };
-
-    class Buffer : public ResourceWithInfo<info::BufferInfoBuilder>
+    class Buffer : public backend::ResourceWithInfo<info::BufferInfoBuilder>
     {
     public:
         Buffer() = default;
     };
 
-    class Texture : public ResourceWithInfo<info::TextureInfoBuilder>
+    class Texture : public backend::ResourceWithInfo<info::TextureInfoBuilder>
     {
     public:
         Texture() = default;
@@ -344,14 +352,13 @@ namespace xor
         friend class CommandList;
         friend class DescriptorView;
         friend class SwapChain;
+        friend class backend::DeviceChild;
         friend struct backend::DeviceState;
         friend struct backend::CommandListState;
         friend struct backend::SwapChainState;
         friend struct backend::ResourceState;
         friend struct backend::DescriptorViewState;
         friend struct backend::PipelineState;
-
-        static Device parent(Weak &parentDevice);
 
         ID3D12Device *device();
         std::shared_ptr<backend::CommandListState> createCommandList();
@@ -365,7 +372,7 @@ namespace xor
     public:
         Device() = default;
 
-        explicit operator bool() const { return static_cast<bool>(m_state); }
+        explicit operator bool() const { return valid(); }
 
         SwapChain createSwapChain(Window &window);
         Pipeline createGraphicsPipeline(const Pipeline::Graphics &info);
@@ -398,7 +405,7 @@ namespace xor
     public:
     };
 
-    Barrier transition(Resource &resource,
+    Barrier transition(backend::Resource &resource,
                        D3D12_RESOURCE_STATES before,
                        D3D12_RESOURCE_STATES after,
                        uint subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);

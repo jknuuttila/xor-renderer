@@ -11,6 +11,21 @@ namespace xor
     {
         static const char ShaderFileExtension[] = ".cso";
 
+        class DeviceChild
+        {
+            std::weak_ptr<DeviceState> m_parentDevice;
+        public:
+            DeviceChild() = default;
+            DeviceChild(std::weak_ptr<DeviceState> device)
+                : m_parentDevice(device)
+            {}
+
+            void setParent(Device &device);
+            void setParent(std::weak_ptr<DeviceState> device);
+
+            Device device();
+        };
+
         static ComPtr<IDXGIFactory4> dxgiFactory()
         {
             ComPtr<IDXGIFactory4> factory;
@@ -431,9 +446,8 @@ namespace xor
             void registerBuildInfo(std::shared_ptr<const BuildInfo> buildInfo);
         };
 
-        struct CommandListState
+        struct CommandListState : DeviceChild
         {
-            Device::Weak        device;
             ComPtr<ID3D12CommandAllocator>    allocator;
             ComPtr<ID3D12GraphicsCommandList> cmd;
 
@@ -489,9 +503,8 @@ namespace xor
 
         };
 
-        struct SwapChainState
+        struct SwapChainState : DeviceChild
         {
-            Device::Weak            device;
             ComPtr<IDXGISwapChain3> swapChain;
 
             struct Backbuffer
@@ -503,13 +516,12 @@ namespace xor
 
             ~SwapChainState()
             {
-                Device::parent(device).waitUntilDrained();
+                device().waitUntilDrained();
             }
         };
 
-        struct ResourceState
+        struct ResourceState : DeviceChild
         {
-            Device::Weak device;
             ComPtr<ID3D12Resource> resource;
 
             ~ResourceState()
@@ -519,27 +531,28 @@ namespace xor
 
                 // Queue up a no-op lambda, that holds the resource ComPtr by value.
                 // When the Device has executed it, it will get destroyed, freeing the last reference.
-                Device::parent(device).whenCompleted([resource = std::move(resource)] {});
+                device().whenCompleted([resource = std::move(resource)] {});
             }
         };
 
-        struct DescriptorViewState
+        struct DescriptorViewState : DeviceChild
         {
-            Device::Weak device;
             Descriptor descriptor;
 
             ~DescriptorViewState()
             {
-                Device::parent(device).whenCompleted([device = device, descriptor = descriptor] () mutable
+                auto dev = device();
+                dev.whenCompleted([dev, descriptor = descriptor] () mutable
                 {
-                    Device::parent(device).S().releaseDescriptor(descriptor);
+                    dev.S().releaseDescriptor(descriptor);
                 });
             }
         };
 
-        struct PipelineState : public std::enable_shared_from_this<PipelineState>
+        struct PipelineState
+            : std::enable_shared_from_this<PipelineState>
+            , DeviceChild
         {
-            Device::Weak device;
             std::shared_ptr<Pipeline::Graphics> graphicsInfo;
             ComPtr<ID3D12PipelineState> pso;
 
@@ -577,7 +590,7 @@ namespace xor
 
             void reload()
             {
-                auto dev = Device::parent(device);
+                auto dev = device();
 
                 log("Pipeline", "Rebuilding PSO.\n");
 
@@ -619,7 +632,7 @@ namespace xor
                 if (!pso)
                     return;
 
-                Device::parent(device).whenCompleted([pso = std::move(pso)] {});
+                device().whenCompleted([pso = std::move(pso)] {});
             }
 
             ~PipelineState()
@@ -876,9 +889,9 @@ namespace xor
     {
         makeState();
 
-        m_state->adapter      = std::move(adapter);
-        m_state->shaderLoader = std::move(shaderLoader);
-        m_state->device       = std::move(dev);
+        S().adapter      = std::move(adapter);
+        S().shaderLoader = std::move(shaderLoader);
+        S().device       = std::move(dev);
 
         {
             D3D12_COMMAND_QUEUE_DESC desc = {};
@@ -889,12 +902,12 @@ namespace xor
             XOR_CHECK_HR(device()->CreateCommandQueue(
                 &desc,
                 __uuidof(ID3D12CommandQueue),
-                &m_state->graphicsQueue));
+                &S().graphicsQueue));
         }
 
-        setName(m_state->graphicsQueue, "Graphics Queue");
+        setName(S().graphicsQueue, "Graphics Queue");
 
-        m_state->uploadHeap = std::make_shared<UploadHeap>(m_state->device.Get());
+        S().uploadHeap = std::make_shared<UploadHeap>(S().device.Get());
 
         {
             D3D12_DESCRIPTOR_HEAP_DESC desc = {};
@@ -903,7 +916,7 @@ namespace xor
             desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
             desc.NodeMask       = 0;
 
-            m_state->rtvs = ViewHeap(device(), desc);
+            S().rtvs = ViewHeap(device(), desc);
         }
     }
 
@@ -914,9 +927,7 @@ namespace xor
         auto factory = dxgiFactory();
 
         SwapChain swapChain;
-        swapChain.makeState();
-
-        swapChain.S().device = weak();
+        swapChain.makeState().setParent(*this);
 
         {
             DXGI_SWAP_CHAIN_DESC1 desc = {};
@@ -935,7 +946,7 @@ namespace xor
 
             ComPtr<IDXGISwapChain1> swapChain1;
             XOR_CHECK_HR(factory->CreateSwapChainForHwnd(
-                m_state->graphicsQueue.Get(),
+                S().graphicsQueue.Get(),
                 window.hWnd(),
                 &desc,
                 nullptr,
@@ -950,8 +961,7 @@ namespace xor
             SwapChainState::Backbuffer bb;
 
             auto &tex = bb.rtv.m_texture;
-            tex.makeState();
-            tex.S().device = weak();
+            tex.makeState().setParent(*this);
             XOR_CHECK_HR(swapChain.S().swapChain->GetBuffer(
                 i,
                 __uuidof(ID3D12Resource),
@@ -959,9 +969,8 @@ namespace xor
 
             tex.makeInfo() = Texture::Info(tex.S().resource.Get());
 
-            bb.rtv.makeState();
-            bb.rtv.S().device = weak();
-            bb.rtv.S().descriptor = m_state->rtvs.allocate();
+            bb.rtv.makeState().setParent(*this);
+            bb.rtv.S().descriptor = S().rtvs.allocate();
             {
                 D3D12_RENDER_TARGET_VIEW_DESC desc = {};
                 desc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -1070,24 +1079,14 @@ namespace xor
         return pipeline;
     }
 
-    Device Device::parent(Device::Weak& parentDevice)
-    {
-        Device parent;
-        if (auto devState = parentDevice.lock())
-        {
-            parent.m_state = std::move(devState);
-        }
-        return parent;
-    }
-
     ID3D12Device *Device::device()
     {
-        return m_state->device.Get();
+        return S().device.Get();
     }
 
     std::shared_ptr<CommandListState> Device::createCommandList()
     {
-        auto &dev = m_state->device;
+        auto &dev = S().device;
 
         std::shared_ptr<CommandListState> cmd =
             std::make_shared<CommandListState>();
@@ -1122,7 +1121,7 @@ namespace xor
 
     void Device::collectRootSignature(const D3D12_SHADER_BYTECODE &shader)
     { 
-        if (m_state->rootSignature || shader.BytecodeLength == 0)
+        if (S().rootSignature || shader.BytecodeLength == 0)
             return;
 
         XOR_CHECK_HR(device()->CreateRootSignature(
@@ -1130,7 +1129,7 @@ namespace xor
             shader.pShaderBytecode,
             shader.BytecodeLength,
             __uuidof(ID3D12RootSignature),
-            &m_state->rootSignature));
+            &S().rootSignature));
     }
 
     CommandList Device::initializerCommandList()
@@ -1285,17 +1284,17 @@ namespace xor
     CommandList Device::graphicsCommandList()
     {
         CommandList cmd;
-        cmd.m_state = m_state->freeGraphicsCommandLists.allocate([this]
+        cmd.m_state = S().freeGraphicsCommandLists.allocate([this]
         {
             return this->createCommandList();
         });
 
         cmd.reset();
-        cmd.S().cmd->SetGraphicsRootSignature(m_state->rootSignature.Get());
-        cmd.S().cmd->SetComputeRootSignature(m_state->rootSignature.Get());
+        cmd.S().cmd->SetGraphicsRootSignature(S().rootSignature.Get());
+        cmd.S().cmd->SetComputeRootSignature(S().rootSignature.Get());
 
         ++cmd.S().timesStarted;
-        cmd.S().seqNum = m_state->progress.startNewCommandList();
+        cmd.S().seqNum = S().progress.startNewCommandList();
 
         return cmd;
     }
@@ -1305,10 +1304,10 @@ namespace xor
         cmd.close();
 
         ID3D12CommandList *cmds[] = { cmd.S().cmd.Get() };
-        m_state->graphicsQueue->ExecuteCommandLists(1, cmds);
-        m_state->graphicsQueue->Signal(cmd.S().timesCompleted.Get(), cmd.S().timesStarted);
+        S().graphicsQueue->ExecuteCommandLists(1, cmds);
+        S().graphicsQueue->Signal(cmd.S().timesCompleted.Get(), cmd.S().timesStarted);
 
-        m_state->progress.executeCommandList(std::move(cmd));
+        S().progress.executeCommandList(std::move(cmd));
     }
 
     void Device::present(SwapChain & swapChain, bool vsync)
@@ -1317,15 +1316,15 @@ namespace xor
         // The backbuffer is assumed to depend on all command lists
         // that have been executed, but not on those which have
         // been started but not executed. Otherwise, deadlock could result.
-        backbuffer.seqNum = m_state->progress.newestExecuted;
+        backbuffer.seqNum = S().progress.newestExecuted;
         swapChain.S().swapChain->Present(vsync ? 1 : 0, 0);
-        m_state->shaderLoader->scanChangedSources();
-        m_state->progress.retireCommandLists();
+        S().shaderLoader->scanChangedSources();
+        S().progress.retireCommandLists();
     }
 
     SeqNum Device::now()
     {
-        return m_state->progress.now();
+        return S().progress.now();
     }
 
     void Device::whenCompleted(std::function<void()> f)
@@ -1335,65 +1334,65 @@ namespace xor
 
     void Device::whenCompleted(std::function<void()> f, SeqNum seqNum)
     {
-        m_state->progress.whenCompleted(std::move(f), seqNum);
+        S().progress.whenCompleted(std::move(f), seqNum);
     }
 
     bool Device::hasCompleted(SeqNum seqNum)
     {
-        return m_state->progress.hasCompleted(seqNum);
+        return S().progress.hasCompleted(seqNum);
     }
 
     void Device::waitUntilCompleted(SeqNum seqNum)
     {
-        m_state->progress.waitUntilCompleted(seqNum);
+        S().progress.waitUntilCompleted(seqNum);
     }
 
     void Device::waitUntilDrained()
     {
-        m_state->progress.waitUntilDrained();
+        S().progress.waitUntilDrained();
     }
 
     ID3D12GraphicsCommandList *CommandList::cmd()
     {
-        return m_state->cmd.Get();
+        return S().cmd.Get();
     }
 
     void CommandList::close()
     {
-        if (!m_state->closed)
+        if (!S().closed)
         {
             XOR_CHECK_HR(cmd()->Close());
-            m_state->closed = true;
+            S().closed = true;
         }
     }
 
     void CommandList::reset()
     {
-        if (m_state->closed)
+        if (S().closed)
         {
-            XOR_CHECK_HR(cmd()->Reset(m_state->allocator.Get(), nullptr));
-            m_state->closed = false;
+            XOR_CHECK_HR(cmd()->Reset(S().allocator.Get(), nullptr));
+            S().closed = false;
         }
     }
 
     bool CommandList::hasCompleted()
     {
-        auto completed = m_state->timesCompleted->GetCompletedValue();
+        auto completed = S().timesCompleted->GetCompletedValue();
 
-        XOR_ASSERT(completed <= m_state->timesStarted,
+        XOR_ASSERT(completed <= S().timesStarted,
                    "Command list completion count out of sync.");
 
-        return completed == m_state->timesStarted;
+        return completed == S().timesStarted;
     }
 
     void CommandList::waitUntilCompleted(DWORD timeout)
     {
         while (!hasCompleted())
         {
-            XOR_CHECK_HR(m_state->timesCompleted->SetEventOnCompletion(
-                m_state->timesStarted,
-                m_state->completedEvent.get()));
-            WaitForSingleObject(m_state->completedEvent.get(), timeout);
+            XOR_CHECK_HR(S().timesCompleted->SetEventOnCompletion(
+                S().timesStarted,
+                S().completedEvent.get()));
+            WaitForSingleObject(S().completedEvent.get(), timeout);
         }
     }
 
@@ -1401,14 +1400,14 @@ namespace xor
     {
         if (m_state)
         {
-            auto &freeCmds = Device::parent(m_state->device).S().freeGraphicsCommandLists;
+            auto &freeCmds = Device::parent(S().device).S().freeGraphicsCommandLists;
             freeCmds.release(std::move(m_state));
         }
     }
 
     SeqNum CommandList::number() const
     {
-        return m_state->seqNum;
+        return S().seqNum;
     }
 
     void CommandList::bind(Pipeline &pipeline)
@@ -1496,12 +1495,12 @@ namespace xor
                                    size_t offset)
     {
         auto &s          = S();
-        auto &dev        = Device::parent(m_state->device).S();
+        auto &dev        = Device::parent(S().device).S();
         auto &uploadHeap = *dev.uploadHeap;
 
         auto block       = uploadHeap.uploadBytes(dev.progress, data, number());
 
-        m_state->cmd->CopyBufferRegion(
+        S().cmd->CopyBufferRegion(
             buffer.get(),
             offset,
             uploadHeap.heap.Get(),
@@ -1512,7 +1511,7 @@ namespace xor
     void CommandList::updateTexture(Texture & texture, ImageData data, uint2 pos, Subresource sr)
     {
         auto &s          = S();
-        auto &dev        = Device::parent(m_state->device).S();
+        auto &dev        = Device::parent(S().device).S();
         auto &uploadHeap = *dev.uploadHeap;
 
         auto block       = uploadHeap.uploadBytes(dev.progress, data.data, number(),
@@ -1533,7 +1532,7 @@ namespace xor
         src.PlacedFootprint.Footprint.Depth    = 1;
         src.PlacedFootprint.Footprint.RowPitch = data.pitch;
 
-        m_state->cmd->CopyTextureRegion(
+        S().cmd->CopyTextureRegion(
             &dst,
             pos.x, pos.y, 0,
             &src,
@@ -1545,11 +1544,11 @@ namespace xor
         // Block until the current backbuffer has finished rendering.
         for (;;)
         {
-            uint index = m_state->swapChain->GetCurrentBackBufferIndex();
+            uint index = S().swapChain->GetCurrentBackBufferIndex();
 
-            auto device = Device::parent(m_state->device);
+            auto device = Device::parent(S().device);
 
-            auto &cur = m_state->backbuffers[index];
+            auto &cur = S().backbuffers[index];
             if (cur.seqNum < 0 || device.hasCompleted(cur.seqNum))
                 return index;
 
@@ -1560,7 +1559,7 @@ namespace xor
 
     TextureRTV SwapChain::backbuffer()
     {
-        return m_state->backbuffers[currentIndex()].rtv;
+        return S().backbuffers[currentIndex()].rtv;
     }
 
     Texture TextureView::texture()
@@ -1585,6 +1584,6 @@ namespace xor
 
     ID3D12Resource *Resource::get()
     {
-        return m_state ? m_state->resource.Get() : nullptr;
+        return m_state ? S().resource.Get() : nullptr;
     }
 }
