@@ -466,7 +466,7 @@ namespace xor
             ComPtr<ID3D12CommandQueue>  graphicsQueue;
             ComPtr<ID3D12RootSignature> rootSignature;
 
-            GrowingPool<std::shared_ptr<CommandListState>> freeGraphicsCommandLists;
+            GrowingPool<CommandList> freeGraphicsCommandLists;
             GPUProgressTracking progress;
             std::shared_ptr<UploadHeap> uploadHeap;
 
@@ -501,6 +501,7 @@ namespace xor
                 viewHeap(descriptor.type).release(descriptor);
             }
 
+            ID3D12Device *operator->() { return device.Get(); }
         };
 
         struct SwapChainState : DeviceChild
@@ -1072,26 +1073,16 @@ namespace xor
     {
 
         Pipeline pipeline;
-        pipeline.makeState();
-        pipeline.S().device       = weak();
+        pipeline.makeState().setParent(*this);
         pipeline.S().graphicsInfo = std::make_shared<Pipeline::Graphics>(info);
         pipeline.S().reload();
         return pipeline;
     }
 
-    ID3D12Device *Device::device()
+    CommandList Device::createCommandList()
     {
-        return S().device.Get();
-    }
-
-    std::shared_ptr<CommandListState> Device::createCommandList()
-    {
-        auto &dev = S().device;
-
-        std::shared_ptr<CommandListState> cmd =
-            std::make_shared<CommandListState>();
-
-        cmd->device = weak();
+        CommandList cmd;
+        cmd.makeState().setParent(*this);
 
         XOR_CHECK_HR(dev->CreateCommandAllocator(
             D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -1283,8 +1274,7 @@ namespace xor
 
     CommandList Device::graphicsCommandList()
     {
-        CommandList cmd;
-        cmd.m_state = S().freeGraphicsCommandLists.allocate([this]
+        CommandList cmd = S().freeGraphicsCommandLists.allocate([this]
         {
             return this->createCommandList();
         });
