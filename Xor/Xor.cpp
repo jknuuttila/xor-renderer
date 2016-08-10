@@ -20,10 +20,15 @@ namespace xor
                 : m_parentDevice(device)
             {}
 
-            void setParent(Device &device);
-            void setParent(std::weak_ptr<DeviceState> device);
+            void setParent(Device *device)
+            {
+                m_parentDevice = device->m_state;
+            }
 
-            Device device();
+            Device device()
+            {
+                return Device(m_parentDevice.lock());
+            }
         };
 
         static ComPtr<IDXGIFactory4> dxgiFactory()
@@ -457,6 +462,34 @@ namespace xor
 
             SeqNum seqNum = 0;
             bool closed = false;
+
+            CommandListState(Device &dev)
+            {
+                setParent(&dev);
+
+                XOR_CHECK_HR(dev.device()->CreateCommandAllocator(
+                    D3D12_COMMAND_LIST_TYPE_DIRECT,
+                    __uuidof(ID3D12CommandAllocator),
+                    &allocator));
+
+                XOR_CHECK_HR(dev.device()->CreateCommandList(
+                    0,
+                    D3D12_COMMAND_LIST_TYPE_DIRECT,
+                    allocator.Get(),
+                    nullptr,
+                    __uuidof(ID3D12GraphicsCommandList),
+                    &cmd));
+
+                XOR_CHECK_HR(dev.device()->CreateFence(
+                    0,
+                    D3D12_FENCE_FLAG_NONE, 
+                    __uuidof(ID3D12Fence),
+                    &timesCompleted));
+
+                completedEvent = CreateEventExA(nullptr, nullptr, 0, 
+                                                EVENT_ALL_ACCESS);
+                XOR_CHECK(!!completedEvent, "Failed to create completion event.");
+            }
         };
 
         struct DeviceState : std::enable_shared_from_this<DeviceState>
@@ -466,7 +499,7 @@ namespace xor
             ComPtr<ID3D12CommandQueue>  graphicsQueue;
             ComPtr<ID3D12RootSignature> rootSignature;
 
-            GrowingPool<CommandList> freeGraphicsCommandLists;
+            GrowingPool<std::shared_ptr<CommandListState>> freeGraphicsCommandLists;
             GPUProgressTracking progress;
             std::shared_ptr<UploadHeap> uploadHeap;
 
@@ -921,6 +954,11 @@ namespace xor
         }
     }
 
+    Device::Device(StatePtr state)
+    {
+        m_state = std::move(state);
+    }
+
     SwapChain Device::createSwapChain(Window &window)
     {
         static const uint BufferCount = 2;
@@ -928,7 +966,7 @@ namespace xor
         auto factory = dxgiFactory();
 
         SwapChain swapChain;
-        swapChain.makeState().setParent(*this);
+        swapChain.makeState().setParent(this);
 
         {
             DXGI_SWAP_CHAIN_DESC1 desc = {};
@@ -962,7 +1000,7 @@ namespace xor
             SwapChainState::Backbuffer bb;
 
             auto &tex = bb.rtv.m_texture;
-            tex.makeState().setParent(*this);
+            tex.makeState().setParent(this);
             XOR_CHECK_HR(swapChain.S().swapChain->GetBuffer(
                 i,
                 __uuidof(ID3D12Resource),
@@ -970,7 +1008,7 @@ namespace xor
 
             tex.makeInfo() = Texture::Info(tex.S().resource.Get());
 
-            bb.rtv.makeState().setParent(*this);
+            bb.rtv.makeState().setParent(this);
             bb.rtv.S().descriptor = S().rtvs.allocate();
             {
                 D3D12_RENDER_TARGET_VIEW_DESC desc = {};
@@ -1073,41 +1111,10 @@ namespace xor
     {
 
         Pipeline pipeline;
-        pipeline.makeState().setParent(*this);
+        pipeline.makeState().setParent(this);
         pipeline.S().graphicsInfo = std::make_shared<Pipeline::Graphics>(info);
         pipeline.S().reload();
         return pipeline;
-    }
-
-    CommandList Device::createCommandList()
-    {
-        CommandList cmd;
-        cmd.makeState().setParent(*this);
-
-        XOR_CHECK_HR(dev->CreateCommandAllocator(
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
-            __uuidof(ID3D12CommandAllocator),
-            &cmd->allocator));
-
-        XOR_CHECK_HR(dev->CreateCommandList(
-            0,
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
-            cmd->allocator.Get(),
-            nullptr,
-            __uuidof(ID3D12GraphicsCommandList),
-            &cmd->cmd));
-
-        XOR_CHECK_HR(dev->CreateFence(
-            0,
-            D3D12_FENCE_FLAG_NONE, 
-            __uuidof(ID3D12Fence),
-            &cmd->timesCompleted));
-
-        cmd->completedEvent = CreateEventExA(nullptr, nullptr, 0, 
-                                             EVENT_ALL_ACCESS);
-        XOR_CHECK(!!cmd->completedEvent, "Failed to create completion event.");
-
-        return cmd;
     }
 
     void Device::collectRootSignature(const D3D12_SHADER_BYTECODE &shader)
@@ -1123,6 +1130,11 @@ namespace xor
             &S().rootSignature));
     }
 
+    ID3D12Device * Device::device()
+    {
+        return S().device.Get();
+    }
+
     CommandList Device::initializerCommandList()
     {
         return graphicsCommandList();
@@ -1132,8 +1144,7 @@ namespace xor
     {
         Buffer buffer;
         buffer.makeInfo() = info;
-        buffer.makeState();
-        buffer.S().device = weak();
+        buffer.makeState().setParent(this);
 
         D3D12_HEAP_PROPERTIES heap = {};
         heap.Type                 = D3D12_HEAP_TYPE_DEFAULT;
@@ -1218,8 +1229,7 @@ namespace xor
     {
         Texture texture;
         texture.makeInfo() = info;
-        texture.makeState();
-        texture.S().device = weak();
+        texture.makeState().setParent(this);
 
         D3D12_HEAP_PROPERTIES heap = {};
         heap.Type                 = D3D12_HEAP_TYPE_DEFAULT;
@@ -1276,7 +1286,7 @@ namespace xor
     {
         CommandList cmd = S().freeGraphicsCommandLists.allocate([this]
         {
-            return this->createCommandList();
+            return std::make_shared<CommandListState>(*this);
         });
 
         cmd.reset();
@@ -1386,12 +1396,19 @@ namespace xor
         }
     }
 
+    CommandList::CommandList(StatePtr state)
+    {
+        m_state = std::move(state);
+    }
+
     CommandList::~CommandList()
     {
-        if (m_state)
+        // FIXME: This is a race condition :(
+        if (m_state && m_state.unique())
         {
-            auto &freeCmds = Device::parent(S().device).S().freeGraphicsCommandLists;
-            freeCmds.release(std::move(m_state));
+            auto &dev = S().device().S();
+            dev.freeGraphicsCommandLists.release(
+                std::move(m_state));
         }
     }
 
@@ -1484,8 +1501,7 @@ namespace xor
                                    Span<const uint8_t> data,
                                    size_t offset)
     {
-        auto &s          = S();
-        auto &dev        = Device::parent(S().device).S();
+        auto &dev        = S().device().S();
         auto &uploadHeap = *dev.uploadHeap;
 
         auto block       = uploadHeap.uploadBytes(dev.progress, data, number());
@@ -1500,8 +1516,7 @@ namespace xor
 
     void CommandList::updateTexture(Texture & texture, ImageData data, uint2 pos, Subresource sr)
     {
-        auto &s          = S();
-        auto &dev        = Device::parent(S().device).S();
+        auto &dev        = S().device().S();
         auto &uploadHeap = *dev.uploadHeap;
 
         auto block       = uploadHeap.uploadBytes(dev.progress, data.data, number(),
@@ -1536,7 +1551,7 @@ namespace xor
         {
             uint index = S().swapChain->GetCurrentBackBufferIndex();
 
-            auto device = Device::parent(S().device);
+            auto device = S().device();
 
             auto &cur = S().backbuffers[index];
             if (cur.seqNum < 0 || device.hasCompleted(cur.seqNum))

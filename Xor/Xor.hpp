@@ -12,8 +12,6 @@
 #include <memory>
 
 // TODO: Unify all Info classes
-// TODO: makeState() should support proper constructors
-// TODO: DeviceChild subclass for SharedState to get rid of some boilerplate
 // TODO: More convenience subclasses for SharedState to allow easy access to stuff
 // TODO: Split into multiple headers and cpps
 
@@ -26,6 +24,7 @@ namespace xor
 
     namespace backend
     {
+        class DeviceChild;
         struct Descriptor;
         struct ViewHeap;
         struct ShaderLoader;
@@ -41,7 +40,11 @@ namespace xor
         template <typename T>
         class SharedState
         {
-            std::shared_ptr<T> m_state;
+        protected:
+            using State    = T;
+            using StatePtr = std::shared_ptr<T>;
+
+            StatePtr m_state;
         public:
 
             template <typename... Ts>
@@ -51,6 +54,7 @@ namespace xor
                 return S();
             }
 
+            const T &S() const { return *m_state; }
             T &S() { return *m_state; }
 
             bool valid() const { return !!m_state; }
@@ -361,14 +365,16 @@ namespace xor
         friend struct backend::PipelineState;
 
         ID3D12Device *device();
-        std::shared_ptr<backend::CommandListState> createCommandList();
-        void collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
 
         CommandList initializerCommandList();
+
+        void collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
 
         Device(ComPtr<IDXGIAdapter3> adapter,
                ComPtr<ID3D12Device> device,
                std::shared_ptr<backend::ShaderLoader> shaderLoader);
+
+        Device(StatePtr state);
     public:
         Device() = default;
 
@@ -428,15 +434,16 @@ namespace xor
         friend struct backend::GPUProgressTracking;
 
         ID3D12GraphicsCommandList *cmd();
+
         void close();
         void reset();
 
-        CommandList(Device &device);
         bool hasCompleted();
         void waitUntilCompleted(DWORD timeout = INFINITE);
 
+        CommandList(StatePtr state);
     public:
-        CommandList() {}
+        CommandList() = default;
         ~CommandList();
 
         CommandList(CommandList &&) = default;
