@@ -173,12 +173,12 @@ namespace xor
         if (bpp == 24)
         {
             for (uint y = 0; y < size.y; ++y)
-                copyAndSwizzle<4, 4, 3, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(bmp, y), size.x);
+                copyAndSwizzle<4, 3, 3, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(bmp, size.y - y - 1), size.x);
         }
         else if (bpp == 32)
         {
             for (uint y = 0; y < size.y; ++y)
-                copyAndSwizzle<4, 4, 4, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(bmp, y), size.x);
+                copyAndSwizzle<4, 4, 4, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(bmp, size.y - y - 1), size.x);
         }
         else
         {

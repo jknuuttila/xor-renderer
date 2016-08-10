@@ -469,7 +469,7 @@ namespace xor
             SeqNum seqNum = 0;
             bool closed = false;
 
-            Texture backbuffer;
+            Texture activeRenderTarget;
 
             CommandListState(Device &dev)
             {
@@ -605,7 +605,7 @@ namespace xor
         struct ResourceState : DeviceChild
         {
             ComPtr<ID3D12Resource> resource;
-            D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
+            mutable D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
 
             ~ResourceState()
             {
@@ -1333,7 +1333,6 @@ namespace xor
 
     void Device::execute(CommandList &cmd)
     {
-        cmd.resetRenderTarget();
         cmd.close();
 
         ID3D12CommandList *cmds[] = { cmd.S().cmd.Get() };
@@ -1346,6 +1345,13 @@ namespace xor
     void Device::present(SwapChain & swapChain, bool vsync)
     {
         auto &backbuffer = swapChain.S().backbuffers[swapChain.currentIndex()];
+
+        {
+            auto toPresent = graphicsCommandList();
+            toPresent.transition(backbuffer.rtv.m_texture, D3D12_RESOURCE_STATE_PRESENT);
+            execute(toPresent);
+        }
+
         // The backbuffer is assumed to depend on all command lists
         // that have been executed, but not on those which have
         // been started but not executed. Otherwise, deadlock could result.
@@ -1395,7 +1401,8 @@ namespace xor
         if (!S().closed)
         {
             XOR_CHECK_HR(cmd()->Close());
-            S().closed = true;
+            S().closed             = true;
+            S().activeRenderTarget = Texture();
         }
     }
 
@@ -1404,7 +1411,8 @@ namespace xor
         if (S().closed)
         {
             XOR_CHECK_HR(cmd()->Reset(S().allocator.Get(), nullptr));
-            S().closed = false;
+            S().closed             = false;
+            S().activeRenderTarget = Texture();
         }
     }
 
@@ -1453,8 +1461,11 @@ namespace xor
     }
 
     // FIXME: This is horribly inefficient and bad
-    void CommandList::transition(backend::Resource & resource, D3D12_RESOURCE_STATES newState)
+    void CommandList::transition(const backend::Resource & resource, D3D12_RESOURCE_STATES newState)
     {
+        if (!resource)
+            return;
+
         auto &s = resource.S().state;
 
         if (s == newState)
@@ -1472,17 +1483,6 @@ namespace xor
         cmd()->ResourceBarrier(1, &barrier);
 
         s = newState;
-    }
-
-    void CommandList::resetRenderTarget()
-    {
-        // Whenever a back buffer ceases to be the render target,
-        // transition it for presentation
-        if (S().backbuffer)
-        {
-            transition(S().backbuffer, D3D12_RESOURCE_STATE_PRESENT);
-            S().backbuffer = Texture();
-        }
     }
 
     CommandList::~CommandList()
@@ -1518,6 +1518,7 @@ namespace xor
     void CommandList::clearRTV(TextureRTV &rtv, float4 color)
     {
         transition(rtv.m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
         cmd()->ClearRenderTargetView(rtv.S().descriptor.cpu,
                                      color.data(),
                                      0,
@@ -1526,7 +1527,8 @@ namespace xor
 
     void CommandList::setRenderTargets()
     {
-        resetRenderTarget();
+        S().activeRenderTarget = Texture();
+
         cmd()->OMSetRenderTargets(0,
                                   nullptr,
                                   false,
@@ -1535,11 +1537,8 @@ namespace xor
 
     void CommandList::setRenderTargets(TextureRTV &rtv)
     {
-        resetRenderTarget();
-        if (rtv.S().isBackbuffer)
-            S().backbuffer = rtv.m_texture;
+        S().activeRenderTarget = rtv.m_texture;
 
-        transition(rtv.m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
         cmd()->OMSetRenderTargets(1,
                                   &rtv.S().descriptor.cpu,
                                   FALSE,
@@ -1585,11 +1584,13 @@ namespace xor
 
     void CommandList::draw(uint vertices, uint startVertex)
     {
+        transition(S().activeRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET);
         cmd()->DrawInstanced(vertices, 1, startVertex, 0);
     }
 
     void CommandList::drawIndexed(uint indices, uint startIndex)
     {
+        transition(S().activeRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET);
         cmd()->DrawIndexedInstanced(indices, 1, startIndex, 0, 0); 
     }
 
@@ -1635,11 +1636,31 @@ namespace xor
         src.PlacedFootprint.Footprint.RowPitch = data.pitch;
 
         transition(texture, D3D12_RESOURCE_STATE_COPY_DEST);
-        S().cmd->CopyTextureRegion(
+        cmd()->CopyTextureRegion(
             &dst,
             pos.x, pos.y, 0,
             &src,
             nullptr);
+    }
+
+    void CommandList::copyTexture(Texture & dst, uint2 pos, const Texture & src)
+    {
+        transition(src, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        transition(dst, D3D12_RESOURCE_STATE_COPY_DEST);
+
+        D3D12_TEXTURE_COPY_LOCATION dstLocation = {};
+        dstLocation.pResource                   = dst.get();
+        dstLocation.Type                        = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        dstLocation.SubresourceIndex            = 0;
+
+        D3D12_TEXTURE_COPY_LOCATION srcLocation = {};
+        srcLocation.pResource                   = src.get();
+        srcLocation.Type                        = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        srcLocation.SubresourceIndex            = 0;
+
+        cmd()->CopyTextureRegion(
+            &dstLocation, pos.x, pos.y, 0,
+            &srcLocation, nullptr);
     }
 
     uint SwapChain::currentIndex()
@@ -1670,18 +1691,7 @@ namespace xor
         return m_texture;
     }
 
-#if 0
-    Barrier transition(Resource &resource,
-                       D3D12_RESOURCE_STATES before,
-                       D3D12_RESOURCE_STATES after,
-                       uint subresource)
-    {
-        Barrier barrier;
-        return barrier;
-    }
-#endif
-
-    ID3D12Resource *Resource::get()
+    ID3D12Resource *Resource::get() const
     {
         return m_state ? S().resource.Get() : nullptr;
     }

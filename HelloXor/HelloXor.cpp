@@ -82,6 +82,12 @@ public:
         cmd.setIBV(indexBuffer);
         cmd.setTopology();
         cmd.drawIndexed(6);
+        cmd.setRenderTargets();
+
+        cmd.copyTexture(backbuffer.texture(), { 100, 100 },
+                        lena.texture());
+
+        cmd.setRenderTargets({backbuffer});
 
 #endif
 

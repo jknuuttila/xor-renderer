@@ -68,7 +68,7 @@ namespace xor
             Resource() = default;
 
             explicit operator bool() const { return valid(); }
-            ID3D12Resource *get();
+            ID3D12Resource *get() const;
         };
 
         template <typename ResourceInfoBuilder>
@@ -432,9 +432,7 @@ namespace xor
         void release();
 
         // FIXME: This is horribly inefficient and bad
-        void transition(backend::Resource &resource, D3D12_RESOURCE_STATES state);
-
-        void resetRenderTarget();
+        void transition(const backend::Resource &resource, D3D12_RESOURCE_STATES state);
     public:
         CommandList() = default;
 
@@ -467,6 +465,9 @@ namespace xor
                            ImageData data,
                            uint2 pos = 0,
                            Subresource sr = 0);
+
+        void copyTexture(Texture &dst, uint2 pos,
+                         const Texture &src);
     };
 
     // Global initialization and deinitialization of the Xor renderer.
