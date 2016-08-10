@@ -66,11 +66,6 @@ public:
         auto cmd        = device.graphicsCommandList();
         auto backbuffer = swapChain.backbuffer();
 
-        // TODO: Replace transition() with automatic deduction of split barriers.
-        cmd.barrier({ transition(backbuffer.texture(),
-                                 D3D12_RESOURCE_STATE_PRESENT,
-                                 D3D12_RESOURCE_STATE_RENDER_TARGET) });
-
 #if 0
         float4 rgba = float4(hsvToRGB(float3(
             frac(static_cast<float>(time.seconds())),
@@ -87,13 +82,8 @@ public:
         cmd.setIBV(indexBuffer);
         cmd.setTopology();
         cmd.drawIndexed(6);
-        cmd.setRenderTargets();
 
 #endif
-
-        cmd.barrier({ transition(backbuffer.texture(),
-                                 D3D12_RESOURCE_STATE_RENDER_TARGET,
-                                 D3D12_RESOURCE_STATE_PRESENT) });
 
         device.execute(cmd);
         device.present(swapChain);

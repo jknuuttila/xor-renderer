@@ -47,6 +47,8 @@ namespace xor
             object->SetName(name.wideStr().c_str());
         }
 
+#define XOR_INTERNAL_DEBUG_NAME(variable) setName(variable, #variable)
+
         static bool compileShader(const BuildInfo &shaderBuildInfo)
         {
             log("Pipeline", "Compiling shader %s\n", shaderBuildInfo.target.cStr());
@@ -179,7 +181,9 @@ namespace xor
             D3D12_DESCRIPTOR_HEAP_TYPE type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
             ViewHeap() = default;
-            ViewHeap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_DESC desc)
+            ViewHeap(ID3D12Device *device,
+                     D3D12_DESCRIPTOR_HEAP_DESC desc,
+                     const String &name)
             {
                 type = desc.Type;
 
@@ -187,6 +191,7 @@ namespace xor
                     &desc,
                     __uuidof(ID3D12DescriptorHeap),
                     &heap));
+                setName(heap, name);
 
                 freeDescriptors = OffsetPool(desc.NumDescriptors);
                 increment       = device->GetDescriptorHandleIncrementSize(type);
@@ -370,6 +375,7 @@ namespace xor
                     nullptr,
                     __uuidof(ID3D12Resource),
                     &heap));
+                setName(heap, "uploadHeap");
 
                 mapHeap();
             }
@@ -463,6 +469,8 @@ namespace xor
             SeqNum seqNum = 0;
             bool closed = false;
 
+            Texture backbuffer;
+
             CommandListState(Device &dev)
             {
                 setParent(&dev);
@@ -471,6 +479,7 @@ namespace xor
                     D3D12_COMMAND_LIST_TYPE_DIRECT,
                     __uuidof(ID3D12CommandAllocator),
                     &allocator));
+                XOR_INTERNAL_DEBUG_NAME(allocator);
 
                 XOR_CHECK_HR(dev.device()->CreateCommandList(
                     0,
@@ -479,12 +488,14 @@ namespace xor
                     nullptr,
                     __uuidof(ID3D12GraphicsCommandList),
                     &cmd));
+                XOR_INTERNAL_DEBUG_NAME(cmd);
 
                 XOR_CHECK_HR(dev.device()->CreateFence(
                     0,
                     D3D12_FENCE_FLAG_NONE, 
                     __uuidof(ID3D12Fence),
                     &timesCompleted));
+                XOR_INTERNAL_DEBUG_NAME(timesCompleted);
 
                 completedEvent = CreateEventExA(nullptr, nullptr, 0, 
                                                 EVENT_ALL_ACCESS);
@@ -506,6 +517,43 @@ namespace xor
             ViewHeap rtvs;
 
             std::shared_ptr<ShaderLoader> shaderLoader;
+
+
+            DeviceState(ComPtr<IDXGIAdapter3> pAdapter,
+                        ComPtr<ID3D12Device> pDevice,
+                        std::shared_ptr<backend::ShaderLoader> pShaderLoader)
+            {
+
+                adapter      = std::move(pAdapter);
+                device       = std::move(pDevice);
+                shaderLoader = std::move(pShaderLoader);
+
+                {
+                    D3D12_COMMAND_QUEUE_DESC desc ={};
+                    desc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
+                    desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+                    desc.Flags    = D3D12_COMMAND_QUEUE_FLAG_NONE;
+                    desc.NodeMask = 0;
+                    XOR_CHECK_HR(device->CreateCommandQueue(
+                        &desc,
+                        __uuidof(ID3D12CommandQueue),
+                        &graphicsQueue));
+                }
+
+                XOR_INTERNAL_DEBUG_NAME(graphicsQueue);
+
+                uploadHeap = std::make_shared<UploadHeap>(device.Get());
+
+                {
+                    D3D12_DESCRIPTOR_HEAP_DESC desc ={};
+                    desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+                    desc.NumDescriptors = MaxRTVs;
+                    desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+                    desc.NodeMask       = 0;
+
+                    rtvs = ViewHeap(device.Get(), desc, "rtvs");
+                }
+            }
 
             ~DeviceState()
             {
@@ -557,6 +605,7 @@ namespace xor
         struct ResourceState : DeviceChild
         {
             ComPtr<ID3D12Resource> resource;
+            D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
 
             ~ResourceState()
             {
@@ -572,6 +621,7 @@ namespace xor
         struct DescriptorViewState : DeviceChild
         {
             Descriptor descriptor;
+            bool isBackbuffer = false;
 
             ~DescriptorViewState()
             {
@@ -904,54 +954,35 @@ namespace xor
             return Device();
         }
 
-        setName(device, "Device");
+        XOR_INTERNAL_DEBUG_NAME(device);
 
         ComPtr<ID3D12InfoQueue> infoQueue;
         if (m_debug && device.As(&infoQueue) == S_OK)
         {
-            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
-            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR,      TRUE);
-            infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING,    TRUE);
+            XOR_CHECK_HR(infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE));
+            XOR_CHECK_HR(infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR,      TRUE));
+            XOR_CHECK_HR(infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING,    TRUE));
+
+            // The graphics debugger generates these, so disable.
+            D3D12_MESSAGE_SEVERITY disabledSeverities[] = {
+                D3D12_MESSAGE_SEVERITY_INFO,
+            };
+            D3D12_MESSAGE_ID disabledMessages[] = {
+                D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,
+                D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,
+            };
+            D3D12_INFO_QUEUE_FILTER filter = {};
+            filter.DenyList.NumSeverities  = static_cast<uint>(size(disabledSeverities));
+            filter.DenyList.NumIDs         = static_cast<uint>(size(disabledMessages));
+            filter.DenyList.pSeverityList  = disabledSeverities;
+            filter.DenyList.pIDList        = disabledMessages;
+            XOR_CHECK_HR(infoQueue->PushStorageFilter(&filter));
         }
 
-        return Device(m_adapter, std::move(device), m_shaderLoader);
-    }
-
-    Device::Device(ComPtr<IDXGIAdapter3> adapter,
-                   ComPtr<ID3D12Device> dev,
-                   std::shared_ptr<ShaderLoader> shaderLoader)
-    {
-        makeState();
-
-        S().adapter      = std::move(adapter);
-        S().shaderLoader = std::move(shaderLoader);
-        S().device       = std::move(dev);
-
-        {
-            D3D12_COMMAND_QUEUE_DESC desc = {};
-            desc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
-            desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
-            desc.Flags    = D3D12_COMMAND_QUEUE_FLAG_NONE;
-            desc.NodeMask = 0;
-            XOR_CHECK_HR(device()->CreateCommandQueue(
-                &desc,
-                __uuidof(ID3D12CommandQueue),
-                &S().graphicsQueue));
-        }
-
-        setName(S().graphicsQueue, "Graphics Queue");
-
-        S().uploadHeap = std::make_shared<UploadHeap>(S().device.Get());
-
-        {
-            D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-            desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-            desc.NumDescriptors = MaxRTVs;
-            desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-            desc.NodeMask       = 0;
-
-            S().rtvs = ViewHeap(device(), desc);
-        }
+        return Device(std::make_shared<DeviceState>(
+            m_adapter,
+            std::move(device),
+            m_shaderLoader));
     }
 
     Device::Device(StatePtr state)
@@ -1009,6 +1040,7 @@ namespace xor
             tex.makeInfo() = Texture::Info(tex.S().resource.Get());
 
             bb.rtv.makeState().setParent(this);
+            bb.rtv.S().isBackbuffer = true;
             bb.rtv.S().descriptor = S().rtvs.allocate();
             {
                 D3D12_RENDER_TARGET_VIEW_DESC desc = {};
@@ -1170,7 +1202,7 @@ namespace xor
             &heap,
             D3D12_HEAP_FLAG_NONE,
             &desc,
-            D3D12_RESOURCE_STATE_COMMON,
+            buffer.S().state,
             nullptr,
             __uuidof(ID3D12Resource),
             &buffer.S().resource));
@@ -1255,7 +1287,7 @@ namespace xor
             &heap,
             D3D12_HEAP_FLAG_NONE,
             &desc,
-            D3D12_RESOURCE_STATE_COMMON,
+            texture.S().state,
             nullptr,
             __uuidof(ID3D12Resource),
             &texture.S().resource));
@@ -1301,6 +1333,7 @@ namespace xor
 
     void Device::execute(CommandList &cmd)
     {
+        cmd.resetRenderTarget();
         cmd.close();
 
         ID3D12CommandList *cmds[] = { cmd.S().cmd.Get() };
@@ -1401,15 +1434,75 @@ namespace xor
         m_state = std::move(state);
     }
 
-    CommandList::~CommandList()
+    void CommandList::release()
     {
         // FIXME: This is a race condition :(
-        if (m_state && m_state.unique())
+        if (m_state)
         {
-            auto &dev = S().device().S();
-            dev.freeGraphicsCommandLists.release(
-                std::move(m_state));
+            if (m_state.unique())
+            {
+                auto &dev = S().device().S();
+                dev.freeGraphicsCommandLists.release(
+                    std::move(m_state));
+            }
+            else
+            {
+                m_state.reset();
+            }
         }
+    }
+
+    // FIXME: This is horribly inefficient and bad
+    void CommandList::transition(backend::Resource & resource, D3D12_RESOURCE_STATES newState)
+    {
+        auto &s = resource.S().state;
+
+        if (s == newState)
+            return;
+
+        D3D12_RESOURCE_BARRIER barrier;
+
+        barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Flags                  = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+        barrier.Transition.pResource   = resource.get();
+        barrier.Transition.StateBefore = s;
+        barrier.Transition.StateAfter  = newState;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+        cmd()->ResourceBarrier(1, &barrier);
+
+        s = newState;
+    }
+
+    void CommandList::resetRenderTarget()
+    {
+        // Whenever a back buffer ceases to be the render target,
+        // transition it for presentation
+        if (S().backbuffer)
+        {
+            transition(S().backbuffer, D3D12_RESOURCE_STATE_PRESENT);
+            S().backbuffer = Texture();
+        }
+    }
+
+    CommandList::~CommandList()
+    {
+        release();
+    }
+
+    CommandList::CommandList(CommandList && c)
+    {
+        m_state = std::move(c.m_state);
+    }
+
+    CommandList & CommandList::operator=(CommandList && c)
+    {
+        if (this != &c)
+        {
+            release();
+            m_state = std::move(c.m_state);
+        }
+        return *this;
     }
 
     SeqNum CommandList::number() const
@@ -1424,6 +1517,7 @@ namespace xor
 
     void CommandList::clearRTV(TextureRTV &rtv, float4 color)
     {
+        transition(rtv.m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
         cmd()->ClearRenderTargetView(rtv.S().descriptor.cpu,
                                      color.data(),
                                      0,
@@ -1432,6 +1526,7 @@ namespace xor
 
     void CommandList::setRenderTargets()
     {
+        resetRenderTarget();
         cmd()->OMSetRenderTargets(0,
                                   nullptr,
                                   false,
@@ -1440,6 +1535,11 @@ namespace xor
 
     void CommandList::setRenderTargets(TextureRTV &rtv)
     {
+        resetRenderTarget();
+        if (rtv.S().isBackbuffer)
+            S().backbuffer = rtv.m_texture;
+
+        transition(rtv.m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
         cmd()->OMSetRenderTargets(1,
                                   &rtv.S().descriptor.cpu,
                                   FALSE,
@@ -1468,23 +1568,19 @@ namespace xor
 
     void CommandList::setVBV(const BufferVBV & vbv)
     {
+        transition(vbv.m_buffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
         cmd()->IASetVertexBuffers(0, 1, &vbv.m_vbv);
     }
 
     void CommandList::setIBV(const BufferIBV & ibv)
     {
+        transition(ibv.m_buffer, D3D12_RESOURCE_STATE_INDEX_BUFFER);
         cmd()->IASetIndexBuffer(&ibv.m_ibv);
     }
 
     void CommandList::setTopology(D3D_PRIMITIVE_TOPOLOGY topology)
     {
         cmd()->IASetPrimitiveTopology(topology);
-    }
-
-    void CommandList::barrier(Span<const Barrier> barriers)
-    {
-        cmd()->ResourceBarrier(static_cast<UINT>(barriers.size()),
-                               barriers.begin());
     }
 
     void CommandList::draw(uint vertices, uint startVertex)
@@ -1506,6 +1602,7 @@ namespace xor
 
         auto block       = uploadHeap.uploadBytes(dev.progress, data, number());
 
+        transition(buffer, D3D12_RESOURCE_STATE_COPY_DEST);
         S().cmd->CopyBufferRegion(
             buffer.get(),
             offset,
@@ -1537,6 +1634,7 @@ namespace xor
         src.PlacedFootprint.Footprint.Depth    = 1;
         src.PlacedFootprint.Footprint.RowPitch = data.pitch;
 
+        transition(texture, D3D12_RESOURCE_STATE_COPY_DEST);
         S().cmd->CopyTextureRegion(
             &dst,
             pos.x, pos.y, 0,
@@ -1572,20 +1670,16 @@ namespace xor
         return m_texture;
     }
 
+#if 0
     Barrier transition(Resource &resource,
                        D3D12_RESOURCE_STATES before,
                        D3D12_RESOURCE_STATES after,
                        uint subresource)
     {
         Barrier barrier;
-        barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barrier.Flags                  = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-        barrier.Transition.pResource   = resource.get();
-        barrier.Transition.StateBefore = before;
-        barrier.Transition.StateAfter  = after;
-        barrier.Transition.Subresource = subresource;
         return barrier;
     }
+#endif
 
     ID3D12Resource *Resource::get()
     {

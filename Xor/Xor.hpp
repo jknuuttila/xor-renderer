@@ -67,6 +67,7 @@ namespace xor
         public:
             Resource() = default;
 
+            explicit operator bool() const { return valid(); }
             ID3D12Resource *get();
         };
 
@@ -326,7 +327,7 @@ namespace xor
     {
         friend class Device;
         friend class CommandList;
-        Buffer                   m_buffer;
+        mutable Buffer           m_buffer;
         D3D12_VERTEX_BUFFER_VIEW m_vbv;
     public:
         BufferVBV() = default;
@@ -340,7 +341,7 @@ namespace xor
     {
         friend class Device;
         friend class CommandList;
-        Buffer                  m_buffer;
+        mutable Buffer          m_buffer;
         D3D12_INDEX_BUFFER_VIEW m_ibv;
     public:
         BufferIBV() = default;
@@ -369,10 +370,6 @@ namespace xor
         CommandList initializerCommandList();
 
         void collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
-
-        Device(ComPtr<IDXGIAdapter3> adapter,
-               ComPtr<ID3D12Device> device,
-               std::shared_ptr<backend::ShaderLoader> shaderLoader);
 
         Device(StatePtr state);
     public:
@@ -406,16 +403,6 @@ namespace xor
         void waitUntilDrained();
     };
 
-    class Barrier : public D3D12_RESOURCE_BARRIER
-    {
-    public:
-    };
-
-    Barrier transition(backend::Resource &resource,
-                       D3D12_RESOURCE_STATES before,
-                       D3D12_RESOURCE_STATES after,
-                       uint subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
-
     class SwapChain : private backend::SharedState<backend::SwapChainState>
     {
         friend class Device;
@@ -442,16 +429,23 @@ namespace xor
         void waitUntilCompleted(DWORD timeout = INFINITE);
 
         CommandList(StatePtr state);
+        void release();
+
+        // FIXME: This is horribly inefficient and bad
+        void transition(backend::Resource &resource, D3D12_RESOURCE_STATES state);
+
+        void resetRenderTarget();
     public:
         CommandList() = default;
-        ~CommandList();
 
-        CommandList(CommandList &&) = default;
-        CommandList& operator=(CommandList &&) = default;
+        ~CommandList();
+        CommandList(CommandList &&c);
+        CommandList& operator=(CommandList &&c);
 
         CommandList(const CommandList &) = delete;
         CommandList& operator=(const CommandList &) = delete;
 
+        explicit operator bool() const { return valid(); }
         SeqNum number() const;
 
         void bind(Pipeline &pipeline);
@@ -462,8 +456,6 @@ namespace xor
         void setVBV(const BufferVBV &vbv);
         void setIBV(const BufferIBV &ibv);
         void setTopology(D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-        void barrier(Span<const Barrier> barriers);
 
         void draw(uint vertices, uint startVertex = 0);
         void drawIndexed(uint indices, uint startIndex = 0);
