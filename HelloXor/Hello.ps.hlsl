@@ -1,5 +1,8 @@
 #include "Xor/Shaders.h.hlsl"
 
+Texture2D<float4> tex : register(t0);
+SamplerState bilinear : register(s0);
+
 struct PSInput
 {
     float4 color : COLOR0;
@@ -9,8 +12,8 @@ struct PSInput
 [RootSignature(XOR_ROOT_SIGNATURE)]
 float4 main(PSInput i) : SV_Target
 {
-#if 0
-    return float4(i.uv.x, 0, i.uv.y, 1);
+#if 1
+    return tex.Sample(bilinear, i.uv.xy);
 #else
 	return i.color;
 #endif

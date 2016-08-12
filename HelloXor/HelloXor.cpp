@@ -81,6 +81,7 @@ public:
         cmd.setVBV(vertexBuffer);
         cmd.setIBV(indexBuffer);
         cmd.setTopology();
+        cmd.setTextureSRV(0, lena);
         cmd.drawIndexed(6);
         cmd.setRenderTargets();
 
