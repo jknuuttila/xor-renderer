@@ -10,6 +10,9 @@ namespace xor
     namespace backend
     {
         static const char ShaderFileExtension[] = ".cso";
+        static const uint MaxRTVs = 256;
+        static const uint DescriptorHeapSize = 64;
+        static const uint DescriptorHeapRing = 32;
 
         class DeviceChild
         {
@@ -291,27 +294,25 @@ namespace xor
             }
         };
 
-        static const uint MaxRTVs = 256;
-        static const uint DescriptorHeapSize = 16384;
-        static const uint DescriptorHeapRing = 8192;
-
         struct Descriptor
         {
-            D3D12_CPU_DESCRIPTOR_HANDLE cpu  = { 0 };
-            D3D12_GPU_DESCRIPTOR_HANDLE gpu  = { 0 };
-            D3D12_DESCRIPTOR_HEAP_TYPE  type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+            D3D12_CPU_DESCRIPTOR_HANDLE cpu     = { 0 };
+            D3D12_GPU_DESCRIPTOR_HANDLE gpu     = { 0 };
+            D3D12_CPU_DESCRIPTOR_HANDLE staging = { 0 };
+            D3D12_DESCRIPTOR_HEAP_TYPE  type    = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         };
 
         class ViewHeap
         {
-            ComPtr<ID3D12DescriptorHeap> m_cpuHeap;
-            ComPtr<ID3D12DescriptorHeap> m_gpuHeap;
+            ComPtr<ID3D12DescriptorHeap> m_stagingHeap;
+            ComPtr<ID3D12DescriptorHeap> m_heap;
             OffsetPool                   m_freeDescriptors;
             GPUMemoryRingbuffer          m_ring;
             uint                         m_ringStart = 0;
             D3D12_DESCRIPTOR_HEAP_TYPE   m_type      = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
             D3D12_CPU_DESCRIPTOR_HANDLE  m_cpuStart  = { 0 };
             D3D12_GPU_DESCRIPTOR_HANDLE  m_gpuStart  = { 0 };
+            D3D12_CPU_DESCRIPTOR_HANDLE  m_stagingStart = { 0 };
             uint                         m_increment = 0;
 
             static const size_t ViewMetadataEntries = 4096;
@@ -337,8 +338,8 @@ namespace xor
                 XOR_CHECK_HR(device->CreateDescriptorHeap(
                     &desc,
                     __uuidof(ID3D12DescriptorHeap),
-                    &m_gpuHeap));
-                setName(m_gpuHeap, name);
+                    &m_heap));
+                setName(m_heap, name);
 
                 if (desc.Flags == D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
                 {
@@ -346,12 +347,8 @@ namespace xor
                     XOR_CHECK_HR(device->CreateDescriptorHeap(
                         &desc,
                         __uuidof(ID3D12DescriptorHeap),
-                        &m_cpuHeap));
-                    setName(m_cpuHeap, name);
-                }
-                else
-                {
-                    m_cpuHeap = m_gpuHeap;
+                        &m_stagingHeap));
+                    setName(m_stagingHeap, name + " staging");
                 }
 
                 m_ringStart       = totalSize - ringSize;
@@ -359,11 +356,13 @@ namespace xor
                 m_ring            = GPUMemoryRingbuffer(ringSize,
                                                         ringSize ? ViewMetadataEntries : 0);
                 m_increment       = device->GetDescriptorHandleIncrementSize(m_type);
-                m_cpuStart        = m_cpuHeap->GetCPUDescriptorHandleForHeapStart();
-                m_gpuStart        = m_gpuHeap->GetGPUDescriptorHandleForHeapStart();
+                m_cpuStart        = m_heap->GetCPUDescriptorHandleForHeapStart();
+                m_gpuStart        = m_heap->GetGPUDescriptorHandleForHeapStart();
+                if (m_stagingHeap)
+                    m_stagingStart = m_stagingHeap->GetCPUDescriptorHandleForHeapStart();
             }
 
-            ID3D12DescriptorHeap *get() { return m_gpuHeap.Get(); }
+            ID3D12DescriptorHeap *get() { return m_heap.Get(); }
 
             Descriptor descriptorAtOffset(int64_t offset)
             {
@@ -371,12 +370,14 @@ namespace xor
 
                 Descriptor descriptor;
 
-                descriptor.cpu = m_cpuStart;
-                descriptor.gpu = m_gpuStart;
+                descriptor.staging = m_stagingStart;
+                descriptor.cpu     = m_cpuStart;
+                descriptor.gpu     = m_gpuStart;
 
-                descriptor.cpu.ptr += offset;
-                descriptor.gpu.ptr += offset;
-                descriptor.type     = m_type;
+                descriptor.staging.ptr += offset;
+                descriptor.cpu.ptr     += offset;
+                descriptor.gpu.ptr     += offset;
+                descriptor.type         = m_type;
 
                 return descriptor;
             }
@@ -390,7 +391,7 @@ namespace xor
 
             int64_t allocateFromRing(GPUProgressTracking &progress, size_t amount, SeqNum cmdList)
             {
-                return m_ring.allocate(progress, amount, 1, cmdList).begin;
+                return m_ring.allocate(progress, amount, 1, cmdList).begin + m_ringStart;
             }
 
             void release(Descriptor descriptor)
@@ -1390,7 +1391,7 @@ namespace xor
         device()->CreateShaderResourceView(
             texture.get(),
             &desc,
-            srv.S().descriptor.cpu);
+            srv.S().descriptor.staging);
 
         return srv;
     }
@@ -1745,7 +1746,7 @@ namespace xor
                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         auto &srvs = S().srvs;
         srvs.resize(std::max<size_t>(srvs.size(), slot + 1));
-        srvs[slot] = srv.S().descriptor.cpu;
+        srvs[slot] = srv.S().descriptor.staging;
     }
 
     void CommandList::setTopology(D3D_PRIMITIVE_TOPOLOGY topology)

@@ -81,7 +81,7 @@ public:
         cmd.setVBV(vertexBuffer);
         cmd.setIBV(indexBuffer);
         cmd.setTopology();
-        //cmd.setShaderView(0, lena);
+        cmd.setShaderView(0, lena);
         cmd.drawIndexed(6);
         cmd.setRenderTargets();
 
