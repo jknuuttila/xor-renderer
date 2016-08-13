@@ -92,10 +92,59 @@ namespace xor
             T &operator[](uint i) { return data()[i]; }
             const T &operator[](uint i) const { return data()[i]; }
 
+            Vector operator-() const
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = -data()[i];
+                return c;
+            }
+
             friend Vector operator+(Vector a, Vector b)
             {
                 Vector c;
                 for (uint i = 0; i < N; ++i) c[i] = a[i] + b[i];
+                return c;
+            }
+
+            friend Vector operator-(Vector a, Vector b)
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] - b[i];
+                return c;
+            }
+
+            friend Vector operator*(Vector a, Vector b)
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] * b[i];
+                return c;
+            }
+
+            friend Vector operator/(Vector a, Vector b)
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] / b[i];
+                return c;
+            }
+
+            friend Vector operator%(Vector a, Vector b)
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] % b[i];
+                return c;
+            }
+
+            friend Vector min(Vector a, Vector b)
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = std::min(a[i], b[i]);
+                return c;
+            }
+
+            friend Vector max(Vector a, Vector b)
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = std::max(a[i], b[i]);
                 return c;
             }
         };

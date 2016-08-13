@@ -14,6 +14,7 @@
 // TODO: Unify all Info classes
 // TODO: More convenience subclasses for SharedState to allow easy access to stuff
 // TODO: Split into multiple headers and cpps
+// TODO: viewHeap() is maybe needless, have a smarter way to locate descriptor heaps
 
 namespace xor
 {
@@ -26,7 +27,7 @@ namespace xor
     {
         class DeviceChild;
         struct Descriptor;
-        struct ViewHeap;
+        class ViewHeap;
         struct ShaderLoader;
         struct DeviceState;
         struct CommandListState;
@@ -192,7 +193,12 @@ namespace xor
         class TextureViewInfo
         {
         public:
-            TextureViewInfo defaults(const TextureInfo &bufferInfo) const;
+            Format format;
+
+            TextureViewInfo() = default;
+            TextureViewInfo(Format format) : format(format) {}
+
+            TextureViewInfo defaults(const TextureInfo &textureInfo) const;
         };
 
         class TextureViewInfoBuilder : public TextureViewInfo 
@@ -433,6 +439,7 @@ namespace xor
 
         // FIXME: This is horribly inefficient and bad
         void transition(const backend::Resource &resource, D3D12_RESOURCE_STATES state);
+        void setupRootArguments();
     public:
         CommandList() = default;
 
@@ -453,6 +460,7 @@ namespace xor
         void setRenderTargets(TextureRTV &rtv);
         void setVBV(const BufferVBV &vbv);
         void setIBV(const BufferIBV &ibv);
+        void setShaderView(unsigned slot, const TextureSRV &srv);
         void setTopology(D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
         void draw(uint vertices, uint startVertex = 0);
@@ -466,8 +474,8 @@ namespace xor
                            uint2 pos = 0,
                            Subresource sr = 0);
 
-        void copyTexture(Texture &dst, uint2 pos,
-                         const Texture &src);
+        void copyTexture(Texture &dst,       ImageRect dstPos,
+                         const Texture &src, ImageRect srcArea = {});
     };
 
     // Global initialization and deinitialization of the Xor renderer.

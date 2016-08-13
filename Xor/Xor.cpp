@@ -86,66 +86,6 @@ namespace xor
             }
         };
 
-
-        class GPUMemoryRingbuffer
-        {
-        private:
-            OffsetRing            m_memoryRing;
-            OffsetRing            m_metadataRing;
-
-            struct Metadata
-            {
-                Block block;
-                SeqNum allocatedBy;
-            };
-            std::vector<Metadata> m_metadata;
-        public:
-            GPUMemoryRingbuffer() = default;
-            GPUMemoryRingbuffer(size_t memory,
-                                size_t metadataEntries)
-                : m_memoryRing(memory)
-                , m_metadataRing(metadataEntries)
-                , m_metadata(metadataEntries)
-            {}
-
-            Block allocate(size_t amount, SeqNum cmdList)
-            {
-                Metadata m;
-                m.block = m_memoryRing.allocateBlock(amount);
-
-                if (m.block.begin < 0)
-                    return Block();
-
-                m.allocatedBy = cmdList;
-
-                auto metadataOffset = m_metadataRing.allocate();
-                XOR_ASSERT(metadataOffset >= 0,
-                           "Out of metadata space, increase ringbuffer size.");
-
-                m_metadata[metadataOffset] = m;
-
-                return m.block;
-            }
-
-            SeqNum oldestCmdList() const
-            {
-                if (m_metadataRing.empty())
-                    return -1;
-                else
-                    return m_metadata[m_metadataRing.oldest()].allocatedBy;
-            }
-
-            void releaseOldestAllocation()
-            {
-                XOR_ASSERT(!m_metadataRing.empty(), "Tried to release when ringbuffer empty.");
-                XOR_ASSERT(!m_memoryRing.empty(), "Tried to release when ringbuffer empty.");
-                auto allocOffset = m_metadataRing.oldest();
-                auto &alloc = m_metadata[allocOffset];
-                m_memoryRing.release(alloc.block);
-                m_metadataRing.release(allocOffset);
-            }
-        };
-
         struct CompletionCallback
         {
             SeqNum seqNum = InvalidSeqNum;
@@ -160,70 +100,6 @@ namespace xor
             bool operator<(const CompletionCallback &c) const
             {
                 return seqNum > c.seqNum;
-            }
-        };
-
-        static const uint MaxRTVs = 256;
-
-        struct Descriptor
-        {
-            D3D12_CPU_DESCRIPTOR_HANDLE cpu  = { 0 };
-            D3D12_GPU_DESCRIPTOR_HANDLE gpu  = { 0 };
-            D3D12_DESCRIPTOR_HEAP_TYPE  type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        };
-
-        struct ViewHeap
-        {
-            ComPtr<ID3D12DescriptorHeap> heap;
-            OffsetPool freeDescriptors;
-
-            uint increment                  = 0;
-            D3D12_DESCRIPTOR_HEAP_TYPE type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-
-            ViewHeap() = default;
-            ViewHeap(ID3D12Device *device,
-                     D3D12_DESCRIPTOR_HEAP_DESC desc,
-                     const String &name)
-            {
-                type = desc.Type;
-
-                XOR_CHECK_HR(device->CreateDescriptorHeap(
-                    &desc,
-                    __uuidof(ID3D12DescriptorHeap),
-                    &heap));
-                setName(heap, name);
-
-                freeDescriptors = OffsetPool(desc.NumDescriptors);
-                increment       = device->GetDescriptorHandleIncrementSize(type);
-            }
-
-            Descriptor allocate()
-            {
-                auto offset = freeDescriptors.allocate();
-                XOR_CHECK(offset >= 0, "Ran out of descriptors in the heap.");
-
-                offset *= increment;
-
-                Descriptor descriptor;
-
-                descriptor.cpu = heap->GetCPUDescriptorHandleForHeapStart();
-                descriptor.gpu = heap->GetGPUDescriptorHandleForHeapStart();
-
-                descriptor.cpu.ptr += offset;
-                descriptor.gpu.ptr += offset;
-                descriptor.type     = type;
-
-                return descriptor;
-            }
-
-            void release(Descriptor descriptor)
-            {
-                XOR_ASSERT(descriptor.type == type, "Released descriptor to the wrong heap.");
-
-                auto start = heap->GetCPUDescriptorHandleForHeapStart();
-                size_t offset = descriptor.cpu.ptr - start.ptr;
-                offset /= increment;
-                freeDescriptors.release(static_cast<int64_t>(offset));
             }
         };
 
@@ -335,6 +211,198 @@ namespace xor
             }
         };
 
+        class GPUMemoryRingbuffer
+        {
+        private:
+            OffsetRing            m_memoryRing;
+            OffsetRing            m_metadataRing;
+
+            struct Metadata
+            {
+                Block block;
+                SeqNum allocatedBy;
+            };
+            std::vector<Metadata> m_metadata;
+        public:
+            GPUMemoryRingbuffer() = default;
+            GPUMemoryRingbuffer(size_t memory,
+                                size_t metadataEntries)
+                : m_memoryRing(memory)
+                , m_metadataRing(metadataEntries)
+                , m_metadata(metadataEntries)
+            {}
+
+            Block allocate(size_t amount, size_t alignment, SeqNum cmdList)
+            {
+                Metadata m;
+                m.block = m_memoryRing.allocateBlock(amount, alignment);
+
+                if (m.block.begin < 0)
+                    return Block();
+
+                m.allocatedBy = cmdList;
+
+                auto metadataOffset = m_metadataRing.allocate();
+                XOR_ASSERT(metadataOffset >= 0,
+                           "Out of metadata space, increase ringbuffer size.");
+
+                m_metadata[metadataOffset] = m;
+
+                return m.block;
+            }
+
+            Block allocate(GPUProgressTracking &progress,
+                           size_t amount, size_t alignment, SeqNum cmdList)
+            {
+                Block block = allocate(amount, alignment, cmdList);
+
+                while (!block)
+                {
+                    auto oldest = oldestCmdList();
+
+                    XOR_CHECK(oldest >= 0, "Ringbuffer not big enough to hold %llu elements.",
+                              static_cast<llu>(amount));
+
+                    progress.waitUntilCompleted(oldest);
+                    releaseOldestAllocation();
+
+                    block = allocate(amount, alignment, cmdList);
+                }
+
+                return block;
+            }
+
+            SeqNum oldestCmdList() const
+            {
+                if (m_metadataRing.empty())
+                    return -1;
+                else
+                    return m_metadata[m_metadataRing.oldest()].allocatedBy;
+            }
+
+            void releaseOldestAllocation()
+            {
+                XOR_ASSERT(!m_metadataRing.empty(), "Tried to release when ringbuffer empty.");
+                XOR_ASSERT(!m_memoryRing.empty(), "Tried to release when ringbuffer empty.");
+                auto allocOffset = m_metadataRing.oldest();
+                auto &alloc = m_metadata[allocOffset];
+                m_memoryRing.release(alloc.block);
+                m_metadataRing.release(allocOffset);
+            }
+        };
+
+        static const uint MaxRTVs = 256;
+        static const uint DescriptorHeapSize = 16384;
+        static const uint DescriptorHeapRing = 8192;
+
+        struct Descriptor
+        {
+            D3D12_CPU_DESCRIPTOR_HANDLE cpu  = { 0 };
+            D3D12_GPU_DESCRIPTOR_HANDLE gpu  = { 0 };
+            D3D12_DESCRIPTOR_HEAP_TYPE  type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        };
+
+        class ViewHeap
+        {
+            ComPtr<ID3D12DescriptorHeap> m_cpuHeap;
+            ComPtr<ID3D12DescriptorHeap> m_gpuHeap;
+            OffsetPool                   m_freeDescriptors;
+            GPUMemoryRingbuffer          m_ring;
+            uint                         m_ringStart = 0;
+            D3D12_DESCRIPTOR_HEAP_TYPE   m_type      = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+            D3D12_CPU_DESCRIPTOR_HANDLE  m_cpuStart  = { 0 };
+            D3D12_GPU_DESCRIPTOR_HANDLE  m_gpuStart  = { 0 };
+            uint                         m_increment = 0;
+
+            static const size_t ViewMetadataEntries = 4096;
+        public:
+
+            ViewHeap() = default;
+            ViewHeap(ID3D12Device *device,
+                     D3D12_DESCRIPTOR_HEAP_TYPE type,
+                     const String &name,
+                     uint totalSize,
+                     uint ringSize = 0)
+            {
+                m_type = type;
+
+                D3D12_DESCRIPTOR_HEAP_DESC desc = {};
+                desc.Type           = type;
+                desc.NumDescriptors = totalSize;
+                desc.Flags          = type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
+                    ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE
+                    : D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+                desc.NodeMask       = 0;
+
+                XOR_CHECK_HR(device->CreateDescriptorHeap(
+                    &desc,
+                    __uuidof(ID3D12DescriptorHeap),
+                    &m_gpuHeap));
+                setName(m_gpuHeap, name);
+
+                if (desc.Flags == D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
+                {
+                    desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+                    XOR_CHECK_HR(device->CreateDescriptorHeap(
+                        &desc,
+                        __uuidof(ID3D12DescriptorHeap),
+                        &m_cpuHeap));
+                    setName(m_cpuHeap, name);
+                }
+                else
+                {
+                    m_cpuHeap = m_gpuHeap;
+                }
+
+                m_ringStart       = totalSize - ringSize;
+                m_freeDescriptors = OffsetPool(m_ringStart);
+                m_ring            = GPUMemoryRingbuffer(ringSize,
+                                                        ringSize ? ViewMetadataEntries : 0);
+                m_increment       = device->GetDescriptorHandleIncrementSize(m_type);
+                m_cpuStart        = m_cpuHeap->GetCPUDescriptorHandleForHeapStart();
+                m_gpuStart        = m_gpuHeap->GetGPUDescriptorHandleForHeapStart();
+            }
+
+            ID3D12DescriptorHeap *get() { return m_gpuHeap.Get(); }
+
+            Descriptor descriptorAtOffset(int64_t offset)
+            {
+                offset *= m_increment;
+
+                Descriptor descriptor;
+
+                descriptor.cpu = m_cpuStart;
+                descriptor.gpu = m_gpuStart;
+
+                descriptor.cpu.ptr += offset;
+                descriptor.gpu.ptr += offset;
+                descriptor.type     = m_type;
+
+                return descriptor;
+            }
+
+            Descriptor allocateFromHeap()
+            {
+                auto offset = m_freeDescriptors.allocate();
+                XOR_CHECK(offset >= 0, "Ran out of descriptors in the heap.");
+                return descriptorAtOffset(offset);
+            }
+
+            int64_t allocateFromRing(GPUProgressTracking &progress, size_t amount, SeqNum cmdList)
+            {
+                return m_ring.allocate(progress, amount, 1, cmdList).begin;
+            }
+
+            void release(Descriptor descriptor)
+            {
+                XOR_ASSERT(descriptor.type == m_type, "Released descriptor to the wrong heap.");
+                size_t offset = descriptor.cpu.ptr - m_cpuStart.ptr;
+                offset /= m_increment;
+                XOR_ASSERT(offset < m_ringStart, "Released descriptor out of bounds.");
+                m_freeDescriptors.release(static_cast<int64_t>(offset));
+            }
+        };
+
         struct UploadHeap
         {
             static const size_t UploadHeapSize = 128 * 1024 * 1024;
@@ -409,25 +477,7 @@ namespace xor
                               SeqNum cmdListNumber,
                               uint alignment = 1)
             {
-                auto size = bytes.sizeBytes() + (alignment - 1);
-                auto block = ringbuffer.allocate(size, cmdListNumber);
-
-                while (!block)
-                {
-                    auto oldest = ringbuffer.oldestCmdList();
-
-                    XOR_CHECK(oldest >= 0, "Ringbuffer not big enough to hold %llu bytes.",
-                              static_cast<llu>(bytes.sizeBytes()));
-
-                    progress.waitUntilCompleted(oldest);
-                    ringbuffer.releaseOldestAllocation();
-
-                    block = ringbuffer.allocate(size, cmdListNumber);
-                }
-
-                block.begin = roundUpToMultiple<int64_t>(block.begin, alignment);
-
-                // If we got here, we got space from the ringbuffer, memcpy it in and flush.
+                auto block = ringbuffer.allocate(progress, bytes.sizeBytes(), alignment, cmdListNumber);
                 memcpy(mapped + block.begin, bytes.data(), bytes.sizeBytes());
                 flushBlock(block);
                 return block;
@@ -470,6 +520,14 @@ namespace xor
             bool closed = false;
 
             Texture activeRenderTarget;
+
+            std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> cbvs;
+            std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> srvs;
+            std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> uavs;
+            std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> viewDescriptorSrcs;
+            std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> viewDescriptorDsts;
+            std::vector<uint> viewDescriptorSrcSizes;
+            std::vector<uint> viewDescriptorDstSizes;
 
             CommandListState(Device &dev)
             {
@@ -515,9 +573,9 @@ namespace xor
             std::shared_ptr<UploadHeap> uploadHeap;
 
             ViewHeap rtvs;
+            ViewHeap shaderViews;
 
             std::shared_ptr<ShaderLoader> shaderLoader;
-
 
             DeviceState(ComPtr<IDXGIAdapter3> pAdapter,
                         ComPtr<ID3D12Device> pDevice,
@@ -544,15 +602,14 @@ namespace xor
 
                 uploadHeap = std::make_shared<UploadHeap>(device.Get());
 
-                {
-                    D3D12_DESCRIPTOR_HEAP_DESC desc ={};
-                    desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-                    desc.NumDescriptors = MaxRTVs;
-                    desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-                    desc.NodeMask       = 0;
-
-                    rtvs = ViewHeap(device.Get(), desc, "rtvs");
-                }
+                rtvs = ViewHeap(device.Get(),
+                                D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+                                "rtvs",
+                                MaxRTVs);
+                shaderViews = ViewHeap(device.Get(),
+                                       D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+                                       "shaderViews",
+                                       DescriptorHeapSize, DescriptorHeapRing);
             }
 
             ~DeviceState()
@@ -571,6 +628,8 @@ namespace xor
                 {
                 case D3D12_DESCRIPTOR_HEAP_TYPE_RTV:
                     return rtvs;
+                case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
+                    return shaderViews;
                 default:
                     XOR_CHECK(false, "Unknown heap type.");
                     __assume(0);
@@ -621,7 +680,6 @@ namespace xor
         struct DescriptorViewState : DeviceChild
         {
             Descriptor descriptor;
-            bool isBackbuffer = false;
 
             ~DescriptorViewState()
             {
@@ -849,6 +907,16 @@ namespace xor
             size   = { static_cast<uint>(desc.Width), desc.Height };
             format = desc.Format;
         }
+
+        TextureViewInfo TextureViewInfo::defaults(const TextureInfo & textureInfo) const
+        {
+            TextureViewInfo info = *this;
+
+            if (!info.format)
+                info.format = textureInfo.format;
+
+            return info;
+        }
     }
 
     using namespace xor::backend;
@@ -1040,8 +1108,7 @@ namespace xor
             tex.makeInfo() = Texture::Info(tex.S().resource.Get());
 
             bb.rtv.makeState().setParent(this);
-            bb.rtv.S().isBackbuffer = true;
-            bb.rtv.S().descriptor = S().rtvs.allocate();
+            bb.rtv.S().descriptor = S().rtvs.allocateFromHeap();
             {
                 D3D12_RENDER_TARGET_VIEW_DESC desc = {};
                 desc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -1304,8 +1371,27 @@ namespace xor
 
     TextureSRV Device::createTextureSRV(Texture texture, const TextureSRV::Info & viewInfo)
     {
+        auto info = viewInfo.defaults(texture.info());
+
         TextureSRV srv;
         srv.m_texture = texture;
+        srv.makeState().setParent(this);
+        srv.S().descriptor = S().shaderViews.allocateFromHeap();
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
+        desc.Format                          = info.format;
+        desc.ViewDimension                   = D3D12_SRV_DIMENSION_TEXTURE2D;
+        desc.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        desc.Texture2D.MostDetailedMip       = 0;
+        desc.Texture2D.MipLevels             = -1;
+        desc.Texture2D.PlaneSlice            = 0;
+        desc.Texture2D.ResourceMinLODClamp   = 0;
+
+        device()->CreateShaderResourceView(
+            texture.get(),
+            &desc,
+            srv.S().descriptor.cpu);
+
         return srv;
     }
 
@@ -1322,8 +1408,10 @@ namespace xor
         });
 
         cmd.reset();
-        cmd.S().cmd->SetGraphicsRootSignature(S().rootSignature.Get());
-        cmd.S().cmd->SetComputeRootSignature(S().rootSignature.Get());
+        ID3D12DescriptorHeap *heaps[] = { S().shaderViews.get() };
+        cmd.cmd()->SetDescriptorHeaps(1, heaps);
+        cmd.cmd()->SetGraphicsRootSignature(S().rootSignature.Get());
+        cmd.cmd()->SetComputeRootSignature(S().rootSignature.Get());
 
         ++cmd.S().timesStarted;
         cmd.S().seqNum = S().progress.startNewCommandList();
@@ -1485,6 +1573,79 @@ namespace xor
         s = newState;
     }
 
+    void CommandList::setupRootArguments()
+    {
+        auto &cbvs = S().cbvs;
+        auto &srvs = S().srvs;
+        auto &uavs = S().uavs;
+        auto numCBVs = cbvs.size();
+        auto numSRVs = srvs.size();
+        auto numUAVs = uavs.size();
+        auto totalDescriptors = numCBVs + numSRVs + numUAVs;
+
+        if (totalDescriptors > 0)
+        {
+            D3D12_GPU_DESCRIPTOR_HANDLE gpuCBVs;
+            D3D12_GPU_DESCRIPTOR_HANDLE gpuSRVs;
+            D3D12_GPU_DESCRIPTOR_HANDLE gpuUAVs;
+
+            auto dev = S().device();
+            auto &heap = dev.S().viewHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+            auto start = heap.allocateFromRing(dev.S().progress, totalDescriptors, number());
+
+            auto &srcs = S().viewDescriptorSrcs;
+            auto &dsts = S().viewDescriptorDsts;
+            auto &srcSizes = S().viewDescriptorSrcSizes;
+            auto &dstSizes = S().viewDescriptorDstSizes;
+
+            srcs.resize(totalDescriptors);
+            dsts.resize(totalDescriptors);
+            srcSizes.resize(totalDescriptors, 1);
+            dstSizes.resize(totalDescriptors, 1);
+
+            int64_t i = 0;
+            gpuCBVs = heap.descriptorAtOffset(start + i).gpu;
+            for (size_t c = 0; c < numCBVs; ++c)
+            {
+                srcs[i] = cbvs[c];
+                dsts[i] = heap.descriptorAtOffset(start + i).cpu;
+                ++i;
+            }
+            gpuSRVs = heap.descriptorAtOffset(start + i).gpu;
+            for (size_t s = 0; s < numSRVs; ++s)
+            {
+                srcs[i] = srvs[s];
+                dsts[i] = heap.descriptorAtOffset(start + i).cpu;
+                ++i;
+            }
+            gpuUAVs = heap.descriptorAtOffset(start + i).gpu;
+            for (size_t u = 0; u < numUAVs; ++u)
+            {
+                srcs[i] = uavs[u];
+                dsts[i] = heap.descriptorAtOffset(start + i).cpu;
+                ++i;
+            }
+
+            dev.device()->CopyDescriptors(
+                static_cast<UINT>(dsts.size()),
+                dsts.data(),
+                dstSizes.data(),
+                static_cast<UINT>(srcs.size()),
+                srcs.data(),
+                srcSizes.data(),
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+            // cmd()->SetGraphicsRootDescriptorTable(0, gpuCBVs);
+            cmd()->SetGraphicsRootDescriptorTable(0, gpuSRVs);
+            // cmd()->SetGraphicsRootDescriptorTable(2, gpuUAVs);
+        }
+
+        S().cbvs.clear();
+        S().srvs.clear();
+        S().uavs.clear();
+    }
+
     CommandList::~CommandList()
     {
         release();
@@ -1577,6 +1738,16 @@ namespace xor
         cmd()->IASetIndexBuffer(&ibv.m_ibv);
     }
 
+    void CommandList::setShaderView(unsigned slot, const TextureSRV & srv)
+    {
+        transition(srv.m_texture,
+                   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+                   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        auto &srvs = S().srvs;
+        srvs.resize(std::max<size_t>(srvs.size(), slot + 1));
+        srvs[slot] = srv.S().descriptor.cpu;
+    }
+
     void CommandList::setTopology(D3D_PRIMITIVE_TOPOLOGY topology)
     {
         cmd()->IASetPrimitiveTopology(topology);
@@ -1585,12 +1756,14 @@ namespace xor
     void CommandList::draw(uint vertices, uint startVertex)
     {
         transition(S().activeRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        setupRootArguments();
         cmd()->DrawInstanced(vertices, 1, startVertex, 0);
     }
 
     void CommandList::drawIndexed(uint indices, uint startIndex)
     {
         transition(S().activeRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        setupRootArguments();
         cmd()->DrawIndexedInstanced(indices, 1, startIndex, 0, 0); 
     }
 
@@ -1643,7 +1816,8 @@ namespace xor
             nullptr);
     }
 
-    void CommandList::copyTexture(Texture & dst, uint2 pos, const Texture & src)
+    void CommandList::copyTexture(Texture & dst, ImageRect dstPos,
+                                  const Texture & src, ImageRect srcRect)
     {
         transition(src, D3D12_RESOURCE_STATE_COPY_SOURCE);
         transition(dst, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -1658,9 +1832,17 @@ namespace xor
         srcLocation.Type                        = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
         srcLocation.SubresourceIndex            = 0;
 
+        D3D12_BOX srcBox = {};
+        srcBox.left      = srcRect.leftTop.x;
+        srcBox.right     = srcRect.rightBottom.x;
+        srcBox.top       = srcRect.leftTop.y;
+        srcBox.bottom    = srcRect.rightBottom.y;
+        srcBox.front     = 0;
+        srcBox.back      = 1;
+
         cmd()->CopyTextureRegion(
-            &dstLocation, pos.x, pos.y, 0,
-            &srcLocation, nullptr);
+            &dstLocation, dstPos.leftTop.x, dstPos.leftTop.y, 0,
+            &srcLocation, srcRect.empty() ? nullptr : &srcBox);
     }
 
     uint SwapChain::currentIndex()

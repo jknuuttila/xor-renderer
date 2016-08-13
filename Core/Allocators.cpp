@@ -1,5 +1,6 @@
 #include "Allocators.hpp"
 #include "Error.hpp"
+#include "Math.hpp"
 
 #include <numeric>
 
@@ -91,10 +92,11 @@ namespace xor
         return offset;
     }
 
-    int64_t OffsetRing::allocateContiguous(size_t amount)
+    int64_t OffsetRing::allocateContiguous(size_t amount, size_t alignment)
     {
         XOR_ASSERT(m_size > 0, "Attempted to allocate from an invalid ring.");
         XOR_ASSERT(amount > 0, "Attempted to allocate zero elements.");
+        XOR_ASSERT(alignment > 0, "Attempted to allocate with zero alignment.");
 
         int64_t iAmount = static_cast<int64_t>(amount);
 
@@ -103,23 +105,25 @@ namespace xor
 
         int64_t offset;
 
+        int64_t alignedTail = alignTo(m_tail, static_cast<int64_t>(alignment));
+
         if (m_tail < m_head)
         {
             // All free space is between tail and head.
-            int64_t left = m_head - m_tail;
+            int64_t left = m_head - alignedTail;
 
             if (left < iAmount)
                 return -1;
 
-            offset = m_tail;
-            m_tail += iAmount;
+            offset = alignedTail;
+            m_tail = alignedTail + iAmount;
         }
         else
         {
             // Free space is split in two: between tail and buffer end,
             // and between buffer start and head.
 
-            int64_t leftUntilEnd = m_size - m_tail;
+            int64_t leftUntilEnd = m_size - alignedTail;
 
             if (leftUntilEnd < iAmount)
             {
@@ -131,7 +135,8 @@ namespace xor
 
                 // Move tail directly to offset iAmount, which essentially
                 // allocates all space between tail and end, and
-                // iAmount elements from buffer start.
+                // iAmount elements from buffer start. Also, offset = 0
+                // is always aligned.
                 offset = 0;
                 m_tail = iAmount;
             }
@@ -139,8 +144,8 @@ namespace xor
             {
                 // There is enough space between tail and end, allocate
                 // from there.
-                offset = m_tail;
-                m_tail += iAmount;
+                offset = alignedTail;
+                m_tail = alignedTail + iAmount;
                 XOR_ASSERT(m_tail <= m_size, "Tail out of bounds.");
                 if (m_tail == m_size)
                     m_tail = 0;
@@ -149,6 +154,11 @@ namespace xor
 
         m_full = m_tail == m_head;
         return offset;
+    }
+
+    int64_t OffsetRing::allocateContiguous(size_t amount)
+    {
+        return allocateContiguous(amount, 1);
     }
 
     void OffsetRing::releaseEnd(int64_t onePastLastOffset)

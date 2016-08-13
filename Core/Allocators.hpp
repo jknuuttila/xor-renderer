@@ -147,6 +147,7 @@ namespace xor
 
         int64_t allocate();
         int64_t allocateContiguous(size_t amount);
+        int64_t allocateContiguous(size_t amount, size_t alignment);
         void releaseEnd(int64_t onePastLastOffset);
 
         void releaseUntil(int64_t lastOffset)
@@ -172,6 +173,15 @@ namespace xor
             block.end   = block.begin + static_cast<int64_t>(amount);
             return block;
         }
+
+        Block allocateBlock(size_t amount, size_t alignment)
+        {
+            Block block;
+            block.begin = allocateContiguous(amount, alignment);
+            block.end   = block.begin + static_cast<int64_t>(amount);
+            return block;
+        }
+
         void release(Block block)
         {
             release(block.begin, static_cast<size_t>(block.end - block.begin));

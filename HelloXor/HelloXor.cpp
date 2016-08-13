@@ -81,11 +81,11 @@ public:
         cmd.setVBV(vertexBuffer);
         cmd.setIBV(indexBuffer);
         cmd.setTopology();
-        cmd.setTextureSRV(0, lena);
+        //cmd.setShaderView(0, lena);
         cmd.drawIndexed(6);
         cmd.setRenderTargets();
 
-        cmd.copyTexture(backbuffer.texture(), { 100, 100 },
+        cmd.copyTexture(backbuffer.texture(), { { 100, 100 } },
                         lena.texture());
 
         cmd.setRenderTargets({backbuffer});

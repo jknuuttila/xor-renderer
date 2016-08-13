@@ -23,6 +23,38 @@ namespace xor
         }
     };
 
+    struct ImageRect
+    {
+        uint2 leftTop           = 0;
+        uint2 rightBottom       = 0;
+        Subresource subresource = 0;
+
+        ImageRect() = default;
+        ImageRect(uint2 leftTop)
+            : leftTop(leftTop)
+        {}
+        ImageRect(uint2 leftTop, uint2 rightBottom, Subresource subresource = 0)
+            : leftTop(leftTop)
+            , rightBottom(rightBottom)
+            , subresource(subresource)
+        {}
+        ImageRect(uint2 leftTop, Subresource subresource)
+            : leftTop(leftTop)
+            , subresource(subresource)
+        {}
+
+        bool empty() const
+        {
+            auto s = size();
+            return s.x == 0 || s.y == 0;
+        }
+
+        uint2 size() const
+        {
+            return max(leftTop, rightBottom) - leftTop;
+        }
+    };
+
     struct ImageData
     {
         Span<const uint8_t> data;
