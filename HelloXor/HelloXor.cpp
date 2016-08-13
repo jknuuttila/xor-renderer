@@ -14,6 +14,7 @@ class HelloXor : public Window
     BufferIBV indexBuffer;
     TextureSRV lena;
     Timer time;
+    float2 pixel;
 
     struct Vertex
     {
@@ -40,19 +41,22 @@ public:
                          .element("COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT))
             .renderTargetFormats({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB}));
 
-        static const float D = .75f;
+        pixel = float2(2) / float2(size());
+        lena = device.createTextureSRV(Image(XOR_DATA "/Lena.png"));
+
+        auto lenaSize = float2(lena.texture()->size) * pixel;
+
         Vertex vertices[] = {
-            { float2(-D, +D), float2(0, 0), float3(1, 0, 0) },
-            { float2(-D, -D), float2(0, 1), float3(0, 1, 0) },
-            { float2(+D, +D), float2(1, 0), float3(0, 0, 1) },
-            { float2(+D, -D), float2(1, 1), float3(1, 0, 1) },
+            { float2(0.5f) * float2(-1, +1) * lenaSize, float2(0, 0), float3(1, 0, 0) },
+            { float2(0.5f) * float2(-1, -1) * lenaSize, float2(0, 1), float3(0, 1, 0) },
+            { float2(0.5f) * float2(+1, +1) * lenaSize, float2(1, 0), float3(0, 0, 1) },
+            { float2(0.5f) * float2(+1, -1) * lenaSize, float2(1, 1), float3(1, 0, 1) },
         };
 
         vertexBuffer = device.createBufferVBV(asConstSpan(vertices));
         indexBuffer  = device.createBufferIBV(
             Buffer::Info({ 0, 1, 2, 1, 3, 2, }, DXGI_FORMAT_R32_UINT));
 
-        lena = device.createTextureSRV(Image(XOR_DATA "/Lena.png"));
     }
 
     void keyDown(int keyCode) override
@@ -66,14 +70,6 @@ public:
         auto cmd        = device.graphicsCommandList();
         auto backbuffer = swapChain.backbuffer();
 
-#if 0
-        float4 rgba = float4(hsvToRGB(float3(
-            frac(static_cast<float>(time.seconds())),
-            1,
-            1)));
-        rgba.w = 1;
-        cmd.clearRTV(backbuffer, rgba);
-#else
         cmd.clearRTV(backbuffer, float4(0, 0, .25f, 1));
 
         cmd.setRenderTargets({backbuffer});
@@ -81,16 +77,21 @@ public:
         cmd.setVBV(vertexBuffer);
         cmd.setIBV(indexBuffer);
         cmd.setTopology();
+
+        cmd.setConstants(0, float2(-500, +150) * pixel);
+        cmd.setConstants(1, float2(1));
         cmd.setShaderView(0, lena);
         cmd.drawIndexed(6);
+
+        cmd.setConstants(0, float2(+500, +150) * pixel);
+        cmd.setConstants(1, float2(0.5f));
+        cmd.setShaderView(0, lena);
+        cmd.drawIndexed(6);
+
         cmd.setRenderTargets();
 
-        cmd.copyTexture(backbuffer.texture(), { { 100, 100 } },
+        cmd.copyTexture(backbuffer.texture(), { { 600, 350 } },
                         lena.texture());
-
-        cmd.setRenderTargets({backbuffer});
-
-#endif
 
         device.execute(cmd);
         device.present(swapChain);

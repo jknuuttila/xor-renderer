@@ -522,13 +522,10 @@ namespace xor
 
             Texture activeRenderTarget;
 
-            std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> cbvs;
+            std::vector<D3D12_CONSTANT_BUFFER_VIEW_DESC> cbvs;
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> srvs;
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> uavs;
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> viewDescriptorSrcs;
-            std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> viewDescriptorDsts;
-            std::vector<uint> viewDescriptorSrcSizes;
-            std::vector<uint> viewDescriptorDstSizes;
 
             CommandListState(Device &dev)
             {
@@ -1230,6 +1227,18 @@ namespace xor
             &S().rootSignature));
     }
 
+    HeapBlock Device::uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment)
+    {
+        HeapBlock block;
+        block.heap = S().uploadHeap->heap.Get();
+        block.block = S().uploadHeap->uploadBytes(
+            S().progress,
+            bytes,
+            cmdListNumber,
+            alignment);
+        return block;
+    }
+
     ID3D12Device * Device::device()
     {
         return S().device.Get();
@@ -1596,55 +1605,46 @@ namespace xor
             auto start = heap.allocateFromRing(dev.S().progress, totalDescriptors, number());
 
             auto &srcs = S().viewDescriptorSrcs;
-            auto &dsts = S().viewDescriptorDsts;
-            auto &srcSizes = S().viewDescriptorSrcSizes;
-            auto &dstSizes = S().viewDescriptorDstSizes;
 
-            srcs.resize(totalDescriptors);
-            dsts.resize(totalDescriptors);
-            srcSizes.resize(totalDescriptors, 1);
-            dstSizes.resize(totalDescriptors, 1);
+            srcs.clear();
+            srcs.reserve(totalDescriptors);
 
-            int64_t i = 0;
-            gpuCBVs = heap.descriptorAtOffset(start + i).gpu;
+            gpuCBVs = heap.descriptorAtOffset(start).gpu;
             for (size_t c = 0; c < numCBVs; ++c)
             {
-                srcs[i] = cbvs[c];
-                dsts[i] = heap.descriptorAtOffset(start + i).cpu;
-                ++i;
-            }
-            gpuSRVs = heap.descriptorAtOffset(start + i).gpu;
-            for (size_t s = 0; s < numSRVs; ++s)
-            {
-                srcs[i] = srvs[s];
-                dsts[i] = heap.descriptorAtOffset(start + i).cpu;
-                ++i;
-            }
-            gpuUAVs = heap.descriptorAtOffset(start + i).gpu;
-            for (size_t u = 0; u < numUAVs; ++u)
-            {
-                srcs[i] = uavs[u];
-                dsts[i] = heap.descriptorAtOffset(start + i).cpu;
-                ++i;
+                dev.device()->CreateConstantBufferView(
+                    &cbvs[c],
+                    heap.descriptorAtOffset(start + c).cpu);
             }
 
+            gpuSRVs = heap.descriptorAtOffset(start + numCBVs).gpu;
+            for (size_t s = 0; s < numSRVs; ++s)
+                srcs.emplace_back(srvs[s]);
+
+            gpuUAVs = heap.descriptorAtOffset(start + numCBVs + numSRVs).gpu;
+            for (size_t u = 0; u < numUAVs; ++u)
+                srcs.emplace_back(uavs[u]);
+
+            auto dst = heap.descriptorAtOffset(start + numCBVs);
+            uint amount[] = { static_cast<uint>(srcs.size()) };
             dev.device()->CopyDescriptors(
-                static_cast<UINT>(dsts.size()),
-                dsts.data(),
-                dstSizes.data(),
-                static_cast<UINT>(srcs.size()),
-                srcs.data(),
-                srcSizes.data(),
+                        1,    &dst.cpu,  amount,
+                amount[0], srcs.data(), nullptr,
                 D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-            // cmd()->SetGraphicsRootDescriptorTable(0, gpuCBVs);
-            cmd()->SetGraphicsRootDescriptorTable(0, gpuSRVs);
+            cmd()->SetGraphicsRootDescriptorTable(0, gpuCBVs);
+            cmd()->SetGraphicsRootDescriptorTable(1, gpuSRVs);
             // cmd()->SetGraphicsRootDescriptorTable(2, gpuUAVs);
         }
 
         S().cbvs.clear();
         S().srvs.clear();
         S().uavs.clear();
+    }
+
+    backend::HeapBlock CommandList::uploadBytes(Span<const uint8_t> bytes, uint alignment)
+    {
+        return device().uploadBytes(bytes, number(), alignment);
     }
 
     CommandList::~CommandList()
@@ -1670,6 +1670,11 @@ namespace xor
     SeqNum CommandList::number() const
     {
         return S().seqNum;
+    }
+
+    Device CommandList::device()
+    {
+        return S().device();
     }
 
     void CommandList::bind(Pipeline &pipeline)
@@ -1749,6 +1754,17 @@ namespace xor
         srvs[slot] = srv.S().descriptor.staging;
     }
 
+    void CommandList::setConstantBuffer(unsigned slot, Span<const uint8_t> bytes)
+    {
+        auto block = uploadBytes(bytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+        auto &cbvs = S().cbvs;
+        cbvs.resize(std::max<size_t>(cbvs.size(), slot + 1));
+        cbvs[slot].BufferLocation = block.heap->GetGPUVirtualAddress() + block.block.begin;
+        cbvs[slot].SizeInBytes    = roundUpToMultiple<uint>(
+            static_cast<uint>(bytes.sizeBytes()),
+            D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+    }
+
     void CommandList::setTopology(D3D_PRIMITIVE_TOPOLOGY topology)
     {
         cmd()->IASetPrimitiveTopology(topology);
@@ -1772,27 +1788,20 @@ namespace xor
                                    Span<const uint8_t> data,
                                    size_t offset)
     {
-        auto &dev        = S().device().S();
-        auto &uploadHeap = *dev.uploadHeap;
-
-        auto block       = uploadHeap.uploadBytes(dev.progress, data, number());
+        auto block = uploadBytes(data, 1);
 
         transition(buffer, D3D12_RESOURCE_STATE_COPY_DEST);
         S().cmd->CopyBufferRegion(
             buffer.get(),
             offset,
-            uploadHeap.heap.Get(),
-            static_cast<UINT64>(block.begin),
-            block.size());
+            block.heap,
+            static_cast<UINT64>(block.block.begin),
+            block.block.size());
     }
 
     void CommandList::updateTexture(Texture & texture, ImageData data, uint2 pos, Subresource sr)
     {
-        auto &dev        = S().device().S();
-        auto &uploadHeap = *dev.uploadHeap;
-
-        auto block       = uploadHeap.uploadBytes(dev.progress, data.data, number(),
-                                                  D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
+        auto block = uploadBytes(data.data, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
 
         D3D12_TEXTURE_COPY_LOCATION dst = {};
         dst.pResource                   = texture.get();
@@ -1800,9 +1809,9 @@ namespace xor
         dst.SubresourceIndex            = sr.index(1);
 
         D3D12_TEXTURE_COPY_LOCATION src = {};
-        src.pResource                          = uploadHeap.heap.Get();
+        src.pResource                          = block.heap;
         src.Type                               = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-        src.PlacedFootprint.Offset             = static_cast<UINT64>(block.begin);
+        src.PlacedFootprint.Offset             = static_cast<UINT64>(block.block.begin);
         src.PlacedFootprint.Footprint.Format   = data.format;
         src.PlacedFootprint.Footprint.Width    = data.size.x;
         src.PlacedFootprint.Footprint.Height   = data.size.y;

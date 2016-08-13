@@ -1,22 +1,13 @@
 #include "Xor/Shaders.h.hlsl"
 
-#if 0
-static const float P = .75f;
-
-static const float4 Positions[] =
+cbuffer OffsetConstants : register(b0)
 {
-    float4(-P, -P, 0, 1),
-    float4( P, -P, 0, 1),
-    float4( 0,  P, 0, 1),
+    float2 offset;
 };
-
-static const float4 Colors[] =
+cbuffer SizeConstants : register(b1)
 {
-    float4(1, 0, 0, 1),
-    float4(0, 1, 0, 1),
-    float4(0, 0, 1, 1),
+    float2 size;
 };
-#endif
 
 struct VSInput
 {
@@ -39,7 +30,7 @@ VSOutput main(VSInput i)
 
     o.color = float4(i.color, 1);
     o.uv    = float4(i.uv, 0, 0);
-    o.pos   = float4(i.pos, 0, 1);
+    o.pos   = float4(i.pos * size + offset, 0, 1);
 
 	return o;
 }

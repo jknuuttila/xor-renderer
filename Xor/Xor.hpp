@@ -93,6 +93,11 @@ namespace xor
             }
         };
 
+        struct HeapBlock
+        {
+            ID3D12Resource *heap = nullptr;
+            Block block;
+        };
     }
 
     namespace info
@@ -377,6 +382,8 @@ namespace xor
 
         void collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
 
+        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment);
+
         Device(StatePtr state);
     public:
         Device() = default;
@@ -440,6 +447,7 @@ namespace xor
         // FIXME: This is horribly inefficient and bad
         void transition(const backend::Resource &resource, D3D12_RESOURCE_STATES state);
         void setupRootArguments();
+        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment);
     public:
         CommandList() = default;
 
@@ -453,14 +461,28 @@ namespace xor
         explicit operator bool() const { return valid(); }
         SeqNum number() const;
 
+        Device device();
+
         void bind(Pipeline &pipeline);
 
         void clearRTV(TextureRTV &rtv, float4 color = 0);
+
         void setRenderTargets();
         void setRenderTargets(TextureRTV &rtv);
+
         void setVBV(const BufferVBV &vbv);
         void setIBV(const BufferIBV &ibv);
+
         void setShaderView(unsigned slot, const TextureSRV &srv);
+
+        void setConstantBuffer(unsigned slot, Span<const uint8_t> bytes);
+        template <typename T>
+        void setConstants(unsigned slot, const T &t)
+        {
+            setConstantBuffer(slot, Span<const uint8_t>(
+                reinterpret_cast<const uint8_t *>(&t), sizeof(t)));
+        }
+
         void setTopology(D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
         void draw(uint vertices, uint startVertex = 0);
