@@ -1225,6 +1225,14 @@ namespace xor
             shader.BytecodeLength,
             __uuidof(ID3D12RootSignature),
             &S().rootSignature));
+
+        ComPtr<ID3D12RootSignatureDeserializer> deserializer;
+        XOR_CHECK_HR(D3D12CreateRootSignatureDeserializer(
+            shader.pShaderBytecode,
+            shader.BytecodeLength,
+            __uuidof(ID3D12RootSignatureDeserializer),
+            &deserializer));
+        auto desc = deserializer->GetRootSignatureDesc();
     }
 
     HeapBlock Device::uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment)
