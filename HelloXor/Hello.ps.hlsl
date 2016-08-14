@@ -1,7 +1,4 @@
-#include "Xor/Shaders.h.hlsl"
-
-Texture2D<float4> tex : register(t0);
-SamplerState bilinear : register(s0);
+#include "Hello.sig.h"
 
 struct PSInput
 {
@@ -9,7 +6,7 @@ struct PSInput
     float4 uv : TEXCOORD0;
 };
 
-[RootSignature(XOR_ROOT_SIGNATURE_CS(2, 1))]
+[RootSignature(HELLO_ROOT_SIGNATURE)]
 float4 main(PSInput i) : SV_Target
 {
     return tex.Sample(bilinear, i.uv.xy);

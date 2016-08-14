@@ -2,6 +2,8 @@
 #include "Core/TLog.hpp"
 #include "Xor/Xor.hpp"
 
+#include "Hello.sig.h"
+
 using namespace xor;
 
 class HelloXor : public Window
@@ -78,14 +80,23 @@ public:
         cmd.setIBV(indexBuffer);
         cmd.setTopology();
 
-        cmd.setConstants(0, float2(-500, +150) * pixel);
-        cmd.setConstants(1, float2(1));
-        cmd.setShaderView(0, lena);
+        Hello::OffsetConstants offset;
+        Hello::SizeConstants   size;
+
+        offset.offset = float2(-500, +150) * pixel;
+        size.size     = float2(1);
+
+        cmd.setConstants(offset);
+        cmd.setConstants(size);
+        cmd.setShaderView(Hello::tex, lena);
         cmd.drawIndexed(6);
 
-        cmd.setConstants(0, float2(+500, +150) * pixel);
-        cmd.setConstants(1, float2(0.5f));
-        cmd.setShaderView(0, lena);
+        offset.offset = float2(+500, +150) * pixel;
+        size.size     = float2(0.5f);
+
+        cmd.setConstants(offset);
+        cmd.setConstants(size);
+        cmd.setShaderView(Hello::tex, lena);
         cmd.drawIndexed(6);
 
         cmd.setRenderTargets();

@@ -7,4 +7,7 @@
     <FxCompile Include="Hello.vs.hlsl" />
     <FxCompile Include="Hello.ps.hlsl" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Hello.sig.h" />
+  </ItemGroup>
 </Project>

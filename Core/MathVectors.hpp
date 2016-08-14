@@ -178,16 +178,15 @@ namespace xor
         static_assert(std::is_trivially_copyable<float3>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<float4>::value, "Unexpectedly non-POD.");
     }
-
-    using math::uint;
-
-    using math::int2;
-    using math::int3;
-    using math::int4;
-    using math::uint2;
-    using math::uint3;
-    using math::uint4;
-    using math::float2;
-    using math::float3;
-    using math::float4;
 }
+
+using xor::math::int2;
+using xor::math::int3;
+using xor::math::int4;
+using xor::math::uint;
+using xor::math::uint2;
+using xor::math::uint3;
+using xor::math::uint4;
+using xor::math::float2;
+using xor::math::float3;
+using xor::math::float4;

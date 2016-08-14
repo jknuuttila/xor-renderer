@@ -1,13 +1,4 @@
-#include "Xor/Shaders.h.hlsl"
-
-cbuffer OffsetConstants : register(b0)
-{
-    float2 offset;
-};
-cbuffer SizeConstants : register(b1)
-{
-    float2 size;
-};
+#include "Hello.sig.h"
 
 struct VSInput
 {
@@ -23,7 +14,7 @@ struct VSOutput
     float4 pos   : SV_Position;
 };
 
-[RootSignature(XOR_ROOT_SIGNATURE_CS(2, 1))]
+[RootSignature(HELLO_ROOT_SIGNATURE)]
 VSOutput main(VSInput i)
 {
     VSOutput o;

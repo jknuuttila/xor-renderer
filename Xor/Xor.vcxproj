@@ -21,7 +21,7 @@
     <ClCompile Include="Xor.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Shaders.h.hlsl">
+    <ClInclude Include="Shaders.h">
       <FileType>Document</FileType>
     </ClInclude>
   </ItemGroup>

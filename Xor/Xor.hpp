@@ -2,6 +2,7 @@
 
 #include "Core/Core.hpp"
 #include "Xor/Image.hpp"
+#include "Xor/Shaders.h"
 
 #include <d3d12.h>
 #include <dxgi1_5.h>
@@ -482,6 +483,12 @@ namespace xor
         {
             setConstantBuffer(slot, Span<const uint8_t>(
                 reinterpret_cast<const uint8_t *>(&t), sizeof(t)));
+        }
+
+        template <typename T, unsigned Slot>
+        void setConstants(const backend::ShaderCBuffer<T, Slot> &constants)
+        {
+            setConstants(Slot, static_cast<const T &>(constants));
         }
 
         void setTopology(D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
