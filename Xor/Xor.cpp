@@ -700,7 +700,7 @@ namespace xor
             : std::enable_shared_from_this<PipelineState>
             , DeviceChild
         {
-            std::shared_ptr<Pipeline::Graphics> graphicsInfo;
+            std::shared_ptr<GraphicsPipeline::Info> graphicsInfo;
             ComPtr<ID3D12PipelineState> pso;
             RootSignature rootSignature;
 
@@ -1133,7 +1133,7 @@ namespace xor
         return swapChain;
     }
 
-    Pipeline::Graphics::Graphics()
+    GraphicsPipeline::Info::Info()
         : D3D12_GRAPHICS_PIPELINE_STATE_DESC {}
     {
         RasterizerState.FillMode              = D3D12_FILL_MODE_SOLID;
@@ -1153,24 +1153,24 @@ namespace xor
             rt.RenderTargetWriteMask = 0xf;
     }
 
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC Pipeline::Graphics::desc() const
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC GraphicsPipeline::Info::desc() const
     {
         return *this;
     }
 
-    Pipeline::Graphics &Pipeline::Graphics::vertexShader(const String & vsName)
+    GraphicsPipeline::Info &GraphicsPipeline::Info::vertexShader(const String & vsName)
     {
         m_vs = vsName;
         return *this;
     }
 
-    Pipeline::Graphics &Pipeline::Graphics::pixelShader(const String & psName)
+    GraphicsPipeline::Info &GraphicsPipeline::Info::pixelShader(const String & psName)
     {
         m_ps = psName;
         return *this;
     }
 
-    Pipeline::Graphics &Pipeline::Graphics::renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats)
+    GraphicsPipeline::Info &GraphicsPipeline::Info::renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats)
     {
         NumRenderTargets = static_cast<uint>(formats.size());
         for (uint i = 0; i < NumRenderTargets; ++i)
@@ -1178,7 +1178,7 @@ namespace xor
         return *this;
     }
 
-    Pipeline::Graphics & Pipeline::Graphics::inputLayout(const info::InputLayoutInfo & ilInfo)
+    GraphicsPipeline::Info & GraphicsPipeline::Info::inputLayout(const info::InputLayoutInfo & ilInfo)
     {
         // Put the input layout info object behind a pointer so the element addresses
         // do not change even if the pipeline info object is copied.
@@ -1187,37 +1187,37 @@ namespace xor
         return *this;
     }
 
-    Pipeline::Graphics &Pipeline::Graphics::multisampling(uint samples, uint quality)
+    GraphicsPipeline::Info &GraphicsPipeline::Info::multisampling(uint samples, uint quality)
     {
         SampleDesc.Count   = samples;
         SampleDesc.Quality = quality;
         return *this;
     }
 
-    Pipeline::Graphics & Pipeline::Graphics::topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type)
+    GraphicsPipeline::Info & GraphicsPipeline::Info::topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type)
     {
         PrimitiveTopologyType = type;
         return *this;
     }
 
-    Pipeline::Graphics &Pipeline::Graphics::fill(D3D12_FILL_MODE fillMode)
+    GraphicsPipeline::Info &GraphicsPipeline::Info::fill(D3D12_FILL_MODE fillMode)
     {
         RasterizerState.FillMode = fillMode;
         return *this;
     }
 
-    Pipeline::Graphics &Pipeline::Graphics::cull(D3D12_CULL_MODE cullMode)
+    GraphicsPipeline::Info &GraphicsPipeline::Info::cull(D3D12_CULL_MODE cullMode)
     {
         RasterizerState.CullMode = cullMode;
         return *this;
     }
 
-    Pipeline Device::createGraphicsPipeline(const Pipeline::Graphics &info)
+    GraphicsPipeline Device::createGraphicsPipeline(const GraphicsPipeline::Info &info)
     {
 
-        Pipeline pipeline;
+        GraphicsPipeline pipeline;
         pipeline.makeState().setParent(this);
-        pipeline.S().graphicsInfo = std::make_shared<Pipeline::Graphics>(info);
+        pipeline.S().graphicsInfo = std::make_shared<GraphicsPipeline::Info>(info);
         pipeline.S().reload();
         return pipeline;
     }
@@ -1709,7 +1709,7 @@ namespace xor
         return S().device();
     }
 
-    void CommandList::bind(Pipeline &pipeline)
+    void CommandList::bind(GraphicsPipeline &pipeline)
     {
         cmd()->SetGraphicsRootSignature(pipeline.S().rootSignature.rs.Get());
         cmd()->SetPipelineState(pipeline.S().pso.Get());

@@ -11,7 +11,7 @@ class HelloXor : public Window
     Xor xor;
     Device device;
     SwapChain swapChain;
-    Pipeline hello;
+    GraphicsPipeline hello;
     BufferVBV vertexBuffer;
     BufferIBV indexBuffer;
     TextureSRV lena;
@@ -34,7 +34,7 @@ public:
         device    = xor.defaultDevice();
         swapChain = device.createSwapChain(*this);
         hello     = device.createGraphicsPipeline(
-            Pipeline::Graphics()
+            GraphicsPipeline::Info()
             .vertexShader("Hello.vs")
             .pixelShader("Hello.ps")
             .inputLayout(info::InputLayoutInfoBuilder()

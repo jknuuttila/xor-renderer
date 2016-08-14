@@ -263,34 +263,34 @@ namespace xor
     class SwapChain;
     class CommandList;
 
-    class Pipeline : private backend::SharedState<backend::PipelineState>
+    class GraphicsPipeline : private backend::SharedState<backend::PipelineState>
     {
         friend class Device;
         friend class CommandList;
     public:
-        Pipeline() = default;
+        GraphicsPipeline() = default;
 
-        class Graphics : private D3D12_GRAPHICS_PIPELINE_STATE_DESC
+        class Info : private D3D12_GRAPHICS_PIPELINE_STATE_DESC
         {
             friend class Device;
-            friend class Pipeline;
+            friend class GraphicsPipeline;
             friend struct backend::PipelineState;
             String                                 m_vs;
             String                                 m_ps;
             std::shared_ptr<info::InputLayoutInfo> m_inputLayout;
         public:
-            Graphics();
+            Info();
 
             D3D12_GRAPHICS_PIPELINE_STATE_DESC desc() const;
 
-            Graphics &vertexShader(const String &vsName);
-            Graphics &pixelShader(const String &psName);
-            Graphics &renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats);
-            Graphics &inputLayout(const info::InputLayoutInfo &ilInfo);
-            Graphics &multisampling(uint samples, uint quality = 0);
-            Graphics &topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
-            Graphics &fill(D3D12_FILL_MODE fillMode);
-            Graphics &cull(D3D12_CULL_MODE cullMode);
+            Info &vertexShader(const String &vsName);
+            Info &pixelShader(const String &psName);
+            Info &renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats);
+            Info &inputLayout(const info::InputLayoutInfo &ilInfo);
+            Info &multisampling(uint samples, uint quality = 0);
+            Info &topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
+            Info &fill(D3D12_FILL_MODE fillMode);
+            Info &cull(D3D12_CULL_MODE cullMode);
         };
     };
 
@@ -393,7 +393,7 @@ namespace xor
         explicit operator bool() const { return valid(); }
 
         SwapChain createSwapChain(Window &window);
-        Pipeline createGraphicsPipeline(const Pipeline::Graphics &info);
+        GraphicsPipeline createGraphicsPipeline(const GraphicsPipeline::Info &info);
 
         Buffer    createBuffer(const Buffer::Info &info);
         BufferVBV createBufferVBV(Buffer buffer                 , const BufferVBV::Info &viewInfo = BufferVBV::Info());
@@ -465,7 +465,7 @@ namespace xor
 
         Device device();
 
-        void bind(Pipeline &pipeline);
+        void bind(GraphicsPipeline &pipeline);
 
         void clearRTV(TextureRTV &rtv, float4 color = 0);
 
