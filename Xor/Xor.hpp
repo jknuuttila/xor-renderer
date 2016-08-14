@@ -37,6 +37,7 @@ namespace xor
         struct PipelineState;
         struct BufferState;
         struct GPUProgressTracking;
+        struct RootSignature;
 
         template <typename T>
         class SharedState
@@ -380,7 +381,7 @@ namespace xor
 
         CommandList initializerCommandList();
 
-        void collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
+        backend::RootSignature collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
 
         backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment);
 

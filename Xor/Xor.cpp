@@ -564,7 +564,6 @@ namespace xor
             ComPtr<IDXGIAdapter3>       adapter;
             ComPtr<ID3D12Device>        device;
             ComPtr<ID3D12CommandQueue>  graphicsQueue;
-            ComPtr<ID3D12RootSignature> rootSignature;
 
             GrowingPool<std::shared_ptr<CommandListState>> freeGraphicsCommandLists;
             GPUProgressTracking progress;
@@ -689,12 +688,21 @@ namespace xor
             }
         };
 
+        struct RootSignature
+        {
+            ComPtr<ID3D12RootSignature> rs;
+            unsigned numCBVs = 0;
+            unsigned numSRVs = 0;
+            unsigned numUAVs = 0;
+        };
+
         struct PipelineState
             : std::enable_shared_from_this<PipelineState>
             , DeviceChild
         {
             std::shared_ptr<Pipeline::Graphics> graphicsInfo;
             ComPtr<ID3D12PipelineState> pso;
+            RootSignature rootSignature;
 
             ShaderBinary loadShader(Device &device, StringView name)
             {
@@ -741,7 +749,7 @@ namespace xor
 
                 if (graphicsInfo->m_vs)
                 {
-                    dev.collectRootSignature(vs);
+                    rootSignature = dev.collectRootSignature(vs);
                     desc.VS = vs;
                 }
                 else
@@ -751,7 +759,7 @@ namespace xor
 
                 if (graphicsInfo->m_ps)
                 {
-                    dev.collectRootSignature(ps);
+                    rootSignature = dev.collectRootSignature(vs);
                     desc.PS = ps;
                 }
                 else
@@ -1214,17 +1222,16 @@ namespace xor
         return pipeline;
     }
 
-    void Device::collectRootSignature(const D3D12_SHADER_BYTECODE &shader)
+    RootSignature Device::collectRootSignature(const D3D12_SHADER_BYTECODE &shader)
     { 
-        if (S().rootSignature || shader.BytecodeLength == 0)
-            return;
+        RootSignature rs;
 
         XOR_CHECK_HR(device()->CreateRootSignature(
             0,
             shader.pShaderBytecode,
             shader.BytecodeLength,
             __uuidof(ID3D12RootSignature),
-            &S().rootSignature));
+            &rs.rs));
 
         ComPtr<ID3D12RootSignatureDeserializer> deserializer;
         XOR_CHECK_HR(D3D12CreateRootSignatureDeserializer(
@@ -1233,6 +1240,35 @@ namespace xor
             __uuidof(ID3D12RootSignatureDeserializer),
             &deserializer));
         auto desc = deserializer->GetRootSignatureDesc();
+
+        for (uint i = 0; i < desc->NumParameters; ++i)
+        {
+            auto &p = desc->pParameters[i];
+
+            if (p.ParameterType != D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)
+                continue;
+
+            for (uint j = 0; j < p.DescriptorTable.NumDescriptorRanges; ++j)
+            {
+                auto &dr = p.DescriptorTable.pDescriptorRanges[j];
+                switch (dr.RangeType)
+                {
+                case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
+                    rs.numCBVs = dr.NumDescriptors;
+                    break;
+                case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
+                    rs.numSRVs = dr.NumDescriptors;
+                    break;
+                case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
+                    rs.numUAVs = dr.NumDescriptors;
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+
+        return rs;
     }
 
     HeapBlock Device::uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment)
@@ -1428,8 +1464,6 @@ namespace xor
         cmd.reset();
         ID3D12DescriptorHeap *heaps[] = { S().shaderViews.get() };
         cmd.cmd()->SetDescriptorHeaps(1, heaps);
-        cmd.cmd()->SetGraphicsRootSignature(S().rootSignature.Get());
-        cmd.cmd()->SetComputeRootSignature(S().rootSignature.Get());
 
         ++cmd.S().timesStarted;
         cmd.S().seqNum = S().progress.startNewCommandList();
@@ -1603,9 +1637,7 @@ namespace xor
 
         if (totalDescriptors > 0)
         {
-            D3D12_GPU_DESCRIPTOR_HANDLE gpuCBVs;
-            D3D12_GPU_DESCRIPTOR_HANDLE gpuSRVs;
-            D3D12_GPU_DESCRIPTOR_HANDLE gpuUAVs;
+            D3D12_GPU_DESCRIPTOR_HANDLE table;
 
             auto dev = S().device();
             auto &heap = dev.S().viewHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -1617,7 +1649,7 @@ namespace xor
             srcs.clear();
             srcs.reserve(totalDescriptors);
 
-            gpuCBVs = heap.descriptorAtOffset(start).gpu;
+            table = heap.descriptorAtOffset(start).gpu;
             for (size_t c = 0; c < numCBVs; ++c)
             {
                 dev.device()->CreateConstantBufferView(
@@ -1625,11 +1657,9 @@ namespace xor
                     heap.descriptorAtOffset(start + c).cpu);
             }
 
-            gpuSRVs = heap.descriptorAtOffset(start + numCBVs).gpu;
             for (size_t s = 0; s < numSRVs; ++s)
                 srcs.emplace_back(srvs[s]);
 
-            gpuUAVs = heap.descriptorAtOffset(start + numCBVs + numSRVs).gpu;
             for (size_t u = 0; u < numUAVs; ++u)
                 srcs.emplace_back(uavs[u]);
 
@@ -1640,14 +1670,8 @@ namespace xor
                 amount[0], srcs.data(), nullptr,
                 D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-            cmd()->SetGraphicsRootDescriptorTable(0, gpuCBVs);
-            cmd()->SetGraphicsRootDescriptorTable(1, gpuSRVs);
-            // cmd()->SetGraphicsRootDescriptorTable(2, gpuUAVs);
+            cmd()->SetGraphicsRootDescriptorTable(0, table);
         }
-
-        S().cbvs.clear();
-        S().srvs.clear();
-        S().uavs.clear();
     }
 
     backend::HeapBlock CommandList::uploadBytes(Span<const uint8_t> bytes, uint alignment)
@@ -1687,7 +1711,16 @@ namespace xor
 
     void CommandList::bind(Pipeline &pipeline)
     {
+        cmd()->SetGraphicsRootSignature(pipeline.S().rootSignature.rs.Get());
         cmd()->SetPipelineState(pipeline.S().pso.Get());
+
+        S().cbvs.clear();
+        S().srvs.clear();
+        S().uavs.clear();
+
+        S().cbvs.resize(pipeline.S().rootSignature.numCBVs);
+        S().srvs.resize(pipeline.S().rootSignature.numSRVs);
+        S().uavs.resize(pipeline.S().rootSignature.numUAVs);
     }
 
     void CommandList::clearRTV(TextureRTV &rtv, float4 color)
@@ -1758,7 +1791,6 @@ namespace xor
                    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         auto &srvs = S().srvs;
-        srvs.resize(std::max<size_t>(srvs.size(), slot + 1));
         srvs[slot] = srv.S().descriptor.staging;
     }
 
@@ -1766,7 +1798,6 @@ namespace xor
     {
         auto block = uploadBytes(bytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
         auto &cbvs = S().cbvs;
-        cbvs.resize(std::max<size_t>(cbvs.size(), slot + 1));
         cbvs[slot].BufferLocation = block.heap->GetGPUVirtualAddress() + block.block.begin;
         cbvs[slot].SizeInBytes    = roundUpToMultiple<uint>(
             static_cast<uint>(bytes.sizeBytes()),

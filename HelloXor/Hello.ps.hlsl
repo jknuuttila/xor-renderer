@@ -9,7 +9,7 @@ struct PSInput
     float4 uv : TEXCOORD0;
 };
 
-[RootSignature(XOR_ROOT_SIGNATURE)]
+[RootSignature(XOR_ROOT_SIGNATURE_CS(2, 1))]
 float4 main(PSInput i) : SV_Target
 {
     return tex.Sample(bilinear, i.uv.xy);

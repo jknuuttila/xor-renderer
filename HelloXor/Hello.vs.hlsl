@@ -23,7 +23,7 @@ struct VSOutput
     float4 pos   : SV_Position;
 };
 
-[RootSignature(XOR_ROOT_SIGNATURE)]
+[RootSignature(XOR_ROOT_SIGNATURE_CS(2, 1))]
 VSOutput main(VSInput i)
 {
     VSOutput o;
