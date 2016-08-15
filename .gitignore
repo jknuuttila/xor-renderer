@@ -38,3 +38,4 @@
 # Vim
 *.swp
 *.TMP
+/data/crytek-sponza

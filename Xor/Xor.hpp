@@ -2,6 +2,7 @@
 
 #include "Core/Core.hpp"
 #include "Xor/Image.hpp"
+#include "Xor/Mesh.hpp"
 #include "Xor/Shaders.h"
 
 #include <d3d12.h>

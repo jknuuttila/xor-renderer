@@ -216,6 +216,18 @@ namespace xor
     };
 
     template <typename T>
+    auto makeSpan(T *ptr, size_t size)
+    {
+        return Span<T>(ptr, size);
+    }
+
+    template <typename T>
+    auto makeConstSpan(T *ptr, size_t size)
+    {
+        return Span<const T>(ptr, size);
+    }
+
+    template <typename T>
     auto asSpan(T &&t)
     {
         return Span<std::remove_reference_t<decltype(*std::begin(t))>>(std::forward<T>(t));

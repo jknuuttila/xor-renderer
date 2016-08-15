@@ -414,6 +414,10 @@ namespace xor
             }
             return *this;
         }
+        String &operator=(const char *s)
+        {
+            return operator=(String(s));
+        }
 
         static String format(const char *fmt, ...);
 

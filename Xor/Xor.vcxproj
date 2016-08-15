@@ -13,11 +13,13 @@
   <ItemGroup>
     <ClInclude Include="Format.hpp" />
     <ClInclude Include="Image.hpp" />
+    <ClInclude Include="Mesh.hpp" />
     <ClInclude Include="Xor.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Format.cpp" />
     <ClCompile Include="Image.cpp" />
+    <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Xor.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -34,6 +36,17 @@
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">robocopy $(SolutionDir)external\FreeImage $(OutDir) FreeImage.dll /XO /NJH /NJS </Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)FreeImage.dll</Outputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)FreeImage.dll</Outputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\external\assimp\assimp-vc130-mt.dll">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">robocopy $(SolutionDir)external\assimp $(OutDir) assimp-vc130-mt.dll assimp-vc130-mt.pdb /XO /NJH /NJS </Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Copying assimp DLL</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)assimp-vc130-mt.dll;$(OutDir)assimp-vc130-mt.pdb</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">robocopy $(SolutionDir)external\assimp $(OutDir) assimp-vc130-mt.dll assimp-vc130-mt.pdb /XO /NJH /NJS </Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Copying assimp DLL</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)assimp-vc130-mt.dll;$(OutDir)assimp-vc130-mt.pdb</Outputs>
     </CustomBuild>
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -83,10 +96,10 @@
       <SubSystem>Windows</SubSystem>
     </Link>
     <Lib>
-      <AdditionalDependencies>FreeImage.lib</AdditionalDependencies>
+      <AdditionalDependencies>FreeImage.lib;assimp-vc130-mt.lib</AdditionalDependencies>
     </Lib>
     <Lib>
-      <AdditionalLibraryDirectories>$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -105,10 +118,10 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
     <Lib>
-      <AdditionalDependencies>FreeImage.lib</AdditionalDependencies>
+      <AdditionalDependencies>FreeImage.lib;assimp-vc130-mt.lib</AdditionalDependencies>
     </Lib>
     <Lib>
-      <AdditionalLibraryDirectories>$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Lib>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

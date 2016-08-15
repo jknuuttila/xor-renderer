@@ -55,6 +55,9 @@ public:
             { float2(0.5f) * float2(+1, -1) * lenaSize, float2(1, 1), float3(1, 0, 1) },
         };
 
+        auto meshes = Mesh::loadFromFile(device, XOR_DATA "/crytek-sponza/sponza.obj");
+        //auto meshes = Mesh::loadFromFile(device, XOR_DATA "/teapot/teapot.obj");
+
         vertexBuffer = device.createBufferVBV(asConstSpan(vertices));
         indexBuffer  = device.createBufferIBV(
             Buffer::Info({ 0, 1, 2, 1, 3, 2, }, DXGI_FORMAT_R32_UINT));
