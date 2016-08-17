@@ -439,10 +439,14 @@ namespace xor
 
             using std::begin;
             using std::end;
+            bool first = true;
             for (auto &s : strings)
             {
+                if (!first)
+                    result.m_str.append(separator.begin(), separator.end());
+
                 result.m_str.append(begin(s), end(s));
-                result.m_str.append(separator.begin(), separator.end());
+                first = false;
             }
 
             return result;

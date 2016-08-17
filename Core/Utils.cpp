@@ -156,4 +156,29 @@ namespace xor
 
         return (m_uncompletedBits[b.qword] & b.mask) == 0;
     }
+
+    String toString(bool b)
+    {
+        return b ? "true" : "false";
+    }
+
+    String toString(uint u)
+    {
+        return String::format("%u", u);
+    }
+
+    String toString(int i)
+    {
+        return String::format("%d", i);
+    }
+
+    String toString(float f)
+    {
+        return String::format("%f", f);
+    }
+
+    String toString(double d)
+    {
+        return String::format("%f", d);
+    }
 }

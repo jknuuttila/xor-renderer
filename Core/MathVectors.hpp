@@ -2,6 +2,7 @@
 
 #include "OS.hpp"
 #include "Utils.hpp"
+#include "String.hpp"
 
 #include <cstdint>
 
@@ -9,7 +10,7 @@ namespace xor
 {
     namespace math
     {
-        using uint = uint32_t;
+        using xor::uint;
 
         template <typename T, uint N> struct VectorBase;
 
@@ -99,6 +100,13 @@ namespace xor
                 return c;
             }
 
+            Vector<bool, N> operator!() const
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = !data()[i];
+                return c;
+            }
+
             friend Vector operator+(Vector a, Vector b)
             {
                 Vector c;
@@ -134,6 +142,48 @@ namespace xor
                 return c;
             }
 
+            friend Vector<bool, N> operator==(Vector a, Vector b)
+            {
+                Vector<bool, N> c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] == b[i];
+                return c;
+            }
+
+            friend Vector<bool, N> operator!=(Vector a, Vector b)
+            {
+                Vector<bool, N> c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] != b[i];
+                return c;
+            }
+
+            friend Vector<bool, N> operator<(Vector a, Vector b)
+            {
+                Vector<bool, N> c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] < b[i];
+                return c;
+            }
+
+            friend Vector<bool, N> operator>(Vector a, Vector b)
+            {
+                Vector<bool, N> c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] > b[i];
+                return c;
+            }
+
+            friend Vector<bool, N> operator<=(Vector a, Vector b)
+            {
+                Vector<bool, N> c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] <= b[i];
+                return c;
+            }
+
+            friend Vector<bool, N> operator>=(Vector a, Vector b)
+            {
+                Vector<bool, N> c;
+                for (uint i = 0; i < N; ++i) c[i] = a[i] >= b[i];
+                return c;
+            }
+
             friend Vector min(Vector a, Vector b)
             {
                 Vector c;
@@ -148,6 +198,38 @@ namespace xor
                 return c;
             }
         };
+
+        template <uint N>
+        bool all(const Vector<bool, N> &a)
+        {
+            bool b = true;
+            for (uint i = 0; i < N; ++i) b = b && a[i];
+            return b;
+        }
+
+        template <uint N>
+        bool any(const Vector<bool, N> &a)
+        {
+            bool b = false;
+            for (uint i = 0; i < N; ++i) b = b || a[i];
+            return b;
+        }
+
+        template <uint N>
+        Vector<bool, N> operator&&(const Vector<bool, N> &a, const Vector<bool, N> &b)
+        {
+            Vector<bool, N> c;
+            for (uint i = 0; i < N; ++i) c[i] = a[i] && b[i];
+            return c;
+        }
+
+        template <uint N>
+        Vector<bool, N> operator||(const Vector<bool, N> &a, const Vector<bool, N> &b)
+        {
+            Vector<bool, N> c;
+            for (uint i = 0; i < N; ++i) c[i] = a[i] || b[i];
+            return c;
+        }
 
         using int2   = Vector<int, 2>;
         using int3   = Vector<int, 3>;
@@ -177,6 +259,16 @@ namespace xor
         static_assert(std::is_trivially_copyable<float2>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<float3>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<float4>::value, "Unexpectedly non-POD.");
+    }
+
+    template <typename T, uint N> String toString(const math::Vector<T, N> &v)
+    {
+        String elems[N];
+
+        for (uint i = 0; i < N; ++i)
+            elems[i] = toString(v[i]);
+
+        return String::format("{ %s }", String::join(elems, ", ").cStr());
     }
 }
 

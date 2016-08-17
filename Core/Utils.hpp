@@ -10,7 +10,9 @@
 
 namespace xor
 {
-    // TODO: move this elsewhere
+    class String;
+
+    using uint = uint32_t;
     using ll   = long long;
     using llu  = unsigned long long;
 
@@ -352,5 +354,11 @@ namespace xor
         T &operator[](size_t i) { return m_data[i]; }
         const T &operator[](size_t i) const { return m_data[i]; }
     };
+
+    String toString(bool b);
+    String toString(uint u);
+    String toString(int i);
+    String toString(float f);
+    String toString(double d);
 }
 
