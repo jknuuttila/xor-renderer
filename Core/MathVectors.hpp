@@ -12,6 +12,8 @@ namespace xor
     {
         using xor::uint;
 
+        static const float Pi = 3.1415926535f;
+
         template <typename T, uint N> struct VectorBase;
 
         template <typename T>
@@ -291,6 +293,24 @@ namespace xor
             };
         }
 
+        static const float RadToDeg = 180.f / Pi;
+        static const float DegToRad = Pi / 180.f;
+
+        struct Angle
+        {
+            float radians = 0;
+
+            Angle() = default;
+            explicit Angle(float rad) : radians(rad) {}
+
+            static Angle degrees(float deg)
+            {
+                return Angle(deg * DegToRad);
+            }
+
+            float toDeg() const { return radians * RadToDeg; }
+        };
+
         class Matrix
         {
             float4 m_rows[4];
@@ -336,6 +356,8 @@ namespace xor
             float4 &row(uint r) { return m_rows[r]; }
             float4 row(uint r) const { return m_rows[r]; }
 
+            float &m(uint y, uint x) { return row(y)[x]; }
+            float m(uint y, uint x) const { return row(y)[x]; }
             float &operator()(uint y, uint x) { return row(y)[x]; }
             float operator()(uint y, uint x) const { return row(y)[x]; }
 
@@ -365,6 +387,9 @@ namespace xor
                 };
             }
 
+            float determinant() const;
+            Matrix inverse() const;
+
             friend inline Matrix operator*(const Matrix &a, const Matrix &b)
             {
                 Matrix m(Matrix::ZeroMatrix {});
@@ -381,8 +406,39 @@ namespace xor
                 return m;
             }
 
-            static Matrix lookToDirection(float3 dir, float3 up = float3(0, 1, 0));
+            Matrix &operator*=(const Matrix &b)
+            {
+                Matrix m = (*this) * b;
+                *this = m;
+                return *this;
+            }
+
+            Matrix &operator*=(float k)
+            {
+                for (uint y = 0 ; y < 4; ++y)
+                {
+                    for (uint x = 0; x < 4; ++x)
+                        m(y, x) *= k;
+                }
+                return *this;
+            }
+
+            friend inline Matrix operator*(const Matrix &a, float k)
+            {
+                Matrix m = a;
+                m *= k;
+                return m;
+            }
+            friend inline Matrix operator*(float k, const Matrix &a)
+            {
+                return a * k;
+            }
+
+            static Matrix lookInDirection(float3 dir,       float3 up = float3(0, 1, 0));
+            static Matrix lookTo(float3 pos, float3 dir,    float3 up = float3(0, 1, 0));
             static Matrix lookAt(float3 pos, float3 target, float3 up = float3(0, 1, 0));
+
+            static Matrix projectionPerspective(float aspectRatioWByH, Angle verticalFov, float depth1Plane, float depth0Plane);
         };
 
         inline float4 operator*(const Matrix &m, float4 v)
@@ -434,6 +490,8 @@ namespace xor
 
         return String::format("{ %s }", String::join(elems, ", ").cStr());
     }
+
+    String toString(const math::Matrix &m);
 }
 
 using xor::math::int2;

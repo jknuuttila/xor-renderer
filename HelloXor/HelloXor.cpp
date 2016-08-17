@@ -17,6 +17,7 @@ class HelloXor : public Window
     TextureSRV lena;
     Timer time;
     float2 pixel;
+    Mesh cube;
 
     struct Vertex
     {
@@ -55,11 +56,7 @@ public:
             { float2(0.5f) * float2(+1, -1) * lenaSize, float2(1, 1), float3(1, 0, 1) },
         };
 
-#if 0
-        auto meshes = Mesh::loadFromFile(device, XOR_DATA "/crytek-sponza/sponza.obj");
-#else
-        auto meshes = Mesh::loadFromFile(device, XOR_DATA "/teapot/teapot.obj");
-#endif
+        cube = Mesh(device, XOR_DATA "/cube/cube.obj");
 
         vertexBuffer = device.createBufferVBV(asConstSpan(vertices));
         indexBuffer  = device.createBufferIBV(
