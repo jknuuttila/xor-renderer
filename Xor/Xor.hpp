@@ -474,6 +474,7 @@ namespace xor
         void setRenderTargets(TextureRTV &rtv);
 
         void setVBV(const BufferVBV &vbv);
+        void setVBVs(Span<const BufferVBV> vbvs);
         void setIBV(const BufferIBV &ibv);
 
         void setShaderView(unsigned slot, const TextureSRV &srv);

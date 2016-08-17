@@ -2,7 +2,6 @@
 
 struct PSInput
 {
-    float4 color : COLOR0;
     float4 uv : TEXCOORD0;
 };
 

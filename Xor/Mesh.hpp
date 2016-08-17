@@ -47,5 +47,6 @@ namespace xor
 
         info::InputLayoutInfo inputLayout() const;
         void setForRendering(CommandList &cmd) const;
+        uint numIndices() const;
     };
 }

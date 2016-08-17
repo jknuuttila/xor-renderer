@@ -311,6 +311,10 @@ namespace xor
             float toDeg() const { return radians * RadToDeg; }
         };
 
+        static const Angle DefaultFov = Angle::degrees(30.f);
+        static const float DefaultDepth0Plane = 100.f;
+        static const float DefaultDepth1Plane =    .1f;
+
         class Matrix
         {
             float4 m_rows[4];
@@ -438,7 +442,14 @@ namespace xor
             static Matrix lookTo(float3 pos, float3 dir,    float3 up = float3(0, 1, 0));
             static Matrix lookAt(float3 pos, float3 target, float3 up = float3(0, 1, 0));
 
-            static Matrix projectionPerspective(float aspectRatioWByH, Angle verticalFov, float depth1Plane, float depth0Plane);
+            static Matrix projectionPerspective(float aspectRatioWByH,
+                                                Angle verticalFov = DefaultFov,
+                                                float depth1Plane = DefaultDepth1Plane,
+                                                float depth0Plane = DefaultDepth0Plane);
+            static Matrix projectionPerspective(uint2 resolution,
+                                                Angle verticalFov = DefaultFov,
+                                                float depth1Plane = DefaultDepth1Plane,
+                                                float depth0Plane = DefaultDepth0Plane);
         };
 
         inline float4 operator*(const Matrix &m, float4 v)
@@ -481,7 +492,11 @@ namespace xor
         static_assert(std::is_trivially_copyable<Matrix>::value, "Unexpectedly non-POD.");
     }
 
-    template <typename T, uint N> String toString(math::Vector<T, N> v)
+    using xor::math::Vector;
+    using xor::math::Angle;
+    using xor::math::Matrix;
+
+    template <typename T, uint N> String toString(Vector<T, N> v)
     {
         String elems[N];
 
@@ -491,7 +506,7 @@ namespace xor
         return String::format("{ %s }", String::join(elems, ", ").cStr());
     }
 
-    String toString(const math::Matrix &m);
+    String toString(const Matrix &m);
 }
 
 using xor::math::int2;

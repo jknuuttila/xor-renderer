@@ -65,6 +65,12 @@ namespace xor
             };
         }
 
+        Matrix Matrix::projectionPerspective(uint2 resolution, Angle verticalFov, float depth1Plane, float depth0Plane)
+        {
+            auto fres = float2(resolution);
+            return projectionPerspective(fres.x / fres.y, verticalFov, depth1Plane, depth0Plane);
+        }
+
         // Determinant and inverse formulas from
         // http://www.euclideanspace.com/maths/algebra/matrix/functions/inverse/fourD/index.htm
         float Matrix::determinant() const

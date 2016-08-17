@@ -13,6 +13,7 @@ namespace xor
         info::InputLayoutInfo inputLayout;
         std::vector<BufferVBV> vertexBuffers;
         BufferIBV indexBuffer;
+        uint numIndices = 0;
     };
 
     std::vector<Mesh> Mesh::loadFromFile(Device &device, const String & file)
@@ -105,7 +106,9 @@ namespace xor
                     indices.emplace_back(face.mIndices[2]);
                 }
 
-                dst->indexBuffer = device.createBufferIBV(Buffer::Info(asConstSpan(indices)));
+                dst->indexBuffer = device.createBufferIBV(
+                    Buffer::Info(asConstSpan(indices), DXGI_FORMAT_R32_UINT));
+                dst->numIndices = static_cast<uint>(indices.size());
             }
 
             dst->inputLayout = il;
@@ -152,6 +155,23 @@ namespace xor
         }
 
         return meshes;
+    }
+
+    info::InputLayoutInfo Mesh::inputLayout() const
+    {
+        return m_state->inputLayout;
+    }
+
+    void Mesh::setForRendering(CommandList & cmd) const
+    {
+        cmd.setVBVs(m_state->vertexBuffers);
+        cmd.setIBV(m_state->indexBuffer);
+        cmd.setTopology();
+    }
+
+    uint Mesh::numIndices() const
+    {
+        return m_state->numIndices;
     }
 
     Mesh::Mesh(Device &device, const String & filename)

@@ -1779,6 +1779,17 @@ namespace xor
         cmd()->IASetVertexBuffers(0, 1, &vbv.m_vbv);
     }
 
+    void CommandList::setVBVs(Span<const BufferVBV> vbvs)
+    {
+        uint slot = 0;
+        for (auto &vbv : vbvs)
+        {
+            transition(vbv.m_buffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+            cmd()->IASetVertexBuffers(slot, 1, &vbv.m_vbv);
+            ++slot;
+        }
+    }
+
     void CommandList::setIBV(const BufferIBV & ibv)
     {
         transition(ibv.m_buffer, D3D12_RESOURCE_STATE_INDEX_BUFFER);
