@@ -32,8 +32,8 @@
       <FileType>Document</FileType>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Copying FreeImage DLL</Message>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Copying FreeImage DLL</Message>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">robocopy $(SolutionDir)external\FreeImage $(OutDir) FreeImage.dll /XO /NJH /NJS </Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">robocopy $(SolutionDir)external\FreeImage $(OutDir) FreeImage.dll /XO /NJH /NJS </Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">xcopy $(OutDir)FreeImage.dll $(SolutionDir)external\FreeImage /I /Y</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">xcopy $(OutDir)FreeImage.dll $(SolutionDir)external\FreeImage /I /Y</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)FreeImage.dll</Outputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)FreeImage.dll</Outputs>
     </CustomBuild>
@@ -41,10 +41,10 @@
   <ItemGroup>
     <CustomBuild Include="..\external\assimp\assimp-vc130-mt.dll">
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">robocopy $(SolutionDir)external\assimp $(OutDir) assimp-vc130-mt.dll assimp-vc130-mt.pdb /XO /NJH /NJS </Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">xcopy $(OutDir)assimp-vc130-mt.* $(SolutionDir)external\assimp /Y /I</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Copying assimp DLL</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)assimp-vc130-mt.dll;$(OutDir)assimp-vc130-mt.pdb</Outputs>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">robocopy $(SolutionDir)external\assimp $(OutDir) assimp-vc130-mt.dll assimp-vc130-mt.pdb /XO /NJH /NJS </Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">xcopy $(OutDir)assimp-vc130-mt.* $(SolutionDir)external\assimp /Y /I</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Copying assimp DLL</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)assimp-vc130-mt.dll;$(OutDir)assimp-vc130-mt.pdb</Outputs>
     </CustomBuild>
@@ -100,6 +100,7 @@
     </Lib>
     <Lib>
       <AdditionalLibraryDirectories>$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>/IGNORE:4006 /IGNORE:4221 %(AdditionalOptions)</AdditionalOptions>
     </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -122,6 +123,7 @@
     </Lib>
     <Lib>
       <AdditionalLibraryDirectories>$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>/IGNORE:4006 /IGNORE:4221 %(AdditionalOptions)</AdditionalOptions>
     </Lib>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

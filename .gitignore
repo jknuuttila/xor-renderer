@@ -2,7 +2,6 @@
 *.slo
 *.lo
 *.o
-*.obj
 
 # Precompiled Headers
 *.gch
@@ -39,3 +38,4 @@
 *.swp
 *.TMP
 /data/crytek-sponza
+/data/crytek-sponza.zip
