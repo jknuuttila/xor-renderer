@@ -1,14 +1,13 @@
 #include "Core/Core.hpp"
 
 using namespace xor;
-using namespace xor::math;
+using xor::math::Vector;
+using xor::math::Matrix;
 
 template <typename T> struct Epsilon { static double value() { return 0; } };
 template <> struct Epsilon<float> { static double value() { return 0.001; } };
 template <> struct Epsilon<double> { static double value() { return 0.001; } };
 template <typename T, uint N> struct Epsilon<Vector<T, N>> { static double value() { return Epsilon<T>::value(); } };
-
-bool all(bool b) { return b; }
 
 template <typename T> bool compareEq(const T &a, const T &b, double epsilon)
 {
@@ -17,6 +16,7 @@ template <typename T> bool compareEq(const T &a, const T &b, double epsilon)
     bool close = plus && minus;
     return close;
 }
+
 template <typename T, uint N> bool compareEq(const Vector<T, N> &a, const Vector<T, N> &b, double epsilon)
 {
     for (uint i = 0; i < N; ++i)
@@ -28,7 +28,7 @@ template <typename T, uint N> bool compareEq(const Vector<T, N> &a, const Vector
 }
 
 template <typename T>
-void checkEqImpl(const char *file, int line, const T &a, const T &b, double epsilon = Epsilon<T>::value())
+bool checkEqImpl(const char *file, int line, const T &a, const T &b, double epsilon = Epsilon<T>::value())
 {
     if (!compareEq(a, b, epsilon))
     {
@@ -36,17 +36,43 @@ void checkEqImpl(const char *file, int line, const T &a, const T &b, double epsi
                                   toString(a).cStr(),
                                   toString(b).cStr());
         print("%s(%d): %s\n", file, line, msg.cStr());
-        XOR_CHECK(false, msg.cStr());
+        return false;
+    }
+    else
+    {
+        return true;
     }
 }
 
-#define XOR_CHECK_EQ(a, b, ...) checkEqImpl(__FILE__, __LINE__, a, b, ## __VA_ARGS__)
+#define XOR_CHECK_EQ(a, b, ...) XOR_DEBUG_BREAK_IF_FALSE(checkEqImpl(__FILE__, __LINE__, a, b, ## __VA_ARGS__))
+
+void testTransformMatrices()
+{
+    {
+        Matrix M  = Matrix::translation({1, 1, 1});
+        float3 v  = { 1, 0, 0 };
+        float3 v_ = M.transform(v);
+        XOR_CHECK_EQ(v_, { 2, 1, 1 });
+    }
+
+    {
+        Matrix M  = Matrix::lookToDirection({1, 0, 0}, {0, 1, 0});
+        XOR_CHECK_EQ(M.transform(float3( 0,  0,  1)), { 1,  0,  0});
+        XOR_CHECK_EQ(M.transform(float3( 1,  0,  0)), { 0,  0, -1});
+        XOR_CHECK_EQ(M.transform(float3( 0,  1,  0)), { 0,  1,  0});
+        XOR_CHECK_EQ(M.transform(float3( 0,  0, -1)), {-1,  0,  0});
+        XOR_CHECK_EQ(M.transform(float3(-1,  0,  0)), { 0,  0,  1});
+        XOR_CHECK_EQ(M.transform(float3( 0, -1,  0)), { 0, -1,  0});
+    }
+
+    {
+        Matrix M  = Matrix::lookAt({1, 0, 0}, {0, 0, 0}, {0, 1, 0});
+        XOR_CHECK_EQ(M.transform(float3( 0, 0, 1)), { -1, 0, -1});
+    }
+}
 
 int main(int argc, char **argv)
 {
-    XOR_CHECK_EQ(1, 1);
-    XOR_CHECK_EQ(float2(1, 1), float2(1, 1));
-    XOR_CHECK_EQ(float2(1, 1), float2(1, 1.00001f));
-    XOR_CHECK_EQ(float2(1, 1), float2(1, 1.002f));
+    testTransformMatrices();
     return 0;
 }

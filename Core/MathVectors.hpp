@@ -199,38 +199,6 @@ namespace xor
             }
         };
 
-        template <uint N>
-        bool all(const Vector<bool, N> &a)
-        {
-            bool b = true;
-            for (uint i = 0; i < N; ++i) b = b && a[i];
-            return b;
-        }
-
-        template <uint N>
-        bool any(const Vector<bool, N> &a)
-        {
-            bool b = false;
-            for (uint i = 0; i < N; ++i) b = b || a[i];
-            return b;
-        }
-
-        template <uint N>
-        Vector<bool, N> operator&&(const Vector<bool, N> &a, const Vector<bool, N> &b)
-        {
-            Vector<bool, N> c;
-            for (uint i = 0; i < N; ++i) c[i] = a[i] && b[i];
-            return c;
-        }
-
-        template <uint N>
-        Vector<bool, N> operator||(const Vector<bool, N> &a, const Vector<bool, N> &b)
-        {
-            Vector<bool, N> c;
-            for (uint i = 0; i < N; ++i) c[i] = a[i] || b[i];
-            return c;
-        }
-
         using int2   = Vector<int, 2>;
         using int3   = Vector<int, 3>;
         using int4   = Vector<int, 4>;
@@ -240,6 +208,200 @@ namespace xor
         using float2 = Vector<float, 2>;
         using float3 = Vector<float, 3>;
         using float4 = Vector<float, 4>;
+        using bool2 = Vector<bool, 2>;
+        using bool3 = Vector<bool, 3>;
+        using bool4 = Vector<bool, 4>;
+
+        template <uint N>
+        inline bool all(Vector<bool, N> a)
+        {
+            bool b = true;
+            for (uint i = 0; i < N; ++i) b = b && a[i];
+            return b;
+        }
+
+        template <uint N>
+        inline bool any(Vector<bool, N> a)
+        {
+            bool b = false;
+            for (uint i = 0; i < N; ++i) b = b || a[i];
+            return b;
+        }
+
+        template <uint N>
+        inline Vector<bool, N> operator&&(Vector<bool, N> a, Vector<bool, N> b)
+        {
+            Vector<bool, N> c;
+            for (uint i = 0; i < N; ++i) c[i] = a[i] && b[i];
+            return c;
+        }
+
+        template <uint N>
+        inline Vector<bool, N> operator||(Vector<bool, N> a, Vector<bool, N> b)
+        {
+            Vector<bool, N> c;
+            for (uint i = 0; i < N; ++i) c[i] = a[i] || b[i];
+            return c;
+        }
+
+        template <uint N>
+        inline float dot(Vector<float, N> a, Vector<float, N> b)
+        {
+            float dp = 0;
+            for (uint i = 0; i < N; ++i) dp += a[i] * b[i];
+            return dp;
+        }
+
+        template <uint N>
+        inline float lengthSqr(Vector<float, N> a)
+        {
+            return dot(a, a);
+        }
+
+        template <uint N>
+        inline float length(Vector<float, N> a)
+        {
+            return sqrt(lengthSqr(a));
+        }
+
+        template <uint N>
+        inline Vector<float, N> normalize(Vector<float, N> a)
+        {
+            return a / length(a);
+        }
+
+        template <uint N>
+        inline Vector<float, N> normalize(Vector<float, N> a, Vector<float, N> defaultForZeroLength)
+        {
+            static const float Epsilon = .001f;
+            float L = length(a);
+            if (L < Epsilon)
+                return defaultForZeroLength;
+            else
+                return a / L;
+        }
+
+        inline float3 cross(float3 a, float3 b)
+        {
+            // XYZZY
+            return {
+                a.y * b.z - a.z * b.y,
+                a.z * b.x - a.x * b.z,
+                a.x * b.y - a.y * b.x,
+            };
+        }
+
+        class Matrix
+        {
+            float4 m_rows[4];
+
+            struct ZeroMatrix {};
+            Matrix(ZeroMatrix) {}
+        public:
+            Matrix()
+            {
+                *this = identity();
+            }
+
+            Matrix(float4 r0, float4 r1, float4 r2, float4 r3)
+            {
+                m_rows[0] = r0;
+                m_rows[1] = r1;
+                m_rows[2] = r2;
+                m_rows[3] = r3;
+            }
+
+            explicit Matrix(Span<const float4> rows)
+            {
+                auto n = std::min(rows.size(), 4ull);
+                for (uint i = 0; i < n; ++i)
+                    m_rows[i] = rows[i];
+            }
+
+            static Matrix zero()
+            {
+                return Matrix(ZeroMatrix());
+            }
+
+            static Matrix identity()
+            {
+                return Matrix {
+                    {1, 0, 0, 0},
+                    {0, 1, 0, 0},
+                    {0, 0, 1, 0},
+                    {0, 0, 0, 1},
+                };
+            }
+
+            float4 &row(uint r) { return m_rows[r]; }
+            float4 row(uint r) const { return m_rows[r]; }
+
+            float &operator()(uint y, uint x) { return row(y)[x]; }
+            float operator()(uint y, uint x) const { return row(y)[x]; }
+
+            inline float4 transform(float4 v) const;
+            float3 transform(float3 v) const
+            {
+                return float3(transform(float4(v.x, v.y, v.z, 1)));
+            }
+
+            static Matrix translation(float3 t)
+            {
+                return Matrix {
+                    {1, 0, 0, t.x},
+                    {0, 1, 0, t.y},
+                    {0, 0, 1, t.z},
+                    {0, 0, 0,   1},
+                };
+            }
+
+            Matrix transpose() const
+            {
+                return Matrix {
+                    {row(0)[0], row(1)[0], row(2)[0], row(3)[0]},
+                    {row(0)[1], row(1)[1], row(2)[1], row(3)[1]},
+                    {row(0)[2], row(1)[2], row(2)[2], row(3)[2]},
+                    {row(0)[3], row(1)[3], row(2)[3], row(3)[3]},
+                };
+            }
+
+            friend inline Matrix operator*(const Matrix &a, const Matrix &b)
+            {
+                Matrix m(Matrix::ZeroMatrix {});
+
+                for (uint y = 0; y < 4; ++y)
+                {
+                    for (uint x = 0; x < 4; ++x)
+                    {
+                        for (uint i = 0; i < 4; ++i)
+                            m(y, x) += a.row(y)[i] * b.row(i)[x];
+                    }
+                }
+
+                return m;
+            }
+
+            static Matrix lookToDirection(float3 dir, float3 up = float3(0, 1, 0));
+            static Matrix lookAt(float3 pos, float3 target, float3 up = float3(0, 1, 0));
+        };
+
+        inline float4 operator*(const Matrix &m, float4 v)
+        {
+            return
+            {
+                dot(m.row(0), v),
+                dot(m.row(1), v),
+                dot(m.row(2), v),
+                dot(m.row(3), v),
+            };
+        }
+
+        inline float4 Matrix::transform(float4 v) const
+        {
+            return (*this) * v;
+        }
+
+        using float4x4 = Matrix;
 
         static_assert(sizeof(int2) == sizeof(int) * 2, "Unexpected padding inside Vector.");
         static_assert(sizeof(int3) == sizeof(int) * 3, "Unexpected padding inside Vector.");
@@ -250,6 +412,7 @@ namespace xor
         static_assert(sizeof(float2) == sizeof(float) * 2, "Unexpected padding inside Vector.");
         static_assert(sizeof(float3) == sizeof(float) * 3, "Unexpected padding inside Vector.");
         static_assert(sizeof(float4) == sizeof(float) * 4, "Unexpected padding inside Vector.");
+        static_assert(sizeof(Matrix) == sizeof(float4) * 4, "Unexpected padding inside Matrix.");
         static_assert(std::is_trivially_copyable<int2>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<int3>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<int4>::value, "Unexpectedly non-POD.");
@@ -259,9 +422,10 @@ namespace xor
         static_assert(std::is_trivially_copyable<float2>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<float3>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<float4>::value, "Unexpectedly non-POD.");
+        static_assert(std::is_trivially_copyable<Matrix>::value, "Unexpectedly non-POD.");
     }
 
-    template <typename T, uint N> String toString(const math::Vector<T, N> &v)
+    template <typename T, uint N> String toString(math::Vector<T, N> v)
     {
         String elems[N];
 
@@ -282,3 +446,4 @@ using xor::math::uint4;
 using xor::math::float2;
 using xor::math::float3;
 using xor::math::float4;
+using xor::math::float4x4;

@@ -15,6 +15,7 @@
     <ClCompile Include="Error.cpp" />
     <ClCompile Include="File.cpp" />
     <ClCompile Include="Log.cpp" />
+    <ClCompile Include="MathVectors.cpp" />
     <ClCompile Include="String.cpp" />
     <ClCompile Include="TLog.cpp" />
     <ClCompile Include="Utils.cpp" />
