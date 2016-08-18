@@ -6,6 +6,17 @@
 
 using namespace xor;
 
+void debugMatrix(Matrix m, Span<const float3> verts)
+{
+    std::vector<float3> t;
+
+    for (auto v : verts)
+    {
+        t.emplace_back(m.transformAndProject(v));
+        print("%s -> %s\n", toString(v).cStr(), toString(t.back()).cStr());
+    }
+}
+
 class HelloXor : public Window
 {
     Xor xor;
@@ -13,9 +24,13 @@ class HelloXor : public Window
     SwapChain swapChain;
     GraphicsPipeline hello;
     TextureSRV lena;
-    Timer time;
     float2 pixel;
     Mesh cube;
+
+    Timer time;
+    const float CameraDistance = 3;
+    const float CameraPeriod   = 10;
+    const float ObjectPeriod   = 3;
 
 public:
     HelloXor()
@@ -55,12 +70,20 @@ public:
         cmd.bind(hello);
         cube.setForRendering(cmd);
 
+        float objectPhase = frac(time.seconds() / ObjectPeriod) * 2 * Pi;
+        float cameraPhase = frac(time.seconds() / CameraPeriod) * 2 * Pi;
+
         Hello::Constants c;
 
-        c.viewProj =
-            Matrix::projectionPerspective(size()) *
-            Matrix::lookAt({ -2, 5, -2 }, 0);
-        c.model    = Matrix::identity();
+        float3 cameraPos;
+        cameraPos.x = cos(cameraPhase) * CameraDistance;
+        cameraPos.z = sin(cameraPhase) * CameraDistance;
+        cameraPos.y = 2;
+
+        Matrix view = Matrix::lookAt(cameraPos, 0);
+        Matrix proj = Matrix::projectionPerspective(size());
+        c.viewProj = proj * view;
+        c.model    = Matrix::axisAngle({1, 0, 0}, Angle(objectPhase));
 
         cmd.setConstants(c);
         cmd.setShaderView(Hello::tex, lena);

@@ -237,6 +237,9 @@ namespace xor
 
             Block allocate(size_t amount, size_t alignment, SeqNum cmdList)
             {
+                if (m_metadataRing.full())
+                    return Block();
+
                 Metadata m;
                 m.block = m_memoryRing.allocateBlock(amount, alignment);
 
@@ -246,8 +249,6 @@ namespace xor
                 m.allocatedBy = cmdList;
 
                 auto metadataOffset = m_metadataRing.allocate();
-                XOR_ASSERT(metadataOffset >= 0,
-                           "Out of metadata space, increase ringbuffer size.");
 
                 m_metadata[metadataOffset] = m;
 
@@ -267,7 +268,11 @@ namespace xor
                               static_cast<llu>(amount));
 
                     progress.waitUntilCompleted(oldest);
-                    releaseOldestAllocation();
+                    while (oldest >= 0 && progress.hasCompleted(oldest))
+                    {
+                        releaseOldestAllocation();
+                        oldest = oldestCmdList();
+                    }
 
                     block = allocate(amount, alignment, cmdList);
                 }

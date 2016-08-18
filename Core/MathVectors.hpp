@@ -311,7 +311,7 @@ namespace xor
             float toDeg() const { return radians * RadToDeg; }
         };
 
-        static const Angle DefaultFov = Angle::degrees(30.f);
+        static const Angle DefaultFov = Angle::degrees(60.f);
         static const float DefaultDepth0Plane = 100.f;
         static const float DefaultDepth1Plane =    .1f;
 
@@ -366,9 +366,14 @@ namespace xor
             float operator()(uint y, uint x) const { return row(y)[x]; }
 
             inline float4 transform(float4 v) const;
-            float3 transform(float3 v) const
+            float4 transform(float3 v) const
             {
-                return float3(transform(float4(v.x, v.y, v.z, 1)));
+                return transform(float4(v.x, v.y, v.z, 1));
+            }
+            float3 transformAndProject(float3 v) const
+            {
+                float4 v_ = transform(v);
+                return float3(v_ / v_.w);
             }
 
             static Matrix translation(float3 t)
@@ -410,6 +415,21 @@ namespace xor
                 return m;
             }
 
+            friend inline Matrix operator+(const Matrix &a, const Matrix &b)
+            {
+                Matrix m(Matrix::ZeroMatrix {});
+
+                for (uint y = 0; y < 4; ++y)
+                {
+                    for (uint x = 0; x < 4; ++x)
+                    {
+                        m(y, x) = a(y, x) + b(y, x);
+                    }
+                }
+
+                return m;
+            }
+
             Matrix &operator*=(const Matrix &b)
             {
                 Matrix m = (*this) * b;
@@ -437,6 +457,9 @@ namespace xor
             {
                 return a * k;
             }
+
+            static Matrix crossProductMatrix(float3 k);
+            static Matrix axisAngle(float3 axis, Angle angle);
 
             static Matrix lookInDirection(float3 dir,       float3 up = float3(0, 1, 0));
             static Matrix lookTo(float3 pos, float3 dir,    float3 up = float3(0, 1, 0));
@@ -492,6 +515,7 @@ namespace xor
         static_assert(std::is_trivially_copyable<Matrix>::value, "Unexpectedly non-POD.");
     }
 
+    using xor::math::Pi;
     using xor::math::Vector;
     using xor::math::Angle;
     using xor::math::Matrix;

@@ -4,6 +4,27 @@ namespace xor
 {
     namespace math
     {
+        Matrix Matrix::crossProductMatrix(float3 k)
+        {
+            return Matrix {
+                {    0, -k.z,  k.y, 0 },
+                {  k.z,    0, -k.x, 0 },
+                { -k.y,  k.x,    0, 0 },
+                {    0 ,   0,    0, 0 },
+            };
+        }
+
+        Matrix Matrix::axisAngle(float3 axis, Angle angle)
+        {
+            float3 k = axis;
+            float  s = sin(angle.radians);
+            float  c = cos(angle.radians);
+
+            Matrix K = Matrix::crossProductMatrix(k);
+            Matrix R = Matrix::identity() + s * K + (1 - c) * (K * K);
+            return R;
+        }
+
         Matrix Matrix::lookInDirection(float3 dir, float3 up)
         {
             float3 back  = -dir;
@@ -31,7 +52,9 @@ namespace xor
 
         Matrix Matrix::projectionPerspective(float aspectRatioWByH, Angle verticalFov, float depth1Plane, float depth0Plane)
         {
-            float nearZ = std::min(depth0Plane, depth1Plane);
+            // Right handed coordinates, so flip Z
+            depth1Plane = -depth1Plane;
+            depth0Plane = -depth0Plane;
 
             float2 imagePlaneSizeAtUnitZ;
             imagePlaneSizeAtUnitZ.y = tan(verticalFov.radians / 2);
@@ -57,11 +80,13 @@ namespace xor
             float a = depth1Plane / (depth1Plane - depth0Plane);
             float b = -a * depth0Plane;
 
+            // Flip Z signs because right handed view space
+            // has -Z == front
             return Matrix {
-                { s.x,   0,  0,  0 },
-                {   0, s.y,  0,  0 },
-                {   0,   0,  a,  b },
-                {   0,   0,  1,  0 },
+                { s.x,   0,   0,   0 },
+                {   0, s.y,   0,   0 },
+                {   0,   0,  -a,  -b },
+                {   0,   0,  -1,   0 },
             };
         }
 
