@@ -105,36 +105,36 @@ void testTransformMatrices()
     {
         Matrix M  = Matrix::translation({1, 1, 1});
         float3 v  = { 1, 0, 0 };
-        float3 v_ = M.transform(v);
+        float3 v_ = M.transformAndProject(v);
         XOR_CHECK_EQ(v_, { 2, 1, 1 });
     }
 
     {
         Matrix M  = Matrix::lookInDirection({1, 0, 0}, {0, 1, 0});
-        XOR_CHECK_EQ(M.transform(float3( 0,  0,  1)), { 1,  0,  0});
-        XOR_CHECK_EQ(M.transform(float3( 1,  0,  0)), { 0,  0, -1});
-        XOR_CHECK_EQ(M.transform(float3( 0,  1,  0)), { 0,  1,  0});
-        XOR_CHECK_EQ(M.transform(float3( 0,  0, -1)), {-1,  0,  0});
-        XOR_CHECK_EQ(M.transform(float3(-1,  0,  0)), { 0,  0,  1});
-        XOR_CHECK_EQ(M.transform(float3( 0, -1,  0)), { 0, -1,  0});
+        XOR_CHECK_EQ(M.transformAndProject(float3( 0,  0,  1)), { 1,  0,  0});
+        XOR_CHECK_EQ(M.transformAndProject(float3( 1,  0,  0)), { 0,  0, -1});
+        XOR_CHECK_EQ(M.transformAndProject(float3( 0,  1,  0)), { 0,  1,  0});
+        XOR_CHECK_EQ(M.transformAndProject(float3( 0,  0, -1)), {-1,  0,  0});
+        XOR_CHECK_EQ(M.transformAndProject(float3(-1,  0,  0)), { 0,  0,  1});
+        XOR_CHECK_EQ(M.transformAndProject(float3( 0, -1,  0)), { 0, -1,  0});
     }
 
     {
         Matrix M  = Matrix::lookAt({1, 0, 0}, {0, 0, 0}, {0, 1, 0});
-        XOR_CHECK_EQ(M.transform(float3( 0, 0, 1)), { -1, 0, -1});
+        XOR_CHECK_EQ(M.transformAndProject(float3( 0, 0, 1)), { -1, 0, -1});
     }
 }
 
 void testProjectionMatrices()
 {
     {
-        auto fov = Angle::degrees(45.f);
+        auto fov = Angle::degrees(90.f);
         float S  = tan(fov.radians / 2);
         Matrix M = Matrix::projectionPerspective(1.f, fov, 1, 2);
-        XOR_CHECK_EQ(M.transform(float4( 0, 0, 1, 1)), { 0, 0, 1, 1});
-        XOR_CHECK_EQ(M.transform(float4( 0, 0, 2, 1)), { 0, 0, 0, 2});
-        XOR_CHECK_EQ(M.transform(float4( S, S, 1, 1)), { 1, 1, 1, 1});
-        XOR_CHECK_EQ(M.transform(float4(S/2,S/2, 1, 1)), { 1./2, 1./2, 1, 1});
+        XOR_CHECK_EQ(M.transform(float4( 0, 0, -1, 1)), { 0, 0, 1, 1});
+        XOR_CHECK_EQ(M.transform(float4( 0, 0, -2, 1)), { 0, 0, 0, 2});
+        XOR_CHECK_EQ(M.transform(float4( S, S, -1, 1)), { 1, 1, 1, 1});
+        XOR_CHECK_EQ(M.transform(float4(S/2,S/2, -1, 1)), { 1./2, 1./2, 1, 1});
     }
 }
 

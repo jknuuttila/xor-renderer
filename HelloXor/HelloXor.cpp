@@ -70,8 +70,8 @@ public:
         cmd.bind(hello);
         cube.setForRendering(cmd);
 
-        float objectPhase = frac(time.seconds() / ObjectPeriod) * 2 * Pi;
-        float cameraPhase = frac(time.seconds() / CameraPeriod) * 2 * Pi;
+        float objectPhase = frac(time.secondsF() / ObjectPeriod) * 2 * Pi;
+        float cameraPhase = frac(time.secondsF() / CameraPeriod) * 2 * Pi;
 
         Hello::Constants c;
 
