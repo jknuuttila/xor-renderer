@@ -30,7 +30,7 @@ namespace xor
             return *this;
         }
 
-        Hash &bytes(span<const uint8_t> bytes)
+        Hash &bytes(Span<const uint8_t> bytes)
         {
             m_hash.Update(bytes.data(), bytes.size());
             return *this;
@@ -63,7 +63,7 @@ namespace xor
         }
     };
 
-    inline uint64_t hashBytes(span<const uint8_t> bytes)
+    inline uint64_t hashBytes(Span<const uint8_t> bytes)
     {
         return Hash().bytes(bytes);
     }

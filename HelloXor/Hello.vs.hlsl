@@ -1,35 +1,25 @@
-#include "Xor/Shaders.h.hlsl"
+#include "Hello.sig.h"
 
-static const float P = .75f;
-
-static const float4 Positions[] =
+struct VSInput
 {
-    float4(-P, -P, 0, 1),
-    float4( P, -P, 0, 1),
-    float4( 0,  P, 0, 1),
-};
-
-static const float4 Colors[] =
-{
-    float4(1, 0, 0, 1),
-    float4(0, 1, 0, 1),
-    float4(0, 0, 1, 1),
+    float3 pos   : POSITION0;
+    float3 uv    : TEXCOORD0;
 };
 
 struct VSOutput
 {
-    float4 color : COLOR0;
+    float4 uv    : TEXCOORD0;
     float4 pos   : SV_Position;
 };
 
-[RootSignature(XOR_ROOT_SIGNATURE)]
-VSOutput main(uint id : SV_VertexID)
+[RootSignature(HELLO_ROOT_SIGNATURE)]
+VSOutput main(VSInput i)
 {
-    id %= 3;
-
     VSOutput o;
-    o.color = Colors[id];
-    o.pos   = Positions[id];
+
+    o.uv    = float4(i.uv.xy, 0, 0);
+    o.pos   = mul(viewProj,
+                  mul(model, float4(i.pos, 1)));
 
 	return o;
 }

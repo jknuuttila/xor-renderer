@@ -42,7 +42,7 @@ namespace xor
         {}
 
         // Allow access to objects, for e.g. initialization.
-        span<T> span() { return m_objects; }
+        Span<T> span() { return m_objects; }
 
         bool empty() const       { return m_objects.empty(); }
         bool full() const        { return spaceLeft() == size(); }
@@ -89,6 +89,102 @@ namespace xor
         void release(T object)
         {
             m_objects.emplace_back(std::move(object));
+        }
+    };
+
+    struct Block
+    {
+        int64_t begin = -1;
+        int64_t end   = -1;
+
+        bool valid() const { return begin >= 0; }
+        explicit operator bool() const { return valid(); }
+
+        size_t size() const { return static_cast<size_t>(end - begin); }
+    };
+
+    class OffsetRing
+    {
+        // The oldest allocated element, unless equal to tail.
+        int64_t m_head = 0;
+        // The first free element.
+        int64_t m_tail = 0;
+        // Amount of space in the ring.
+        int64_t m_size = 0;
+        // Always false unless head == tail. If head == tail,
+        // the ring is completely empty if m_full == false,
+        // and completely full if m_full == true.
+        bool    m_full = false;
+    public:
+        OffsetRing() = default;
+        OffsetRing(size_t size) : m_size(static_cast<int64_t>(size)) {}
+
+        void clear()
+        {
+            m_head = 0;
+            m_tail = 0;
+            m_full = false;
+        }
+
+        bool empty() const { return m_head == m_tail && !m_full; }
+        bool full() const  { return m_full; }
+        size_t size() const { return m_size; }
+        size_t freeSpace() const;
+
+        int64_t oldest() const { return empty() ? -1 : m_head; }
+        int64_t newest() const
+        {
+            if (empty())
+                return -1;
+
+            int64_t newest = m_tail - 1;
+
+            if (newest < 0)
+                newest += m_size;
+
+            return newest;
+        }
+
+        int64_t allocate();
+        int64_t allocateContiguous(size_t amount);
+        int64_t allocateContiguous(size_t amount, size_t alignment);
+        void releaseEnd(int64_t onePastLastOffset);
+
+        void releaseUntil(int64_t lastOffset)
+        {
+            int64_t end = lastOffset + 1;
+            if (end == m_size)
+                end = 0;
+            releaseEnd(end);
+        }
+
+        void release(int64_t offset, size_t amount = 1)
+        {
+            int64_t end = offset + static_cast<int64_t>(amount);
+            if (end >= m_size)
+                end -= m_size;
+            releaseEnd(end);
+        }
+
+        Block allocateBlock(size_t amount)
+        {
+            Block block;
+            block.begin = allocateContiguous(amount);
+            block.end   = block.begin + static_cast<int64_t>(amount);
+            return block;
+        }
+
+        Block allocateBlock(size_t amount, size_t alignment)
+        {
+            Block block;
+            block.begin = allocateContiguous(amount, alignment);
+            block.end   = block.begin + static_cast<int64_t>(amount);
+            return block;
+        }
+
+        void release(Block block)
+        {
+            release(block.begin, static_cast<size_t>(block.end - block.begin));
         }
     };
 }

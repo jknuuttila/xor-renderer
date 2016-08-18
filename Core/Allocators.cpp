@@ -1,5 +1,6 @@
 #include "Allocators.hpp"
 #include "Error.hpp"
+#include "Math.hpp"
 
 #include <numeric>
 
@@ -58,5 +59,136 @@ namespace xor
                    "Attempted to release when pool is already full.");
 
         m_freeOffsets.emplace_back(offset);
+    }
+
+    size_t OffsetRing::freeSpace() const
+    {
+        if (m_full)
+            return 0;
+
+        int64_t used = m_tail - m_head;
+        if (used < 0)
+            used += m_size;
+
+        return static_cast<size_t>(m_size - used);
+    }
+
+    int64_t OffsetRing::allocate()
+    {
+        XOR_ASSERT(m_size > 0, "Attempted to allocate from an invalid ring.");
+
+        if (m_full)
+            return -1;
+
+        int64_t offset = m_tail;
+
+        ++m_tail;
+        XOR_ASSERT(m_tail <= m_size, "Tail out of bounds.");
+        if (m_tail == m_size)
+            m_tail = 0;
+
+        m_full = m_tail == m_head;
+
+        return offset;
+    }
+
+    int64_t OffsetRing::allocateContiguous(size_t amount, size_t alignment)
+    {
+        XOR_ASSERT(m_size > 0, "Attempted to allocate from an invalid ring.");
+        XOR_ASSERT(amount > 0, "Attempted to allocate zero elements.");
+        XOR_ASSERT(alignment > 0, "Attempted to allocate with zero alignment.");
+
+        int64_t iAmount = static_cast<int64_t>(amount);
+
+        if (m_full || iAmount > m_size)
+            return -1;
+
+        int64_t offset;
+
+        int64_t alignedTail = alignTo(m_tail, static_cast<int64_t>(alignment));
+
+        if (m_tail < m_head)
+        {
+            // All free space is between tail and head.
+            int64_t left = m_head - alignedTail;
+
+            if (left < iAmount)
+                return -1;
+
+            offset = alignedTail;
+            m_tail = alignedTail + iAmount;
+        }
+        else
+        {
+            // Free space is split in two: between tail and buffer end,
+            // and between buffer start and head.
+
+            int64_t leftUntilEnd = m_size - alignedTail;
+
+            if (leftUntilEnd < iAmount)
+            {
+                // Not enough space between tail and end, what about
+                // buffer start and head?
+                int64_t leftUntilHead = m_head;
+                if (leftUntilHead < iAmount)
+                    return -1;
+
+                // Move tail directly to offset iAmount, which essentially
+                // allocates all space between tail and end, and
+                // iAmount elements from buffer start. Also, offset = 0
+                // is always aligned.
+                offset = 0;
+                m_tail = iAmount;
+            }
+            else
+            {
+                // There is enough space between tail and end, allocate
+                // from there.
+                offset = alignedTail;
+                m_tail = alignedTail + iAmount;
+                XOR_ASSERT(m_tail <= m_size, "Tail out of bounds.");
+                if (m_tail == m_size)
+                    m_tail = 0;
+            }
+        }
+
+        m_full = m_tail == m_head;
+        return offset;
+    }
+
+    int64_t OffsetRing::allocateContiguous(size_t amount)
+    {
+        return allocateContiguous(amount, 1);
+    }
+
+    void OffsetRing::releaseEnd(int64_t onePastLastOffset)
+    {
+        XOR_ASSERT(!empty(), "Attempted to release when the ring is empty.");
+#if XOR_ASSERTIONS
+        // In order to make sense, the one-past-last should either be equal to
+        // tail (ring was just emptied), or it should lie within the currently
+        // allocated region.
+        if (m_tail > m_head)
+        {
+            // All allocated space is between head and tail, so one-past-last
+            // must lie within that region.
+            XOR_ASSERT(onePastLastOffset <= m_tail,
+                       "Attempted to release unallocated elements.");
+        }
+        else
+        {
+            // Allocated space wraps off the end of the buffer, so one-past-last
+            // cannot lie between tail and head.
+            XOR_ASSERT(onePastLastOffset <= m_tail ||
+                       onePastLastOffset > m_head,
+                       "Attempted to release unallocated elements.");
+        }
+#endif
+
+        XOR_ASSERT(onePastLastOffset >= 0 && onePastLastOffset <= m_size,
+                   "Released range out of bounds.");
+        m_head = onePastLastOffset;
+        // We just released something, so the ring cannot be full.
+        m_full = false;
     }
 }

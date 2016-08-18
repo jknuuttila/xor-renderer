@@ -1,7 +1,12 @@
-#include "Xor/Shaders.h.hlsl"
+#include "Hello.sig.h"
 
-[RootSignature(XOR_ROOT_SIGNATURE)]
-float4 main(float4 color : COLOR0) : SV_Target
+struct PSInput
 {
-	return color;
+    float4 uv : TEXCOORD0;
+};
+
+[RootSignature(HELLO_ROOT_SIGNATURE)]
+float4 main(PSInput i) : SV_Target
+{
+    return tex.Sample(bilinear, i.uv.xy);
 }

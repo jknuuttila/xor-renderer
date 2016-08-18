@@ -9,6 +9,7 @@
     <ClCompile Include="String.cpp" />
     <ClCompile Include="File.cpp" />
     <ClCompile Include="TLog.cpp" />
+    <ClCompile Include="MathVectors.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Utils.hpp" />

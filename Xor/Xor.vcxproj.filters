@@ -2,9 +2,19 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClInclude Include="Xor.hpp" />
-    <ClInclude Include="Shaders.h.hlsl" />
+    <ClInclude Include="Image.hpp" />
+    <ClInclude Include="Format.hpp" />
+    <ClInclude Include="Shaders.h" />
+    <ClInclude Include="Mesh.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
+    <ClCompile Include="Image.cpp" />
+    <ClCompile Include="Format.cpp" />
+    <ClCompile Include="Mesh.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\external\FreeImage\FreeImage.dll" />
+    <CustomBuild Include="..\external\assimp\assimp-vc130-mt.dll" />
   </ItemGroup>
 </Project>

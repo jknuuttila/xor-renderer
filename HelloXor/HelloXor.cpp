@@ -2,15 +2,36 @@
 #include "Core/TLog.hpp"
 #include "Xor/Xor.hpp"
 
+#include "Hello.sig.h"
+
 using namespace xor;
+
+void debugMatrix(Matrix m, Span<const float3> verts)
+{
+    std::vector<float3> t;
+
+    for (auto v : verts)
+    {
+        t.emplace_back(m.transformAndProject(v));
+        print("%s -> %s\n", toString(v).cStr(), toString(t.back()).cStr());
+    }
+}
 
 class HelloXor : public Window
 {
     Xor xor;
     Device device;
     SwapChain swapChain;
-    Pipeline hello;
+    GraphicsPipeline hello;
+    TextureSRV lena;
+    float2 pixel;
+    Mesh cube;
+
     Timer time;
+    const float CameraDistance = 3;
+    const float CameraPeriod   = 10;
+    const float ObjectPeriod   = 3;
+
 public:
     HelloXor()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
@@ -19,11 +40,17 @@ public:
 
         device    = xor.defaultDevice();
         swapChain = device.createSwapChain(*this);
+
+        cube = Mesh(device, XOR_DATA "/cube/cube.obj");
+
         hello     = device.createGraphicsPipeline(
-            Pipeline::Graphics()
+            GraphicsPipeline::Info()
             .vertexShader("Hello.vs")
             .pixelShader("Hello.ps")
+            .inputLayout(cube.inputLayout())
             .renderTargetFormats({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB}));
+
+        lena = device.createTextureSRV(Image(XOR_DATA "/Lena.png"));
     }
 
     void keyDown(int keyCode) override
@@ -37,31 +64,32 @@ public:
         auto cmd        = device.graphicsCommandList();
         auto backbuffer = swapChain.backbuffer();
 
-        // TODO: Replace transition() with automatic deduction of split barriers.
-        cmd.barrier({ transition(backbuffer.texture(),
-                                 D3D12_RESOURCE_STATE_PRESENT,
-                                 D3D12_RESOURCE_STATE_RENDER_TARGET) });
-
-#if 0
-        float4 rgba = float4(hsvToRGB(float3(
-            frac(static_cast<float>(time.seconds())),
-            1,
-            1)));
-        rgba.w = 1;
-        cmd.clearRTV(backbuffer, rgba);
-#else
         cmd.clearRTV(backbuffer, float4(0, 0, .25f, 1));
 
         cmd.setRenderTargets({backbuffer});
         cmd.bind(hello);
-        cmd.draw(3);
+        cube.setForRendering(cmd);
+
+        float objectPhase = frac(time.seconds() / ObjectPeriod) * 2 * Pi;
+        float cameraPhase = frac(time.seconds() / CameraPeriod) * 2 * Pi;
+
+        Hello::Constants c;
+
+        float3 cameraPos;
+        cameraPos.x = cos(cameraPhase) * CameraDistance;
+        cameraPos.z = sin(cameraPhase) * CameraDistance;
+        cameraPos.y = 2;
+
+        Matrix view = Matrix::lookAt(cameraPos, 0);
+        Matrix proj = Matrix::projectionPerspective(size());
+        c.viewProj = proj * view;
+        c.model    = Matrix::axisAngle({1, 0, 0}, Angle(objectPhase));
+
+        cmd.setConstants(c);
+        cmd.setShaderView(Hello::tex, lena);
+        cmd.drawIndexed(cube.numIndices());
+
         cmd.setRenderTargets();
-
-#endif
-
-        cmd.barrier({ transition(backbuffer.texture(),
-                                 D3D12_RESOURCE_STATE_RENDER_TARGET,
-                                 D3D12_RESOURCE_STATE_PRESENT) });
 
         device.execute(cmd);
         device.present(swapChain);

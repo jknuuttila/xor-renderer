@@ -14,4 +14,16 @@ namespace xor
         else
             return -1;
     }
+
+    template <typename T> T roundUpToMultiple(T value, T multiplier)
+    {
+        return ((value + (multiplier - 1)) / multiplier) * multiplier;
+    }
+
+    template <typename T> T alignTo(T value, T alignment)
+    {
+        auto misalignment = value % alignment;
+        auto offset       = (alignment - misalignment) % alignment;
+        return value + offset;
+    }
 }
