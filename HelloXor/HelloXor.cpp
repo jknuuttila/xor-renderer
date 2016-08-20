@@ -48,7 +48,7 @@ public:
             .vertexShader("Hello.vs")
             .pixelShader("Hello.ps")
             .inputLayout(cube.inputLayout())
-            .renderTargetFormats({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB}));
+            .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB));
 
         lena = device.createTextureSRV(Image(XOR_DATA "/Lena.png"));
     }

@@ -286,7 +286,9 @@ namespace xor
 
             Info &vertexShader(const String &vsName);
             Info &pixelShader(const String &psName);
-            Info &renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats);
+            Info &renderTargetFormats(Format format);
+            Info &renderTargetFormats(Span<const Format> formats);
+            Info &renderTargetFormats(Span<const DXGI_FORMAT> formats);
             Info &inputLayout(const info::InputLayoutInfo &ilInfo);
             Info &multisampling(uint samples, uint quality = 0);
             Info &topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);

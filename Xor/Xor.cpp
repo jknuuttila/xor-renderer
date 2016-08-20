@@ -1175,11 +1175,26 @@ namespace xor
         return *this;
     }
 
-    GraphicsPipeline::Info &GraphicsPipeline::Info::renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats)
+    GraphicsPipeline::Info &GraphicsPipeline::Info::renderTargetFormats(Format format)
+    {
+        NumRenderTargets = 1;
+        RTVFormats[0] = format;
+        return *this;
+    }
+
+    GraphicsPipeline::Info &GraphicsPipeline::Info::renderTargetFormats(Span<const Format> formats)
     {
         NumRenderTargets = static_cast<uint>(formats.size());
         for (uint i = 0; i < NumRenderTargets; ++i)
-            RTVFormats[i] = formats.begin()[i];
+            RTVFormats[i] = formats[i];
+        return *this;
+    }
+
+    GraphicsPipeline::Info &GraphicsPipeline::Info::renderTargetFormats(Span<const DXGI_FORMAT> formats)
+    {
+        NumRenderTargets = static_cast<uint>(formats.size());
+        for (uint i = 0; i < NumRenderTargets; ++i)
+            RTVFormats[i] = formats[i];
         return *this;
     }
 

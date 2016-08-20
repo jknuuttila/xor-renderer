@@ -49,6 +49,11 @@
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)assimp-vc130-mt.dll;$(OutDir)assimp-vc130-mt.pdb</Outputs>
     </CustomBuild>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Core.vcxproj">
+      <Project>{77a5ea23-cfc4-42b3-9f7c-b42df7d76362}</Project>
+    </ProjectReference>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{AC764C74-7D44-43BC-9CAB-B470883B5549}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>

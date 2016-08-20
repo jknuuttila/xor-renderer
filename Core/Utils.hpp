@@ -174,7 +174,7 @@ namespace xor
         Span() = default;
 
         template <typename U>
-        Span(U &&u) : Span(std::begin(u), std::end(u)) {}
+        Span(U &&u, decltype(*std::begin(u)) * = nullptr) : Span(std::begin(u), std::end(u)) {}
 
         Span(std::initializer_list<T> init) : Span(std::begin(init), std::end(init)) {}
 
