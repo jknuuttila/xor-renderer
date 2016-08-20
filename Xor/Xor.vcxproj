@@ -13,12 +13,14 @@
   <ItemGroup>
     <ClInclude Include="Format.hpp" />
     <ClInclude Include="Image.hpp" />
+    <ClInclude Include="Material.hpp" />
     <ClInclude Include="Mesh.hpp" />
     <ClInclude Include="Xor.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Format.cpp" />
     <ClCompile Include="Image.cpp" />
+    <ClCompile Include="Material.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Xor.cpp" />
   </ItemGroup>

@@ -1,6 +1,7 @@
 #include "Core/Core.hpp"
 #include "Core/TLog.hpp"
 #include "Xor/Xor.hpp"
+#include "Xor/Mesh.hpp"
 
 #include "Hello.sig.h"
 
@@ -41,7 +42,7 @@ public:
         device    = xor.defaultDevice();
         swapChain = device.createSwapChain(*this);
 
-        cube = Mesh(device, XOR_DATA "/cube/cube.obj");
+        cube = Mesh(device, Mesh::Info(XOR_DATA "/cube/cube.obj"));
 
         hello     = device.createGraphicsPipeline(
             GraphicsPipeline::Info()

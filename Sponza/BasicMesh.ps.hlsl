@@ -8,5 +8,6 @@ struct PSInput
 [RootSignature(BASICMESH_ROOT_SIGNATURE)]
 float4 main(PSInput i) : SV_Target
 {
-    return float4(i.uv.x, 0, i.uv.y, 1);
+    float4 diffuse = diffuseTex.Sample(bilinear, i.uv.xy);
+    return float4(diffuse.rgb, 1);
 }

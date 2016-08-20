@@ -1,9 +1,9 @@
 #pragma once
 
 #include "Core/Core.hpp"
-#include "Xor/Image.hpp"
-#include "Xor/Mesh.hpp"
 #include "Xor/Shaders.h"
+#include "Xor/Format.hpp"
+#include "Xor/Image.hpp"
 
 #include <d3d12.h>
 #include <dxgi1_5.h>
@@ -187,6 +187,8 @@ namespace xor
             {}
             TextureInfo(const Image &image, Format fmt = Format());
             TextureInfo(ID3D12Resource *texture);
+
+            size_t sizeBytes() const;
         };
 
         class TextureInfoBuilder : public TextureInfo
@@ -315,6 +317,8 @@ namespace xor
         friend class CommandList;
     public:
         DescriptorView() = default;
+
+        explicit operator bool() const { return valid(); }
     };
 
     class TextureView : public DescriptorView

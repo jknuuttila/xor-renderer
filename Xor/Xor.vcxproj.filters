@@ -6,12 +6,14 @@
     <ClInclude Include="Format.hpp" />
     <ClInclude Include="Shaders.h" />
     <ClInclude Include="Mesh.hpp" />
+    <ClInclude Include="Material.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
     <ClCompile Include="Image.cpp" />
     <ClCompile Include="Format.cpp" />
     <ClCompile Include="Mesh.cpp" />
+    <ClCompile Include="Material.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\external\FreeImage\FreeImage.dll" />

@@ -1,6 +1,8 @@
 #include "Core/Core.hpp"
 #include "Core/TLog.hpp"
 #include "Xor/Xor.hpp"
+#include "Xor/Mesh.hpp"
+#include "Xor/Material.hpp"
 
 #include "BasicMesh.sig.h"
 
@@ -36,7 +38,9 @@ public:
         device    = xor.defaultDevice();
         swapChain = device.createSwapChain(*this);
 
-        meshes = Mesh::loadFromFile(device, XOR_DATA "/crytek-sponza/sponza.obj");
+        meshes = Mesh::loadFromFile(device, Mesh::Builder()
+                                    .filename(XOR_DATA "/crytek-sponza/sponza.obj")
+                                    .loadMaterials(true));
 
         basicMesh = device.createGraphicsPipeline(
             GraphicsPipeline::Info()
@@ -61,10 +65,12 @@ public:
         cmd.clearRTV(backbuffer, float4(0, 0, 0, 1));
 
         BasicMesh::Constants constants;
-        Matrix MVP = Matrix::projectionPerspective(size(),
-                                                   math::DefaultFov,
-                                                   1.f, 10000.f)
-            * Matrix::lookAt({ 2000, 2000, 2000 }, 0);
+        Matrix MVP =
+            Matrix::projectionPerspective(size(),
+                                          math::DefaultFov,
+                                          1.f, 10000.f)
+            * Matrix::lookAt({ 2000, 2000, 2000 },
+                             0);
         constants.modelViewProj = MVP;
 
         cmd.setRenderTargets(backbuffer);
@@ -72,8 +78,14 @@ public:
 
         for (auto &m : meshes)
         {
+            auto mat = m.material();
+
             m.setForRendering(cmd);
             cmd.setConstants(constants);
+
+            if (mat.diffuse().texture)
+                cmd.setShaderView(BasicMesh::diffuseTex, m.material().diffuse().texture);
+
             cmd.drawIndexed(m.numIndices());
         }
 

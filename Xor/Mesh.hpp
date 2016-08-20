@@ -1,38 +1,33 @@
 #pragma once
 
 #include "Core/Core.hpp"
+#include "Xor/Xor.hpp"
 
 namespace xor
 {
-    class Device;
-    class CommandList;
+    class Material;
 
     namespace info
     {
-        class InputLayoutInfo;
+        class MeshInfo
+        {
+        public:
+            String filename;
+            bool calculateTangentSpace = true;
+            bool loadMaterials = false;
+
+            MeshInfo() = default;
+            MeshInfo(String filename) : filename(std::move(filename)) {}
+        };
+
+        class MeshInfoBuilder : public MeshInfo
+        {
+        public:
+            MeshInfoBuilder &filename(String path) { MeshInfo::filename = std::move(path); return *this; }
+            MeshInfoBuilder &calculateTangentSpace(bool tangents) { MeshInfo::calculateTangentSpace = tangents; return *this; }
+            MeshInfoBuilder &loadMaterials(bool load) { MeshInfo::loadMaterials = load; return *this; }
+        };
     }
-
-    enum class VertexAttribute
-    {
-        Position,
-        Normal,
-        Tangent,
-        Bitangent,
-        Color,
-        UV,
-    };
-
-    struct VertexStream
-    {
-        VertexAttribute attrib = VertexAttribute::Position;
-        uint index             = 0;
-
-        VertexStream() = default;
-        VertexStream(VertexAttribute attrib, uint index = 0)
-            : attrib(attrib)
-            , index(index)
-        {}
-    };
 
     class Mesh
     {
@@ -40,13 +35,17 @@ namespace xor
         std::shared_ptr<State> m_state;
 
     public:
-        Mesh() = default;
-        Mesh(Device &device, const String &filename);
+        using Info    = info::MeshInfo;
+        using Builder = info::MeshInfoBuilder;
 
-        static std::vector<Mesh> loadFromFile(Device &device, const String &filename);
+        Mesh() = default;
+        Mesh(Device &device, const Info &meshInfo);
+
+        static std::vector<Mesh> loadFromFile(Device &device, const Info &meshInfo);
 
         info::InputLayoutInfo inputLayout() const;
         void setForRendering(CommandList &cmd) const;
         uint numIndices() const;
+        Material material();
     };
 }

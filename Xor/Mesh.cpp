@@ -1,36 +1,68 @@
 #include "Xor/Mesh.hpp"
+#include "Xor/Material.hpp"
 #include "Xor/Xor.hpp"
 
 #include "external/assimp/assimp/Importer.hpp"
 #include "external/assimp/assimp/scene.h"
 #include "external/assimp/assimp/postprocess.h"
 
+#include <vector>
+#include <unordered_map>
+
 namespace xor
 {
     struct Mesh::State
     {
         String name;
+        Material material;
         info::InputLayoutInfo inputLayout;
         std::vector<BufferVBV> vertexBuffers;
         BufferIBV indexBuffer;
         uint numIndices = 0;
     };
 
-    std::vector<Mesh> Mesh::loadFromFile(Device &device, const String & file)
+    std::vector<Mesh> Mesh::loadFromFile(Device &device, const Info &meshInfo)
     {
         Timer time;
         size_t loadedBytes = 0;
 
+        String basePath = fs::path(meshInfo.filename.stdString())
+            .remove_filename()
+            .c_str();
+
         Assimp::Importer importer;
         auto scene = importer.ReadFile(
-            file.cStr(),
-            aiProcess_CalcTangentSpace      |
+            meshInfo.filename.cStr(),
             aiProcess_Triangulate           |
             aiProcess_JoinIdenticalVertices |
-            aiProcess_SortByPType);
+            aiProcess_SortByPType           |
+            (meshInfo.calculateTangentSpace ?
+             aiProcess_CalcTangentSpace : 0)
+        );
 
         std::vector<Mesh> meshes;
         meshes.reserve(scene->mNumMeshes);
+
+        std::unordered_map<uint, Material> materials;
+        for (uint m = 0; m < scene->mNumMaterials; ++m)
+        {
+            auto src = scene->mMaterials[m];
+
+            aiString name;
+            if (src->Get(AI_MATKEY_NAME, name))
+                continue;
+
+            Material dst(name.C_Str());
+
+            aiString path;
+            if (src->Get(AI_MATKEY_TEXTURE_DIFFUSE(0), path) == aiReturn_SUCCESS)
+                dst.diffuse().filename = path.C_Str();
+
+            if (meshInfo.loadMaterials)
+                dst.load(device, basePath);
+
+            materials[m] = std::move(dst);
+        }
 
         for (uint m = 0; m < scene->mNumMeshes; ++m)
         {
@@ -122,55 +154,17 @@ namespace xor
                 dst->numIndices = static_cast<uint>(indices.size());
             }
 
+            auto mat = materials.find(src->mMaterialIndex);
+            if (mat != materials.end())
+                dst->material = mat->second;
+
             dst->inputLayout = il;
         }
 
-#if 0
-        for (uint m = 0; m < scene->mNumMaterials; ++m)
-        {
-            auto mat = scene->mMaterials[m];
-            log("loadMesh", "\nMATERIAL %u\n", m);
-
-            for (uint p = 0; p < mat->mNumProperties; ++p)
-            {
-                auto prop = mat->mProperties[p];
-                auto &key = prop->mKey;
-
-                int i = -1;
-                float f = -1;
-                aiString s;
-
-                switch (prop->mType)
-                {
-                case aiPTI_Integer:
-                {
-                    mat->Get(key.C_Str(), 0, 0, i);
-                    log("loadMesh", "    %s: %d\n", key.C_Str(), i);
-                    break;
-                }
-                case aiPTI_Float:
-                {
-                    //mat->Get(key.C_Str(), 0, 0, f);
-                    log("loadMesh", "    %s: %f\n", key.C_Str(), f);
-                    break;
-                }
-                case aiPTI_String:
-                {
-                    mat->Get(key.C_Str(), 0, 0, s);
-                    log("loadMesh", "    %s: %s\n", key.C_Str(), s.C_Str());
-                    break;
-                }
-                default:
-                    break;
-                }
-            }
-        }
-#endif
-
         log("Mesh", "Loaded \"%s\" in %.2f ms (%.2f MB / s)\n",
-            file.cStr(),
+            meshInfo.filename.cStr(),
             time.milliseconds(),
-            static_cast<double>(loadedBytes) / 1024 / 1024 / time.seconds());
+            time.bandwidthMB(loadedBytes));
 
         return meshes;
     }
@@ -192,8 +186,13 @@ namespace xor
         return m_state->numIndices;
     }
 
-    Mesh::Mesh(Device &device, const String & filename)
+    Material Mesh::material()
     {
-        *this = loadFromFile(device, filename)[0];
+        return m_state->material;
+    }
+
+    Mesh::Mesh(Device &device, const Info & info)
+    {
+        *this = loadFromFile(device, info)[0];
     }
 }

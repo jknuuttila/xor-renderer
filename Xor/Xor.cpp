@@ -1,4 +1,5 @@
-#include "Xor.hpp"
+#include "Xor/Xor.hpp"
+#include "Xor/Image.hpp"
 
 #include "Core/TLog.hpp"
 
@@ -917,6 +918,12 @@ namespace xor
                       "Expected a texture");
             size   = { static_cast<uint>(desc.Width), desc.Height };
             format = desc.Format;
+        }
+
+        size_t TextureInfo::sizeBytes() const
+        {
+            // FIXME: This is not accurate
+            return format.rowSizeBytes(size.x) * size.y;
         }
 
         TextureViewInfo TextureViewInfo::defaults(const TextureInfo & textureInfo) const

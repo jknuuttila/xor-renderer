@@ -166,7 +166,15 @@ namespace xor
 
         double milliseconds() const { return seconds() * 1000.0; }
         float millisecondsF() const { return secondsF() * 1000.0f; }
+
+        double bandwidthMB(size_t bytes) const
+        {
+            static const double MB = 1024 * 1024;
+            return static_cast<double>(bytes) / MB / seconds();
+        }
     };
+
+
 
     template <typename T>
     class Span
