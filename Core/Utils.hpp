@@ -163,6 +163,9 @@ namespace xor
         Timer();
         double seconds() const;
         float secondsF() const { return static_cast<float>(seconds()); }
+
+        double milliseconds() const { return seconds() * 1000.0; }
+        float millisecondsF() const { return secondsF() * 1000.0f; }
     };
 
     template <typename T>

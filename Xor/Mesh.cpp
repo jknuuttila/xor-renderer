@@ -18,6 +18,9 @@ namespace xor
 
     std::vector<Mesh> Mesh::loadFromFile(Device &device, const String & file)
     {
+        Timer time;
+        size_t loadedBytes = 0;
+
         Assimp::Importer importer;
         auto scene = importer.ReadFile(
             file.cStr(),
@@ -49,6 +52,7 @@ namespace xor
 
                 dst->vertexBuffers.emplace_back(device.createBufferVBV(
                     Buffer::Info(makeConstSpan(src->mVertices, src->mNumVertices))));
+                loadedBytes += dst->vertexBuffers.back().buffer()->sizeBytes();
             }
 
             if (src->HasNormals())
@@ -58,6 +62,7 @@ namespace xor
 
                 dst->vertexBuffers.emplace_back(device.createBufferVBV(
                     Buffer::Info(makeConstSpan(src->mNormals, src->mNumVertices))));
+                loadedBytes += dst->vertexBuffers.back().buffer()->sizeBytes();
             }
 
             if (src->HasTangentsAndBitangents())
@@ -70,8 +75,11 @@ namespace xor
 
                 dst->vertexBuffers.emplace_back(device.createBufferVBV(
                     Buffer::Info(makeConstSpan(src->mTangents, src->mNumVertices))));
+                loadedBytes += dst->vertexBuffers.back().buffer()->sizeBytes();
+
                 dst->vertexBuffers.emplace_back(device.createBufferVBV(
                     Buffer::Info(makeConstSpan(src->mBitangents, src->mNumVertices))));
+                loadedBytes += dst->vertexBuffers.back().buffer()->sizeBytes();
             }
 
             if (src->HasVertexColors(0))
@@ -81,6 +89,7 @@ namespace xor
 
                 dst->vertexBuffers.emplace_back(device.createBufferVBV(
                     Buffer::Info(makeConstSpan(src->mColors[0], src->mNumVertices))));
+                loadedBytes += dst->vertexBuffers.back().buffer()->sizeBytes();
             }
 
             if (src->HasTextureCoords(0))
@@ -90,6 +99,7 @@ namespace xor
 
                 dst->vertexBuffers.emplace_back(device.createBufferVBV(
                     Buffer::Info(makeConstSpan(src->mTextureCoords[0], src->mNumVertices))));
+                loadedBytes += dst->vertexBuffers.back().buffer()->sizeBytes();
             }
 
             if (src->HasFaces())
@@ -108,12 +118,14 @@ namespace xor
 
                 dst->indexBuffer = device.createBufferIBV(
                     Buffer::Info(asConstSpan(indices), DXGI_FORMAT_R32_UINT));
+                loadedBytes += dst->indexBuffer.buffer()->sizeBytes();
                 dst->numIndices = static_cast<uint>(indices.size());
             }
 
             dst->inputLayout = il;
         }
 
+#if 0
         for (uint m = 0; m < scene->mNumMaterials; ++m)
         {
             auto mat = scene->mMaterials[m];
@@ -153,6 +165,12 @@ namespace xor
                 }
             }
         }
+#endif
+
+        log("Mesh", "Loaded \"%s\" in %.2f ms (%.2f MB / s)\n",
+            file.cStr(),
+            time.milliseconds(),
+            static_cast<double>(loadedBytes) / 1024 / 1024 / time.seconds());
 
         return meshes;
     }

@@ -1,7 +1,12 @@
 #include "BasicMesh.sig.h"
 
-[RootSignature(BASICMESH_ROOT_SIGNATURE)]
-float4 main() : SV_Target
+struct PSInput
 {
-    return float4(1, 0, 0, 1);
+    float4 uv : TEXCOORD0;
+};
+
+[RootSignature(BASICMESH_ROOT_SIGNATURE)]
+float4 main(PSInput i) : SV_Target
+{
+    return float4(i.uv.x, 0, i.uv.y, 1);
 }

@@ -23,6 +23,7 @@ class Sponza : public Window
     Device device;
     SwapChain swapChain;
     GraphicsPipeline basicMesh;
+    std::vector<Mesh> meshes;
 
     Timer time;
 
@@ -35,10 +36,14 @@ public:
         device    = xor.defaultDevice();
         swapChain = device.createSwapChain(*this);
 
+        meshes = Mesh::loadFromFile(device, XOR_DATA "/crytek-sponza/sponza.obj");
+
         basicMesh = device.createGraphicsPipeline(
             GraphicsPipeline::Info()
             .vertexShader("BasicMesh.vs")
             .pixelShader("BasicMesh.ps")
+            .cull(D3D12_CULL_MODE_NONE)
+            .inputLayout(meshes[0].inputLayout())
             .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB));
     }
 
@@ -53,7 +58,26 @@ public:
         auto cmd        = device.graphicsCommandList();
         auto backbuffer = swapChain.backbuffer();
 
-        cmd.clearRTV(backbuffer, float4(.25f, 0, 0, 1));
+        cmd.clearRTV(backbuffer, float4(0, 0, 0, 1));
+
+        BasicMesh::Constants constants;
+        Matrix MVP = Matrix::projectionPerspective(size(),
+                                                   math::DefaultFov,
+                                                   1.f, 10000.f)
+            * Matrix::lookAt({ 2000, 2000, 2000 }, 0);
+        constants.modelViewProj = MVP;
+
+        cmd.setRenderTargets(backbuffer);
+        cmd.bind(basicMesh);
+
+        for (auto &m : meshes)
+        {
+            m.setForRendering(cmd);
+            cmd.setConstants(constants);
+            cmd.drawIndexed(m.numIndices());
+        }
+
+        cmd.setRenderTargets();
 
         device.execute(cmd);
         device.present(swapChain);

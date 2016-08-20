@@ -11,8 +11,8 @@ namespace xor
     {
         static const char ShaderFileExtension[] = ".cso";
         static const uint MaxRTVs = 256;
-        static const uint DescriptorHeapSize = 64;
-        static const uint DescriptorHeapRing = 32;
+        static const uint DescriptorHeapSize = 65536 * 4;
+        static const uint DescriptorHeapRing = 65536 * 3;
 
         class DeviceChild
         {
@@ -1683,12 +1683,15 @@ namespace xor
             for (size_t u = 0; u < numUAVs; ++u)
                 srcs.emplace_back(uavs[u]);
 
-            auto dst = heap.descriptorAtOffset(start + numCBVs);
-            uint amount[] = { static_cast<uint>(srcs.size()) };
-            dev.device()->CopyDescriptors(
-                        1,    &dst.cpu,  amount,
-                amount[0], srcs.data(), nullptr,
-                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+            if (!srcs.empty())
+            {
+                auto dst = heap.descriptorAtOffset(start + numCBVs);
+                uint amount[] ={ static_cast<uint>(srcs.size()) };
+                dev.device()->CopyDescriptors(
+                    1, &dst.cpu, amount,
+                    amount[0], srcs.data(), nullptr,
+                    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+            }
 
             cmd()->SetGraphicsRootDescriptorTable(0, table);
         }
