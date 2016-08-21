@@ -19,6 +19,71 @@ void debugMatrix(Matrix m, Span<const float3> verts)
     }
 }
 
+struct FPSCamera
+{
+    struct Keys
+    {
+        int forward   = 0;
+        int backward  = 0;
+        int left      = 0;
+        int right     = 0;
+        int lookUp    = 0;
+        int lookDown  = 0;
+        int lookLeft  = 0;
+        int lookRight = 0;
+    } keys;
+
+    float3 position = 0;
+    Angle azimuth   = Angle(0);
+    Angle elevation = Angle(0);
+    float speed     = 1;
+    float turnSpeed = .1;
+
+    void update(const Window &window)
+    {
+        float x = 0;
+        float z = 0;
+
+        if (window.isKeyHeld(keys.forward))  z -= 1;
+        if (window.isKeyHeld(keys.backward)) z += 1;
+        if (window.isKeyHeld(keys.left))     x -= 1;
+        if (window.isKeyHeld(keys.right))    x += 1;
+
+        Matrix M = orientation();
+
+        if (x != 0)
+        {
+            x *= speed;
+            position += M.getRotationXAxis() * x;
+        }
+
+        if (z != 0)
+        {
+            z *= speed;
+            position += M.getRotationZAxis() * z;
+        }
+
+        if (window.isKeyHeld(keys.lookLeft))  azimuth.radians += turnSpeed;
+        if (window.isKeyHeld(keys.lookRight)) azimuth.radians -= turnSpeed;
+        if (window.isKeyHeld(keys.lookUp))    elevation.radians += turnSpeed;
+        if (window.isKeyHeld(keys.lookDown))  elevation.radians -= turnSpeed;
+    }
+
+    Matrix orientation() const
+    {
+        Matrix A = Matrix::axisAngle({0, 1, 0}, azimuth);
+        Matrix E = Matrix::axisAngle({1, 0, 0}, elevation);
+        return E * A;
+    }
+
+    Matrix viewMatrix() const
+    {
+        Matrix T = Matrix::translation(-position);
+        Matrix R = orientation().transpose();
+        return R * T;
+    }
+};
+
 class Sponza : public Window
 {
     Xor xor;
@@ -27,6 +92,7 @@ class Sponza : public Window
     TextureDSV depthBuffer;
     GraphicsPipeline basicMesh;
     std::vector<Mesh> meshes;
+    FPSCamera camera;
 
     Timer time;
 
@@ -54,6 +120,16 @@ public:
             .depthFormat(DXGI_FORMAT_D32_FLOAT)
             .depthMode(info::DepthMode::Write)
         );
+
+        camera.keys.forward   = 'W';
+        camera.keys.left      = 'A';
+        camera.keys.backward  = 'S';
+        camera.keys.right     = 'D';
+        camera.keys.lookUp    = VK_UP;
+        camera.keys.lookLeft  = VK_LEFT;
+        camera.keys.lookDown  = VK_DOWN;
+        camera.keys.lookRight = VK_RIGHT;
+        camera.position       = { -1000, 500, 0 };
     }
 
     void keyDown(int keyCode) override
@@ -64,6 +140,8 @@ public:
 
     void mainLoop() override
     {
+        camera.update(*this);
+
         auto cmd        = device.graphicsCommandList();
         auto backbuffer = swapChain.backbuffer();
 
@@ -73,9 +151,12 @@ public:
         Matrix MVP =
             Matrix::projectionPerspective(size(),
                                           math::DefaultFov,
-                                          1.f, 10000.f)
+                                          .1f, 1000.f)
+            * camera.viewMatrix();
+            /*
             * Matrix::lookAt({ -1000, 500, 0000 },
                              0);
+                             */
         constants.modelViewProj = MVP;
 
         cmd.setRenderTargets(backbuffer, depthBuffer);

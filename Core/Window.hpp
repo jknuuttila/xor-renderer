@@ -4,14 +4,19 @@
 #include "Utils.hpp"
 #include "MathVectors.hpp"
 
+#include <array>
+
 namespace xor
 {
     class Window
     {
-        MovingPtr<HWND> m_hWnd       = nullptr;
-        int             m_exitCode   = 0;
-        bool            m_terminate  = false;
-        uint2           m_size       = 0;
+        static const uint NumKeyCodes = 256;
+
+        MovingPtr<HWND>               m_hWnd       = nullptr;
+        int                           m_exitCode   = 0;
+        bool                          m_terminate  = false;
+        uint2                         m_size       = 0;
+        std::array<bool, NumKeyCodes> m_keyHeld;
 
         static ATOM registerWindowClass();
         static LRESULT CALLBACK windowProcFun(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -31,5 +36,6 @@ namespace xor
 
         virtual void keyUp(int keyCode) {}
         virtual void keyDown(int keyCode) {}
+        bool isKeyHeld(int keyCode) const;
     };
 }

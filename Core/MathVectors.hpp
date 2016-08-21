@@ -199,6 +199,11 @@ namespace xor
                 for (uint i = 0; i < N; ++i) c[i] = std::max(a[i], b[i]);
                 return c;
             }
+
+            Vector &operator+=(Vector a) { *this = *this + a; return *this; }
+            Vector &operator-=(Vector a) { *this = *this - a; return *this; }
+            Vector &operator*=(Vector a) { *this = *this * a; return *this; }
+            Vector &operator/=(Vector a) { *this = *this / a; return *this; }
         };
 
         using int2   = Vector<int, 2>;
@@ -384,6 +389,18 @@ namespace xor
                     {0, 0, 1, t.z},
                     {0, 0, 0,   1},
                 };
+            }
+
+            float3 getRotationXAxis() const { return { m(0, 0), m(1, 0), m(2, 0) }; }
+            float3 getRotationYAxis() const { return { m(0, 1), m(1, 1), m(2, 1) }; }
+            float3 getRotationZAxis() const { return { m(0, 2), m(1, 2), m(2, 2) }; }
+            float3 getTranslation()   const { return { m(0, 3), m(1, 3), m(2, 3) }; }
+
+            void setTranslation(float3 t)
+            {
+                m(0, 3) = t.x;
+                m(1, 3) = t.y;
+                m(2, 3) = t.z;
             }
 
             Matrix transpose() const

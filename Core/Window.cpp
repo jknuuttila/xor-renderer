@@ -49,11 +49,19 @@ namespace xor
             PostQuitMessage(0);
             break;
         case WM_KEYDOWN:
-            keyDown(static_cast<int>(wParam));
+        {
+            int keyCode = static_cast<int>(wParam);
+            m_keyHeld[keyCode] = true;
+            keyDown(keyCode);
             break;
+        }
         case WM_KEYUP:
-            keyUp(static_cast<int>(wParam));
+        {
+            int keyCode = static_cast<int>(wParam);
+            m_keyHeld[keyCode] = false;
+            keyUp(keyCode);
             break;
+        }
         default:
             break;
         }
@@ -64,6 +72,8 @@ namespace xor
     Window::Window(const char *title, uint2 size, int2 position)
         : m_size(size)
     {
+        m_keyHeld.fill(false);
+
         auto w = size.x;
         auto h = size.y;
         auto x = position.x;
@@ -133,6 +143,11 @@ namespace xor
     {
         m_exitCode  = exitCode;
         m_terminate = true;
+    }
+
+    bool Window::isKeyHeld(int keyCode) const
+    {
+        return m_keyHeld[keyCode];
     }
 
     // TODO: Move this elsewhere
