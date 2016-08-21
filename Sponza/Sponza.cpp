@@ -74,7 +74,7 @@ public:
             Matrix::projectionPerspective(size(),
                                           math::DefaultFov,
                                           1.f, 10000.f)
-            * Matrix::lookAt({ 2000, 2000, 2000 },
+            * Matrix::lookAt({ -1000, 500, 0000 },
                              0);
         constants.modelViewProj = MVP;
 
