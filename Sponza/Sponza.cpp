@@ -24,6 +24,7 @@ class Sponza : public Window
     Xor xor;
     Device device;
     SwapChain swapChain;
+    TextureDSV depthBuffer;
     GraphicsPipeline basicMesh;
     std::vector<Mesh> meshes;
 
@@ -37,6 +38,7 @@ public:
 
         device    = xor.defaultDevice();
         swapChain = device.createSwapChain(*this);
+        depthBuffer = device.createTextureDSV(Texture::Info(size(), DXGI_FORMAT_D32_FLOAT));
 
         meshes = Mesh::loadFromFile(device, Mesh::Builder()
                                     .filename(XOR_DATA "/crytek-sponza/sponza.obj")
@@ -46,9 +48,12 @@ public:
             GraphicsPipeline::Info()
             .vertexShader("BasicMesh.vs")
             .pixelShader("BasicMesh.ps")
-            .cull(D3D12_CULL_MODE_NONE)
+            // .cull(D3D12_CULL_MODE_NONE)
             .inputLayout(meshes[0].inputLayout())
-            .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB));
+            .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+            .depthFormat(DXGI_FORMAT_D32_FLOAT)
+            .depthMode(info::DepthMode::Write)
+        );
     }
 
     void keyDown(int keyCode) override
@@ -73,7 +78,7 @@ public:
                              0);
         constants.modelViewProj = MVP;
 
-        cmd.setRenderTargets(backbuffer);
+        cmd.setRenderTargets(backbuffer, depthBuffer);
         cmd.bind(basicMesh);
 
         for (auto &m : meshes)

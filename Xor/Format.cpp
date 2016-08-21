@@ -7,8 +7,7 @@ namespace xor
         if (m_elementSize)
             return m_elementSize;
 
-        auto fmt = static_cast<DXGI_FORMAT>(m_dxgiFormat);
-        switch (fmt)
+        switch (dxgiFormat())
         {
         case DXGI_FORMAT_R8G8B8A8_SINT:
         case DXGI_FORMAT_R8G8B8A8_SNORM:
@@ -17,12 +16,27 @@ namespace xor
         case DXGI_FORMAT_R8G8B8A8_UNORM:
         case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
         case DXGI_FORMAT_R32_UINT:
+        case DXGI_FORMAT_D32_FLOAT:
             return 4;
         default:
             XOR_CHECK(false, "Unknown format");
         }
 
         return 0;
+    }
+
+    bool Format::isDepthFormat() const
+    {
+        switch (dxgiFormat())
+        {
+        case DXGI_FORMAT_D16_UNORM:
+        case DXGI_FORMAT_D24_UNORM_S8_UINT:
+        case DXGI_FORMAT_D32_FLOAT:
+        case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+            return true;
+        default:
+            return false;
+        }
     }
 
     uint Format::rowSizeBytes(unsigned rowLength) const

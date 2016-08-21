@@ -40,6 +40,8 @@ namespace xor
 
         uint size() const;
         uint rowSizeBytes(uint rowLength) const;
+
+        bool isDepthFormat() const;
     };
 
 }

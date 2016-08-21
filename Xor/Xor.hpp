@@ -17,6 +17,7 @@
 // TODO: More convenience subclasses for SharedState to allow easy access to stuff
 // TODO: Split into multiple headers and cpps
 // TODO: viewHeap() is maybe needless, have a smarter way to locate descriptor heaps
+// TODO: Remove activeRenderTarget?
 
 namespace xor
 {
@@ -105,6 +106,12 @@ namespace xor
 
     namespace info
     {
+        enum class DepthMode
+        {
+            Disabled,
+            ReadOnly,
+            Write,
+        };
         class BufferInfo
         {
         protected:
@@ -291,6 +298,8 @@ namespace xor
             Info &renderTargetFormats(Format format);
             Info &renderTargetFormats(Span<const Format> formats);
             Info &renderTargetFormats(Span<const DXGI_FORMAT> formats);
+            Info &depthFormat(Format format);
+            Info &depthMode(info::DepthMode mode);
             Info &inputLayout(const info::InputLayoutInfo &ilInfo);
             Info &multisampling(uint samples, uint quality = 0);
             Info &topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
@@ -334,6 +343,11 @@ namespace xor
     };
 
     class TextureRTV : public TextureView
+    {
+    public:
+    };
+
+    class TextureDSV : public TextureView
     {
     public:
     };
@@ -411,6 +425,8 @@ namespace xor
         Texture    createTexture(const Texture::Info &info);
         TextureSRV createTextureSRV(Texture texture                 , const TextureSRV::Info &viewInfo = TextureSRV::Info());
         TextureSRV createTextureSRV(const Texture::Info &textureInfo, const TextureSRV::Info &viewInfo = TextureSRV::Info());
+        TextureDSV createTextureDSV(Texture texture                 , const TextureDSV::Info &viewInfo = TextureDSV::Info());
+        TextureDSV createTextureDSV(const Texture::Info &textureInfo, const TextureDSV::Info &viewInfo = TextureDSV::Info());
 
         CommandList graphicsCommandList();
 
@@ -476,8 +492,10 @@ namespace xor
 
         void clearRTV(TextureRTV &rtv, float4 color = 0);
 
+        void setViewport(uint2 size);
         void setRenderTargets();
         void setRenderTargets(TextureRTV &rtv);
+        void setRenderTargets(TextureRTV &rtv, TextureDSV &dsv);
 
         void setVBV(const BufferVBV &vbv);
         void setVBVs(Span<const BufferVBV> vbvs);

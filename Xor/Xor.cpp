@@ -12,6 +12,7 @@ namespace xor
     {
         static const char ShaderFileExtension[] = ".cso";
         static const uint MaxRTVs = 256;
+        static const uint MaxDSVs = 256;
         static const uint DescriptorHeapSize = 65536 * 4;
         static const uint DescriptorHeapRing = 65536 * 3;
 
@@ -576,6 +577,7 @@ namespace xor
             std::shared_ptr<UploadHeap> uploadHeap;
 
             ViewHeap rtvs;
+            ViewHeap dsvs;
             ViewHeap shaderViews;
 
             std::shared_ptr<ShaderLoader> shaderLoader;
@@ -609,6 +611,10 @@ namespace xor
                                 D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
                                 "rtvs",
                                 MaxRTVs);
+                dsvs = ViewHeap(device.Get(),
+                                D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
+                                "dsvs",
+                                MaxDSVs);
                 shaderViews = ViewHeap(device.Get(),
                                        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
                                        "shaderViews",
@@ -631,6 +637,8 @@ namespace xor
                 {
                 case D3D12_DESCRIPTOR_HEAP_TYPE_RTV:
                     return rtvs;
+                case D3D12_DESCRIPTOR_HEAP_TYPE_DSV:
+                    return dsvs;
                 case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
                     return shaderViews;
                 default:
@@ -996,7 +1004,7 @@ namespace xor
 
     Span<Adapter> Xor::adapters()
     {
-        return m_adapters;
+        return asSpan(m_adapters);
     }
 
     Adapter & Xor::defaultAdapter()
@@ -1154,6 +1162,10 @@ namespace xor
         RasterizerState.ConservativeRaster    = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
         RasterizerState.DepthClipEnable       = TRUE;
 
+        DepthStencilState.DepthEnable    = FALSE;
+        DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+        DepthStencilState.DepthFunc      = D3D12_COMPARISON_FUNC_ALWAYS;
+
         PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
         // Depth disabled by default
@@ -1202,6 +1214,34 @@ namespace xor
         NumRenderTargets = static_cast<uint>(formats.size());
         for (uint i = 0; i < NumRenderTargets; ++i)
             RTVFormats[i] = formats[i];
+        return *this;
+    }
+
+    GraphicsPipeline::Info & GraphicsPipeline::Info::depthFormat(Format format)
+    {
+        DSVFormat = format;
+        return *this;
+    }
+
+    GraphicsPipeline::Info & GraphicsPipeline::Info::depthMode(info::DepthMode mode)
+    {
+        switch (mode)
+        {
+        case info::DepthMode::Disabled:
+        default:
+            DepthStencilState.DepthEnable    = FALSE;
+            DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+            break;
+        case info::DepthMode::ReadOnly:
+            DepthStencilState.DepthEnable    = TRUE;
+            DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+        case info::DepthMode::Write:
+            DepthStencilState.DepthEnable    = TRUE;
+            DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        }
+
+        DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
+
         return *this;
     }
 
@@ -1405,6 +1445,16 @@ namespace xor
         return createBufferIBV(createBuffer(bufferInfo), viewInfo);
     }
 
+    static D3D12_RESOURCE_FLAGS textureFlags(const Texture::Info &info)
+    {
+        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+
+        if (info.format.isDepthFormat())
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+        return flags;
+    }
+
     Texture Device::createTexture(const Texture::Info & info)
     {
         Texture texture;
@@ -1429,7 +1479,7 @@ namespace xor
         desc.SampleDesc.Count   = 1;
         desc.SampleDesc.Quality = 0;
         desc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-        desc.Flags              = D3D12_RESOURCE_FLAG_NONE;
+        desc.Flags              = textureFlags(info);
 
         XOR_CHECK_HR(device()->CreateCommittedResource(
             &heap,
@@ -1479,6 +1529,34 @@ namespace xor
     TextureSRV Device::createTextureSRV(const Texture::Info & textureInfo, const TextureSRV::Info & viewInfo)
     {
         return createTextureSRV(createTexture(textureInfo), viewInfo);
+    }
+
+    TextureDSV Device::createTextureDSV(Texture texture, const TextureDSV::Info & viewInfo)
+    {
+        auto info = viewInfo.defaults(texture.info());
+
+        TextureDSV dsv;
+        dsv.m_texture = texture;
+        dsv.makeState().setParent(this);
+        dsv.S().descriptor = S().dsvs.allocateFromHeap();
+
+        D3D12_DEPTH_STENCIL_VIEW_DESC desc   = {};
+        desc.Format                          = info.format;
+        desc.ViewDimension                   = D3D12_DSV_DIMENSION_TEXTURE2D;
+        desc.Flags                           = D3D12_DSV_FLAG_NONE;
+        desc.Texture2D.MipSlice              = 0;
+
+        device()->CreateDepthStencilView(
+            texture.get(),
+            &desc,
+            dsv.S().descriptor.cpu);
+
+        return dsv;
+    }
+
+    TextureDSV Device::createTextureDSV(const Texture::Info & textureInfo, const TextureDSV::Info & viewInfo)
+    {
+        return createTextureDSV(createTexture(textureInfo), viewInfo);
     }
 
     CommandList Device::graphicsCommandList()
@@ -1763,6 +1841,27 @@ namespace xor
                                      nullptr);
     }
 
+    void CommandList::setViewport(uint2 size)
+    {
+        D3D12_VIEWPORT viewport = {};
+        D3D12_RECT scissor = {};
+
+        viewport.Width    = static_cast<float>(size.x);
+        viewport.Height   = static_cast<float>(size.y);
+        viewport.MinDepth = D3D12_MIN_DEPTH;
+        viewport.MaxDepth = D3D12_MAX_DEPTH;
+        viewport.TopLeftX = 0;
+        viewport.TopLeftY = 0;
+
+        scissor.left   = 0;
+        scissor.top    = 0;
+        scissor.right  = static_cast<LONG>(size.x);
+        scissor.bottom = static_cast<LONG>(size.y);
+
+        cmd()->RSSetViewports(1, &viewport);
+        cmd()->RSSetScissorRects(1, &scissor);
+    }
+
     void CommandList::setRenderTargets()
     {
         S().activeRenderTarget = Texture();
@@ -1775,6 +1874,7 @@ namespace xor
 
     void CommandList::setRenderTargets(TextureRTV &rtv)
     {
+        transition(rtv.m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
         S().activeRenderTarget = rtv.m_texture;
 
         cmd()->OMSetRenderTargets(1,
@@ -1782,25 +1882,22 @@ namespace xor
                                   FALSE,
                                   nullptr);
 
-        D3D12_VIEWPORT viewport = {};
-        D3D12_RECT scissor = {};
+        setViewport(rtv.texture()->size);
+    }
 
-        auto tex = rtv.texture();
+    void CommandList::setRenderTargets(TextureRTV & rtv, TextureDSV & dsv)
+    {
+        transition(rtv.m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        transition(dsv.m_texture, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
-        viewport.Width    = static_cast<float>(tex->size.x);
-        viewport.Height   = static_cast<float>(tex->size.y);
-        viewport.MinDepth = D3D12_MIN_DEPTH;
-        viewport.MaxDepth = D3D12_MAX_DEPTH;
-        viewport.TopLeftX = 0;
-        viewport.TopLeftY = 0;
+        S().activeRenderTarget = rtv.m_texture;
 
-        scissor.left   = 0;
-        scissor.top    = 0;
-        scissor.right  = static_cast<LONG>(tex->size.x);
-        scissor.bottom = static_cast<LONG>(tex->size.y);
+        cmd()->OMSetRenderTargets(1,
+                                  &rtv.S().descriptor.cpu,
+                                  FALSE,
+                                  &dsv.S().descriptor.cpu);
 
-        cmd()->RSSetViewports(1, &viewport);
-        cmd()->RSSetScissorRects(1, &scissor);
+        setViewport(rtv.texture()->size);
     }
 
     void CommandList::setVBV(const BufferVBV & vbv)
