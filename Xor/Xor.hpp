@@ -491,6 +491,7 @@ namespace xor
         void bind(GraphicsPipeline &pipeline);
 
         void clearRTV(TextureRTV &rtv, float4 color = 0);
+        void clearDSV(TextureDSV &dsv, float depth = 0);
 
         void setViewport(uint2 size);
         void setRenderTargets();
@@ -540,6 +541,7 @@ namespace xor
     public:
         enum class DebugLayer
         {
+            Default,
             Enabled,
             Disabled,
         };
@@ -550,7 +552,7 @@ namespace xor
 
     public:
 
-        Xor(DebugLayer debugLayer = DebugLayer::Enabled);
+        Xor(DebugLayer debugLayer = DebugLayer::Default);
         ~Xor();
 
         Span<Adapter> adapters();

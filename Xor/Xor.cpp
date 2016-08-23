@@ -949,6 +949,15 @@ namespace xor
 
     Xor::Xor(DebugLayer debugLayer)
     {
+        if (debugLayer == DebugLayer::Default)
+        {
+#if defined(_DEBUG)
+            debugLayer = DebugLayer::Enabled;
+#else
+            debugLayer = DebugLayer::Disabled;
+#endif
+        }
+
         if (debugLayer == DebugLayer::Enabled)
         {
             ComPtr<ID3D12Debug> debug;
@@ -1837,8 +1846,18 @@ namespace xor
 
         cmd()->ClearRenderTargetView(rtv.S().descriptor.cpu,
                                      color.data(),
+                                     0, nullptr);
+    }
+
+    void CommandList::clearDSV(TextureDSV & dsv, float depth)
+    {
+        transition(dsv.m_texture, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+        cmd()->ClearDepthStencilView(dsv.S().descriptor.cpu,
+                                     D3D12_CLEAR_FLAG_DEPTH,
+                                     depth,
                                      0,
-                                     nullptr);
+                                     0, nullptr);
     }
 
     void CommandList::setViewport(uint2 size)

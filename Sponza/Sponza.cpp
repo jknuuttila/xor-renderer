@@ -31,18 +31,22 @@ struct FPSCamera
         int lookDown  = 0;
         int lookLeft  = 0;
         int lookRight = 0;
+        int moveFast  = 0;
     } keys;
 
     float3 position = 0;
     Angle azimuth   = Angle(0);
     Angle elevation = Angle(0);
     float speed     = 1;
-    float turnSpeed = .1;
+    float turnSpeed = .2f;
 
     void update(const Window &window)
     {
         float x = 0;
         float z = 0;
+        float s = 1;
+
+        if (window.isKeyHeld(keys.moveFast)) s = 10;
 
         if (window.isKeyHeld(keys.forward))  z -= 1;
         if (window.isKeyHeld(keys.backward)) z += 1;
@@ -53,18 +57,18 @@ struct FPSCamera
 
         if (x != 0)
         {
-            x *= speed;
+            x *= speed * s;
             position += M.getRotationXAxis() * x;
         }
 
         if (z != 0)
         {
-            z *= speed;
+            z *= speed * s;
             position += M.getRotationZAxis() * z;
         }
 
-        if (window.isKeyHeld(keys.lookLeft))  azimuth.radians += turnSpeed;
-        if (window.isKeyHeld(keys.lookRight)) azimuth.radians -= turnSpeed;
+        if (window.isKeyHeld(keys.lookLeft))  azimuth.radians   += turnSpeed;
+        if (window.isKeyHeld(keys.lookRight)) azimuth.radians   -= turnSpeed;
         if (window.isKeyHeld(keys.lookUp))    elevation.radians += turnSpeed;
         if (window.isKeyHeld(keys.lookDown))  elevation.radians -= turnSpeed;
     }
@@ -73,7 +77,7 @@ struct FPSCamera
     {
         Matrix A = Matrix::axisAngle({0, 1, 0}, azimuth);
         Matrix E = Matrix::axisAngle({1, 0, 0}, elevation);
-        return E * A;
+        return A * E;
     }
 
     Matrix viewMatrix() const
@@ -129,7 +133,10 @@ public:
         camera.keys.lookLeft  = VK_LEFT;
         camera.keys.lookDown  = VK_DOWN;
         camera.keys.lookRight = VK_RIGHT;
+        camera.keys.moveFast  = VK_SHIFT;
         camera.position       = { -1000, 500, 0 };
+        camera.azimuth        = Angle::degrees(-90);
+        camera.speed          = 10;
     }
 
     void keyDown(int keyCode) override
@@ -146,12 +153,13 @@ public:
         auto backbuffer = swapChain.backbuffer();
 
         cmd.clearRTV(backbuffer, float4(0, 0, 0, 1));
+        cmd.clearDSV(depthBuffer, 0);
 
         BasicMesh::Constants constants;
         Matrix MVP =
             Matrix::projectionPerspective(size(),
                                           math::DefaultFov,
-                                          .1f, 1000.f)
+                                          .1f, 5000.f)
             * camera.viewMatrix();
             /*
             * Matrix::lookAt({ -1000, 500, 0000 },

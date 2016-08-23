@@ -34,6 +34,7 @@ namespace xor
         auto scene = importer.ReadFile(
             meshInfo.filename.cStr(),
             aiProcess_Triangulate           |
+            aiProcess_FlipUVs               |
             aiProcess_JoinIdenticalVertices |
             aiProcess_SortByPType           |
             (meshInfo.calculateTangentSpace ?
