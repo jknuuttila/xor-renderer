@@ -3,6 +3,8 @@
 
 #include "Core/TLog.hpp"
 
+#include "ImguiRenderer.sig.h"
+
 #include <unordered_map>
 #include <unordered_set>
 
@@ -568,7 +570,7 @@ namespace xor
 
         struct DeviceState : std::enable_shared_from_this<DeviceState>
         {
-            ComPtr<IDXGIAdapter3>       adapter;
+            Adapter                     adapter;
             ComPtr<ID3D12Device>        device;
             ComPtr<ID3D12CommandQueue>  graphicsQueue;
 
@@ -582,14 +584,20 @@ namespace xor
 
             std::shared_ptr<ShaderLoader> shaderLoader;
 
-            DeviceState(ComPtr<IDXGIAdapter3> pAdapter,
+            struct ImGui
+            {
+                TextureSRV fontAtlas;
+                GraphicsPipeline imguiRenderer;
+            } imgui;
+
+            DeviceState(Adapter adapter_,
                         ComPtr<ID3D12Device> pDevice,
                         std::shared_ptr<backend::ShaderLoader> pShaderLoader)
             {
 
-                adapter      = std::move(pAdapter);
-                device       = std::move(pDevice);
-                shaderLoader = std::move(pShaderLoader);
+                adapter       = std::move(adapter_);
+                device        = std::move(pDevice);
+                shaderLoader  = std::move(pShaderLoader);
 
                 {
                     D3D12_COMMAND_QUEUE_DESC desc ={};
@@ -906,16 +914,20 @@ namespace xor
         }
 
         TextureInfo::TextureInfo(const Image & image, Format fmt)
+            : TextureInfo(image.subresource(0))
+        {}
+
+        TextureInfo::TextureInfo(const ImageData & data, Format fmt)
         {
-            size = image.size();
+            size = data.size;
             if (fmt)
                 format = fmt;
             else
-                format = image.format();
+                format = data.format;
 
-            m_initializer = [&image] (CommandList &cmd, Texture &tex) 
+            m_initializer = [data] (CommandList &cmd, Texture &tex) 
             {
-                cmd.updateTexture(tex, image.subresource(0));
+                cmd.updateTexture(tex, data);
             };
         }
 
@@ -1082,10 +1094,46 @@ namespace xor
             XOR_CHECK_HR(infoQueue->PushStorageFilter(&filter));
         }
 
-        return Device(std::make_shared<DeviceState>(
-            m_adapter,
-            std::move(device),
-            m_shaderLoader));
+        return Device(*this,
+                      std::move(device),
+                      m_shaderLoader);
+    }
+
+    Device::Device(Adapter adapter,
+                   ComPtr<ID3D12Device> device,
+                   std::shared_ptr<backend::ShaderLoader> shaderLoader)
+    {
+        makeState(std::move(adapter), std::move(device), std::move(shaderLoader));
+
+        {
+            uint8_t *pixels = nullptr;
+            int2 size;
+
+            ImGuiIO &io = ImGui::GetIO();
+            io.Fonts->GetTexDataAsRGBA32(&pixels, &size.x, &size.y);
+
+            io.DisplaySize = float2(1600, 900);
+
+            ImageData data;
+            data.size = uint2(size);
+            data.format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+            data.setDefaultSizes();
+            data.data = Span<const uint8_t>(pixels, data.sizeBytes());
+
+            S().imgui.fontAtlas = createTextureSRV(Texture::Info(data));
+        }
+
+        S().imgui.imguiRenderer = createGraphicsPipeline(
+            GraphicsPipeline::Info()
+            .vertexShader("ImguiRenderer.vs")
+            .pixelShader("ImguiRenderer.ps")
+            .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+            .inputLayout(info::InputLayoutInfoBuilder()
+                         .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT)
+                         .element("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT)
+                         .element("COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM)));
+
+        ImGui::NewFrame();
     }
 
     Device::Device(StatePtr state)
@@ -1862,8 +1910,12 @@ namespace xor
 
     void CommandList::setViewport(uint2 size)
     {
+        setViewport(size, { 0, int2(size) });
+    }
+
+    void CommandList::setViewport(uint2 size, Rect scissor)
+    {
         D3D12_VIEWPORT viewport = {};
-        D3D12_RECT scissor = {};
 
         viewport.Width    = static_cast<float>(size.x);
         viewport.Height   = static_cast<float>(size.y);
@@ -1872,13 +1924,21 @@ namespace xor
         viewport.TopLeftX = 0;
         viewport.TopLeftY = 0;
 
-        scissor.left   = 0;
-        scissor.top    = 0;
-        scissor.right  = static_cast<LONG>(size.x);
-        scissor.bottom = static_cast<LONG>(size.y);
-
         cmd()->RSSetViewports(1, &viewport);
-        cmd()->RSSetScissorRects(1, &scissor);
+
+        setScissor(scissor);
+    }
+
+    void CommandList::setScissor(Rect scissor)
+    {
+        D3D12_RECT scissorRect = {};
+
+        scissorRect.left   = static_cast<LONG>(scissor.leftTop.x);
+        scissorRect.top    = static_cast<LONG>(scissor.leftTop.y);
+        scissorRect.right  = static_cast<LONG>(scissor.rightBottom.x);
+        scissorRect.bottom = static_cast<LONG>(scissor.rightBottom.y);
+
+        cmd()->RSSetScissorRects(1, &scissorRect);
     }
 
     void CommandList::setRenderTargets()
@@ -1917,6 +1977,30 @@ namespace xor
                                   &dsv.S().descriptor.cpu);
 
         setViewport(rtv.texture()->size);
+    }
+
+    BufferVBV CommandList::dynamicBufferVBV(Span<const uint8_t> bytes, uint stride)
+    {
+        auto block = uploadBytes(bytes);
+
+        BufferVBV vbv;
+        vbv.m_vbv.BufferLocation  = block.heap->GetGPUVirtualAddress();
+        vbv.m_vbv.BufferLocation += block.block.begin;
+        vbv.m_vbv.SizeInBytes     = static_cast<uint>(bytes.size());
+        vbv.m_vbv.StrideInBytes   = stride;
+        return vbv;
+    }
+
+    BufferIBV CommandList::dynamicBufferIBV(Span<const uint8_t> bytes, Format format)
+    {
+        auto block = uploadBytes(bytes);
+
+        BufferIBV ibv;
+        ibv.m_ibv.BufferLocation  = block.heap->GetGPUVirtualAddress();
+        ibv.m_ibv.BufferLocation += block.block.begin;
+        ibv.m_ibv.SizeInBytes     = static_cast<uint>(bytes.size());
+        ibv.m_ibv.Format          = format;
+        return ibv;
     }
 
     void CommandList::setVBV(const BufferVBV & vbv)
@@ -2049,6 +2133,54 @@ namespace xor
         cmd()->CopyTextureRegion(
             &dstLocation, dstPos.leftTop.x, dstPos.leftTop.y, 0,
             &srcLocation, srcRect.empty() ? nullptr : &srcBox);
+    }
+
+    void CommandList::drawImGui(TextureRTV & rtv)
+    {
+        ImGui::Render();
+
+        auto drawData = ImGui::GetDrawData();
+        XOR_ASSERT(drawData->Valid, "ImGui draw data is invalid!");
+
+        auto &imgui = device().S().imgui;
+
+        setRenderTargets(rtv);
+        bind(imgui.imguiRenderer);
+
+        uint2 resolution = rtv.texture()->size;
+        int4 prevClipRect = -1;
+
+        ImguiRenderer::Constants constants;
+        constants.reciprocalResolution = 1.f / float2(resolution);
+
+        for (int i = 0; i < drawData->CmdListsCount; ++i)
+        {
+            auto list = drawData->CmdLists[i];
+            auto vbv = dynamicBufferVBV(asConstSpan(list->VtxBuffer));
+            auto ibv = dynamicBufferIBV(asConstSpan(list->IdxBuffer));
+            setVBV(vbv);
+            setIBV(ibv);
+            setTopology();
+
+            uint indexOffset  = 0;
+            for (auto &d : list->CmdBuffer)
+            {
+                int4 clipRect = int4(float4(d.ClipRect));
+                // TODO: swizzle
+                if (any(clipRect != prevClipRect))
+                    setScissor({ int2(clipRect.x, clipRect.y), int2(clipRect.z, clipRect.w) });
+
+                setConstants(constants);
+                setShaderView(ImguiRenderer::tex, imgui.fontAtlas);
+                drawIndexed(d.ElemCount, indexOffset);
+
+                indexOffset += d.ElemCount;
+            }
+        }
+
+        setRenderTargets();
+
+        ImGui::NewFrame();
     }
 
     uint SwapChain::currentIndex()

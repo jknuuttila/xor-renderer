@@ -11,13 +11,13 @@
 namespace xor
 {
 
-#define XOR_DEBUG_BREAK_IF_FALSE(cond) if (!cond) \
+#define XOR_DEBUG_BREAK_IF_FALSE(cond) do { if (!cond) \
 { \
     if (IsDebuggerPresent()) \
         DebugBreak(); \
     else \
         TerminateProcess(GetCurrentProcess(), 1); \
-}
+} } while (false)
 
     namespace detail
     {

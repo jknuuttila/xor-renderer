@@ -6,8 +6,10 @@
 
 #pragma once
 
+#include "Core/Core.hpp"
+
 //---- Define assertion handler. Defaults to calling assert().
-//#define IM_ASSERT(_EXPR)  MyAssert(_EXPR)
+#define IM_ASSERT(_EXPR)  XOR_ASSERT(_EXPR, "")
 
 //---- Define attributes of all API symbols declarations, e.g. for DLL under Windows.
 //#define IMGUI_API __declspec( dllexport )
@@ -24,21 +26,19 @@
 //#define IMGUI_DISABLE_TEST_WINDOWS
 
 //---- Don't define obsolete functions names
-//#define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+#define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 
 //---- Implement STB libraries in a namespace to avoid conflicts
 //#define IMGUI_STB_NAMESPACE     ImGuiStb
 
 //---- Define constructor and implicit cast operators to convert back<>forth from your math types and ImVec2/ImVec4.
-/*
 #define IM_VEC2_CLASS_EXTRA                                                 \
-        ImVec2(const MyVec2& f) { x = f.x; y = f.y; }                       \
-        operator MyVec2() const { return MyVec2(x,y); }
+        ImVec2(const float2& f) { x = f.x; y = f.y; }                       \
+        operator float2() const { return float2(x,y); }
 
 #define IM_VEC4_CLASS_EXTRA                                                 \
-        ImVec4(const MyVec4& f) { x = f.x; y = f.y; z = f.z; w = f.w; }     \
-        operator MyVec4() const { return MyVec4(x,y,z,w); }
-*/
+        ImVec4(const float4& f) { x = f.x; y = f.y; z = f.z; w = f.w; }     \
+        operator float4() const { return float4(x,y,z,w); }
 
 //---- Tip: You can add extra functions within the ImGui:: namespace, here or in your own headers files.
 //---- e.g. create variants of the ImGui::Value() helper for your low-level math types, or your own widgets/helpers.

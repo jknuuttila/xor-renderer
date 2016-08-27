@@ -65,6 +65,8 @@ public:
         auto cmd        = device.graphicsCommandList();
         auto backbuffer = swapChain.backbuffer();
 
+        ImGui::ShowTestWindow();
+
         cmd.clearRTV(backbuffer, float4(0, 0, .25f, 1));
 
         cmd.setRenderTargets({backbuffer});
@@ -92,6 +94,7 @@ public:
 
         cmd.setRenderTargets();
 
+        cmd.drawImGui(backbuffer);
         device.execute(cmd);
         device.present(swapChain);
     }

@@ -13,6 +13,7 @@
   <ItemGroup>
     <ClInclude Include="Format.hpp" />
     <ClInclude Include="Image.hpp" />
+    <ClInclude Include="ImguiRenderer.sig.h" />
     <ClInclude Include="Material.hpp" />
     <ClInclude Include="Mesh.hpp" />
     <ClInclude Include="Xor.hpp" />
@@ -55,6 +56,19 @@
     <ProjectReference Include="..\Core\Core.vcxproj">
       <Project>{77a5ea23-cfc4-42b3-9f7c-b42df7d76362}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\external\imgui\DearImGui\DearImGui.vcxproj">
+      <Project>{c02d4e4a-a8a6-4763-a485-9541f4fade76}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="ImguiRenderer.ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="ImguiRenderer.vs.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+    </FxCompile>
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{AC764C74-7D44-43BC-9CAB-B470883B5549}</ProjectGuid>
@@ -109,6 +123,7 @@
       <AdditionalLibraryDirectories>$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>/IGNORE:4006 /IGNORE:4221 %(AdditionalOptions)</AdditionalOptions>
     </Lib>
+    <ProjectReference />
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -132,6 +147,7 @@
       <AdditionalLibraryDirectories>$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>/IGNORE:4006 /IGNORE:4221 %(AdditionalOptions)</AdditionalOptions>
     </Lib>
+    <ProjectReference />
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

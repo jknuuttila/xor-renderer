@@ -23,24 +23,15 @@ namespace xor
         }
     };
 
-    struct ImageRect
+    struct Rect
     {
-        uint2 leftTop           = 0;
-        uint2 rightBottom       = 0;
-        Subresource subresource = 0;
+        int2 leftTop           = 0;
+        int2 rightBottom       = 0;
 
-        ImageRect() = default;
-        ImageRect(uint2 leftTop)
-            : leftTop(leftTop)
-        {}
-        ImageRect(uint2 leftTop, uint2 rightBottom, Subresource subresource = 0)
+        Rect() = default;
+        Rect(int2 leftTop, int2 rightBottom = 0)
             : leftTop(leftTop)
             , rightBottom(rightBottom)
-            , subresource(subresource)
-        {}
-        ImageRect(uint2 leftTop, Subresource subresource)
-            : leftTop(leftTop)
-            , subresource(subresource)
         {}
 
         bool empty() const
@@ -51,8 +42,26 @@ namespace xor
 
         uint2 size() const
         {
-            return max(leftTop, rightBottom) - leftTop;
+            return uint2(max(leftTop, rightBottom) - leftTop);
         }
+    };
+
+    struct ImageRect : public Rect
+    {
+        Subresource subresource = 0;
+
+        ImageRect() = default;
+        ImageRect(int2 leftTop)
+            : Rect(leftTop)
+        {}
+        ImageRect(int2 leftTop, int2 rightBottom, Subresource subresource = 0)
+            : Rect(leftTop, rightBottom)
+            , subresource(subresource)
+        {}
+        ImageRect(int2 leftTop, Subresource subresource)
+            : Rect(leftTop)
+            , subresource(subresource)
+        {}
     };
 
     struct ImageData
@@ -63,6 +72,13 @@ namespace xor
         uint pitch     = 0;
         uint pixelSize = 0;
 
+        ImageData &setDefaultSizes()
+        {
+            pitch     = format.rowSizeBytes(size.x);
+            pixelSize = format.size();
+            return *this;
+        }
+
         template <typename T>
         const T &pixel(uint2 coords) const
         {
@@ -72,6 +88,11 @@ namespace xor
                 coords.x * pixelSize;
 
             return reinterpret_cast<const T &>(data[offset]);
+        }
+
+        size_t sizeBytes() const
+        {
+            return static_cast<size_t>(size.y) * pitch;
         }
     };
 

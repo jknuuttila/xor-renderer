@@ -27,6 +27,7 @@ namespace xor
     static const ::xor::backend::ShaderUAV<uavSlot> uavName = uavSlot;
 
 #define XOR_SAMPLER_BILINEAR(samplerName)
+#define XOR_SAMPLER_POINT(samplerName)
 
 #else
 
@@ -43,13 +44,17 @@ namespace xor
 
 #define XOR_SAMPLER_BILINEAR(samplerName) \
     SamplerState samplerName : register(s0);
+#define XOR_SAMPLER_POINT(samplerName) \
+    SamplerState samplerName : register(s1);
 
 #endif
 
 #define XOR_ROOT_SIGNATURE_BASE \
     "RootFlags(ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT)," \
     "StaticSampler(s0, " \
-        "filter = FILTER_MIN_MAG_LINEAR_MIP_POINT), "
+        "filter = FILTER_MIN_MAG_LINEAR_MIP_POINT), " \
+    "StaticSampler(s1, " \
+        "filter = FILTER_MIN_MAG_MIP_POINT), "
 
 #define XOR_ROOT_SIGNATURE_C(numCBVs) \
     XOR_ROOT_SIGNATURE_BASE \

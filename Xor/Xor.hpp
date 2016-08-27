@@ -5,6 +5,8 @@
 #include "Xor/Format.hpp"
 #include "Xor/Image.hpp"
 
+#include "external/imgui/imgui.h"
+
 #include <d3d12.h>
 #include <dxgi1_5.h>
 
@@ -25,6 +27,8 @@ namespace xor
     class CommandList;
     class Buffer;
     class Texture;
+
+    static const uint DefaultAlignment = 4;
 
     namespace backend
     {
@@ -193,6 +197,7 @@ namespace xor
                 , format(format)
             {}
             TextureInfo(const Image &image, Format fmt = Format());
+            TextureInfo(const ImageData &image, Format fmt = Format());
             TextureInfo(ID3D12Resource *texture);
 
             size_t sizeBytes() const;
@@ -407,6 +412,9 @@ namespace xor
 
         backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment);
 
+        Device(Adapter adapter,
+               ComPtr<ID3D12Device> device,
+               std::shared_ptr<backend::ShaderLoader> shaderLoader);
         Device(StatePtr state);
     public:
         Device() = default;
@@ -472,7 +480,7 @@ namespace xor
         // FIXME: This is horribly inefficient and bad
         void transition(const backend::Resource &resource, D3D12_RESOURCE_STATES state);
         void setupRootArguments();
-        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment);
+        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment = DefaultAlignment);
     public:
         CommandList() = default;
 
@@ -494,9 +502,19 @@ namespace xor
         void clearDSV(TextureDSV &dsv, float depth = 0);
 
         void setViewport(uint2 size);
+        void setViewport(uint2 size, Rect scissor);
+        void setScissor(Rect scissor);
         void setRenderTargets();
         void setRenderTargets(TextureRTV &rtv);
         void setRenderTargets(TextureRTV &rtv, TextureDSV &dsv);
+
+        template <typename T>
+        inline BufferVBV dynamicBufferVBV(Span<const T> vertices);
+        BufferVBV dynamicBufferVBV(Span<const uint8_t> bytes, uint stride);
+
+        template <typename T>
+        inline BufferIBV dynamicBufferIBV(Span<const T> indices);
+        BufferIBV dynamicBufferIBV(Span<const uint8_t> bytes, Format format);
 
         void setVBV(const BufferVBV &vbv);
         void setVBVs(Span<const BufferVBV> vbvs);
@@ -533,6 +551,8 @@ namespace xor
 
         void copyTexture(Texture &dst,       ImageRect dstPos,
                          const Texture &src, ImageRect srcArea = {});
+
+        void drawImGui(TextureRTV &rtv);
     };
 
     // Global initialization and deinitialization of the Xor renderer.
@@ -562,5 +582,29 @@ namespace xor
         void registerShaderTlog(StringView projectName,
                                 StringView shaderTlogPath);
     };
+
+    template<typename T>
+    inline BufferVBV CommandList::dynamicBufferVBV(Span<const T> vertices)
+    {
+        return dynamicBufferVBV(asBytes(vertices), sizeof(T));
+    }
+
+    template<typename T>
+    inline BufferIBV CommandList::dynamicBufferIBV(Span<const T> indices)
+    {
+        if (sizeof(T) == 2)
+        {
+            return dynamicBufferIBV(asBytes(indices), DXGI_FORMAT_R16_UINT);
+        }
+        else if (sizeof(T) == 4)
+        {
+            return dynamicBufferIBV(asBytes(indices), DXGI_FORMAT_R32_UINT);
+        }
+        else
+        {
+            XOR_CHECK(false, "Invalid index size");
+            __assume(0);
+        }
+    }
 }
 
