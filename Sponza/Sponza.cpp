@@ -186,7 +186,7 @@ public:
         }
 
         cmd.setRenderTargets();
-        cmd.drawImGui(backbuffer);
+        cmd.imguiEndFrame(backbuffer);
 
         device.execute(cmd);
         device.present(swapChain);

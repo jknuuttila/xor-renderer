@@ -447,6 +447,8 @@ namespace xor
         void execute(CommandList &cmd);
         void present(SwapChain &swapChain, bool vsync = true);
 
+        void imguiInput(const Input &input);
+
         SeqNum now();
         void whenCompleted(std::function<void()> f);
         void whenCompleted(std::function<void()> f, SeqNum seqNum);
@@ -558,7 +560,8 @@ namespace xor
         void copyTexture(Texture &dst,       ImageRect dstPos,
                          const Texture &src, ImageRect srcArea = {});
 
-        void drawImGui(TextureRTV &rtv);
+        void imguiBeginFrame(TextureRTV &rtv, double deltaTime);
+        void imguiEndFrame(TextureRTV &rtv);
     };
 
     // Global initialization and deinitialization of the Xor renderer.

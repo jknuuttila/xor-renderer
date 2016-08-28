@@ -41,25 +41,69 @@ namespace xor
         }
     }
 
+    void Window::keyEvent(int keyCode, bool pressed)
+    {
+        if (keyCode < NumKeyCodes)
+        {
+            m_keyHeld[keyCode] = pressed;
+            m_input.keyEvents.emplace_back(keyCode, pressed);
+
+            if (pressed)
+                keyDown(keyCode);
+            else
+                keyUp(keyCode);
+        }
+    }
+
+    void Window::mouseMove(int2 position)
+    {
+        m_input.mouseMovements.emplace_back(position);
+
+        static HCURSOR arrow = LoadCursorA(nullptr, IDC_ARROW);
+        SetCursor(arrow);
+    }
+
+    void Window::mouseWheel(int delta)
+    {
+        m_input.mouseWheel.emplace_back(delta);
+    }
+
     LRESULT Window::windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
         switch (uMsg)
         {
         case WM_CLOSE:
-            PostQuitMessage(0);
-            break;
+            PostQuitMessage(0); break;
+        case WM_LBUTTONDOWN:
+            keyEvent(VK_LBUTTON, true); break;
+        case WM_LBUTTONUP:
+            keyEvent(VK_LBUTTON, false); break;
+        case WM_RBUTTONDOWN:
+            keyEvent(VK_RBUTTON, true); break;
+        case WM_RBUTTONUP:
+            keyEvent(VK_RBUTTON, false); break;
+        case WM_MBUTTONDOWN:
+            keyEvent(VK_MBUTTON, true); break;
+        case WM_MBUTTONUP:
+            keyEvent(VK_MBUTTON, false); break;
         case WM_KEYDOWN:
-        {
-            int keyCode = static_cast<int>(wParam);
-            m_keyHeld[keyCode] = true;
-            keyDown(keyCode);
-            break;
-        }
+            keyEvent(static_cast<int>(wParam), true); break;
         case WM_KEYUP:
+            keyEvent(static_cast<int>(wParam), false); break;
+        case WM_MOUSEWHEEL:
+            mouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+            break;
+        case WM_MOUSEMOVE:
+            mouseMove({
+                static_cast<int16_t>(lParam),
+                static_cast<int16_t>(lParam >> 16)
+            });
+            break;
+        case WM_CHAR:
         {
-            int keyCode = static_cast<int>(wParam);
-            m_keyHeld[keyCode] = false;
-            keyUp(keyCode);
+            wchar_t ch = static_cast<wchar_t>(wParam);
+            if (ch == wParam)
+                m_input.characterInput.emplace_back(ch);
             break;
         }
         default:
@@ -121,6 +165,8 @@ namespace xor
 
     int Window::run()
     {
+        mainLoop(0.0);
+
         while (!m_terminate)
         {
             MSG msg;
@@ -133,7 +179,16 @@ namespace xor
                 DispatchMessageA(&msg);
             }
 
-            mainLoop();
+            if (!m_input.empty())
+            {
+                handleInput(m_input);
+                m_input.clear();
+            }
+
+            double delta = m_mainLoopTimer.seconds();
+            mainLoop(delta);
+
+            m_mainLoopTimer.reset();
         }
 
         return m_exitCode;
@@ -331,6 +386,22 @@ namespace xor
         , height(height)
         , pixels(width * height * BytesPerPixel)
     {
+    }
+
+    bool Input::empty() const
+    {
+        return mouseMovements.empty() &&
+            mouseWheel.empty() &&
+            keyEvents.empty() &&
+            characterInput.empty();
+    }
+
+    void Input::clear()
+    {
+        mouseMovements.clear();
+        mouseWheel.clear();
+        keyEvents.clear();
+        characterInput.clear();
     }
 
 }

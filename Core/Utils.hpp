@@ -157,10 +157,12 @@ namespace xor
 
     class Timer
     {
-        double period;
-        uint64_t start;
+        double period  = 0;
+        uint64_t start = 0;
     public:
         Timer();
+        void reset();
+
         double seconds() const;
         float secondsF() const { return static_cast<float>(seconds()); }
 

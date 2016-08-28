@@ -54,17 +54,23 @@ public:
         lena = device.createTextureSRV(Image(XOR_DATA "/Lena.png"));
     }
 
+    void handleInput(const Input &input) override
+    {
+        device.imguiInput(input);
+    }
+
     void keyDown(int keyCode) override
     {
         if (keyCode == VK_ESCAPE)
             terminate(0);
     }
 
-    void mainLoop() override
+    void mainLoop(double deltaTime) override
     {
         auto cmd        = device.graphicsCommandList();
         auto backbuffer = swapChain.backbuffer();
 
+        cmd.imguiBeginFrame(backbuffer, deltaTime);
         ImGui::ShowTestWindow();
 
         cmd.clearRTV(backbuffer, float4(0, 0, .25f, 1));
@@ -94,7 +100,7 @@ public:
 
         cmd.setRenderTargets();
 
-        cmd.drawImGui(backbuffer);
+        cmd.imguiEndFrame(backbuffer);
         device.execute(cmd);
         device.present(swapChain);
     }

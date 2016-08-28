@@ -1124,7 +1124,6 @@ namespace xor
             int2 size;
 
             ImGuiIO &io = ImGui::GetIO();
-            io.DisplaySize = float2(1600, 900);
             io.Fonts->AddFontDefault();
             io.Fonts->GetTexDataAsAlpha8(&pixels, &size.x, &size.y);
 
@@ -1135,6 +1134,26 @@ namespace xor
             data.data = Span<const uint8_t>(pixels, data.sizeBytes());
 
             S().imgui.fontAtlas = createTextureSRV(Texture::Info(data));
+
+            io.KeyMap[ImGuiKey_Tab]        = VK_TAB;
+            io.KeyMap[ImGuiKey_LeftArrow]  = VK_LEFT;
+            io.KeyMap[ImGuiKey_RightArrow] = VK_RIGHT;
+            io.KeyMap[ImGuiKey_UpArrow]    = VK_UP;
+            io.KeyMap[ImGuiKey_DownArrow]  = VK_DOWN;
+            io.KeyMap[ImGuiKey_PageUp]     = VK_PRIOR;
+            io.KeyMap[ImGuiKey_PageDown]   = VK_NEXT;
+            io.KeyMap[ImGuiKey_Home]       = VK_HOME;
+            io.KeyMap[ImGuiKey_End]        = VK_END;
+            io.KeyMap[ImGuiKey_Delete]     = VK_DELETE;
+            io.KeyMap[ImGuiKey_Backspace]  = VK_BACK;
+            io.KeyMap[ImGuiKey_Enter]      = VK_RETURN;
+            io.KeyMap[ImGuiKey_Escape]     = VK_ESCAPE;
+            io.KeyMap[ImGuiKey_A]          = 'A';
+            io.KeyMap[ImGuiKey_C]          = 'C';
+            io.KeyMap[ImGuiKey_V]          = 'V';
+            io.KeyMap[ImGuiKey_X]          = 'X';
+            io.KeyMap[ImGuiKey_Y]          = 'Y';
+            io.KeyMap[ImGuiKey_Z]          = 'Z';
         }
 
         S().imgui.imguiRenderer = createGraphicsPipeline(
@@ -1148,8 +1167,6 @@ namespace xor
                          .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT)
                          .element("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT)
                          .element("COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM)));
-
-        ImGui::NewFrame();
     }
 
     Device::Device(StatePtr state)
@@ -1700,6 +1717,42 @@ namespace xor
         S().progress.retireCommandLists();
     }
 
+    void Device::imguiInput(const Input & input)
+    {
+        ImGuiIO &io = ImGui::GetIO();
+
+        if (!input.mouseMovements.empty())
+            io.MousePos = float2(input.mouseMovements.back().position);
+
+        for (auto &w : input.mouseWheel)
+        {
+            if (w.delta > 0)
+                io.MouseWheel += 1;
+            else if (w.delta < 0)
+                io.MouseWheel -= 1;
+        }
+
+        for (auto &k : input.keyEvents)
+        {
+            switch (k.code)
+            {
+            case VK_LBUTTON:
+                io.MouseDown[0] = k.pressed; break;
+            case VK_RBUTTON:
+                io.MouseDown[1] = k.pressed; break;
+            case VK_MBUTTON:
+                io.MouseDown[2] = k.pressed; break;
+            default:
+                if (k.code < 512)
+                    io.KeysDown[k.code] = k.pressed;
+                break;
+            }
+        }
+
+        for (auto ch : input.characterInput)
+            io.AddInputCharacter(static_cast<ImWchar>(ch));
+    }
+
     SeqNum Device::now()
     {
         return S().progress.now();
@@ -2172,7 +2225,16 @@ namespace xor
             &srcLocation, srcRect.empty() ? nullptr : &srcBox);
     }
 
-    void CommandList::drawImGui(TextureRTV & rtv)
+    void CommandList::imguiBeginFrame(TextureRTV & rtv, double deltaTime)
+    {
+        ImGuiIO &io = ImGui::GetIO();
+        io.DisplaySize = float2(rtv.m_texture->size);
+        io.DeltaTime   = static_cast<float>(deltaTime);
+
+        ImGui::NewFrame();
+    }
+
+    void CommandList::imguiEndFrame(TextureRTV & rtv)
     {
         ImGui::Render();
 
@@ -2216,8 +2278,6 @@ namespace xor
         }
 
         setRenderTargets();
-
-        ImGui::NewFrame();
     }
 
     uint SwapChain::currentIndex()

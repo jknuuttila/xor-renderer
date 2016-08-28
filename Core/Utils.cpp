@@ -12,13 +12,17 @@ namespace xor
     Timer::Timer()
     {
         LARGE_INTEGER f;
-        LARGE_INTEGER now;
-
         QueryPerformanceFrequency(&f);
-        QueryPerformanceCounter(&now);
-
         period = 1.0 / static_cast<double>(f.QuadPart);
-        start  = now.QuadPart;
+
+        reset();
+    }
+
+    void Timer::reset()
+    {
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        start = now.QuadPart;
     }
 
     double Timer::seconds() const
