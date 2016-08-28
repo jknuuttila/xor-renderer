@@ -515,6 +515,9 @@ namespace xor
 
             void scanChangedSources();
             void registerBuildInfo(std::shared_ptr<const BuildInfo> buildInfo);
+
+            void registerShaderTlog(StringView projectName,
+                                    StringView shaderTlogPath);
         };
 
         struct CommandListState : DeviceChild
@@ -692,7 +695,8 @@ namespace xor
 
                 // Queue up a no-op lambda, that holds the resource ComPtr by value.
                 // When the Device has executed it, it will get destroyed, freeing the last reference.
-                device().whenCompleted([resource = std::move(resource)] {});
+                if (auto dev = device())
+                    dev.whenCompleted([resource = std::move(resource)]{});
             }
         };
 
@@ -702,11 +706,13 @@ namespace xor
 
             ~DescriptorViewState()
             {
-                auto dev = device();
-                dev.whenCompleted([dev, descriptor = descriptor] () mutable
+                if (auto dev = device())
                 {
-                    dev.S().releaseDescriptor(descriptor);
-                });
+                    dev.whenCompleted([dev, descriptor = descriptor]() mutable
+                    {
+                        dev.S().releaseDescriptor(descriptor);
+                    });
+                }
             }
         };
 
@@ -802,7 +808,8 @@ namespace xor
                 if (!pso)
                     return;
 
-                device().whenCompleted([pso = std::move(pso)] {});
+                if (auto dev = device())
+                    dev.whenCompleted([pso = std::move(pso)]{});
             }
 
             ~PipelineState()
@@ -846,6 +853,12 @@ namespace xor
                 data->timestamp = data->buildInfo->targetTimestamp();
                 log("ShaderLoader", "Registering shader %s for tracking.\n", shaderPath.cStr());
             }
+        }
+
+        void ShaderLoader::registerShaderTlog(StringView projectName, StringView shaderTlogPath)
+        {
+            for (auto &buildInfo : scanBuildInfos(shaderTlogPath, ShaderFileExtension))
+                registerBuildInfo(buildInfo);
         }
 
         void ShaderLoader::ShaderData::rebuildPipelines()
@@ -1049,8 +1062,7 @@ namespace xor
 
     void Xor::registerShaderTlog(StringView projectName, StringView shaderTlogPath)
     {
-        for (auto &buildInfo : scanBuildInfos(shaderTlogPath, ShaderFileExtension))
-            m_shaderLoader->registerBuildInfo(buildInfo);
+        m_shaderLoader->registerShaderTlog(projectName, shaderTlogPath);
     }
 
     Device Adapter::createDevice()
@@ -1105,18 +1117,20 @@ namespace xor
     {
         makeState(std::move(adapter), std::move(device), std::move(shaderLoader));
 
+        S().shaderLoader->registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
+
         {
             uint8_t *pixels = nullptr;
             int2 size;
 
             ImGuiIO &io = ImGui::GetIO();
-            io.Fonts->GetTexDataAsRGBA32(&pixels, &size.x, &size.y);
-
             io.DisplaySize = float2(1600, 900);
+            io.Fonts->AddFontDefault();
+            io.Fonts->GetTexDataAsAlpha8(&pixels, &size.x, &size.y);
 
             ImageData data;
-            data.size = uint2(size);
-            data.format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+            data.size   = uint2(size);
+            data.format = DXGI_FORMAT_R8_UNORM;
             data.setDefaultSizes();
             data.data = Span<const uint8_t>(pixels, data.sizeBytes());
 
@@ -1128,6 +1142,8 @@ namespace xor
             .vertexShader("ImguiRenderer.vs")
             .pixelShader("ImguiRenderer.ps")
             .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+            .winding(false)
+            .blend(0, true)
             .inputLayout(info::InputLayoutInfoBuilder()
                          .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT)
                          .element("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT)
@@ -1333,6 +1349,27 @@ namespace xor
     GraphicsPipeline::Info &GraphicsPipeline::Info::cull(D3D12_CULL_MODE cullMode)
     {
         RasterizerState.CullMode = cullMode;
+        return *this;
+    }
+
+    GraphicsPipeline::Info &GraphicsPipeline::Info::winding(bool counterClockWise)
+    {
+        RasterizerState.FrontCounterClockwise = static_cast<BOOL>(counterClockWise);
+        return *this;
+    }
+
+    GraphicsPipeline::Info & GraphicsPipeline::Info::blend(uint renderTarget, bool enabled, D3D12_BLEND src, D3D12_BLEND dst, D3D12_BLEND_OP op)
+    {
+        XOR_ASSERT(renderTarget < 8, "Invalid render target index");
+        auto &rt = BlendState.RenderTarget[renderTarget];
+        rt.BlendEnable    = static_cast<BOOL>(enabled);
+        rt.LogicOpEnable  = FALSE;
+        rt.BlendOp        = op;
+        rt.SrcBlend       = src;
+        rt.DestBlend      = dst;
+        rt.BlendOpAlpha   = D3D12_BLEND_OP_ADD;
+        rt.SrcBlendAlpha  = D3D12_BLEND_SRC_ALPHA;
+        rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
         return *this;
     }
 

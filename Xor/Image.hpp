@@ -29,6 +29,7 @@ namespace xor
         int2 rightBottom       = 0;
 
         Rect() = default;
+        Rect(int x, int y) : leftTop(x, y) {}
         Rect(int2 leftTop, int2 rightBottom = 0)
             : leftTop(leftTop)
             , rightBottom(rightBottom)
@@ -53,6 +54,9 @@ namespace xor
         ImageRect() = default;
         ImageRect(int2 leftTop)
             : Rect(leftTop)
+        {}
+        ImageRect(int x, int y)
+            : Rect(x, y)
         {}
         ImageRect(int2 leftTop, int2 rightBottom, Subresource subresource = 0)
             : Rect(leftTop, rightBottom)

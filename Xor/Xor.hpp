@@ -310,6 +310,12 @@ namespace xor
             Info &topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
             Info &fill(D3D12_FILL_MODE fillMode);
             Info &cull(D3D12_CULL_MODE cullMode);
+            Info &winding(bool counterClockWise);
+            Info &blend(uint renderTarget,
+                        bool enabled = false,
+                        D3D12_BLEND src = D3D12_BLEND_ONE,
+                        D3D12_BLEND dst = D3D12_BLEND_INV_SRC_ALPHA,
+                        D3D12_BLEND_OP op = D3D12_BLEND_OP_ADD);
         };
     };
 

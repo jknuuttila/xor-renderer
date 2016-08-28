@@ -9,7 +9,7 @@ struct PSInput
 [RootSignature(IMGUIRENDERER_ROOT_SIGNATURE)]
 float4 main(PSInput i) : SV_Target
 {
-    float4 texColor  = tex.Sample(pointSampler, i.uv.xy);
+    float  texColor  = tex.Sample(pointSampler, i.uv.xy);
     float4 vertColor = i.color;
     return texColor * vertColor;
 }

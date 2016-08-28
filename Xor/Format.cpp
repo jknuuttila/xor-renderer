@@ -9,6 +9,12 @@ namespace xor
 
         switch (dxgiFormat())
         {
+        case DXGI_FORMAT_R8_SINT:
+        case DXGI_FORMAT_R8_SNORM:
+        case DXGI_FORMAT_R8_TYPELESS:
+        case DXGI_FORMAT_R8_UINT:
+        case DXGI_FORMAT_R8_UNORM:
+            return 1;
         case DXGI_FORMAT_R8G8B8A8_SINT:
         case DXGI_FORMAT_R8G8B8A8_SNORM:
         case DXGI_FORMAT_R8G8B8A8_TYPELESS:
