@@ -58,9 +58,6 @@ namespace xor
     void Window::mouseMove(int2 position)
     {
         m_input.mouseMovements.emplace_back(position);
-
-        static HCURSOR arrow = LoadCursorA(nullptr, IDC_ARROW);
-        SetCursor(arrow);
     }
 
     void Window::mouseWheel(int delta)

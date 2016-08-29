@@ -673,7 +673,8 @@ namespace xor
             struct Backbuffer
             {
                 SeqNum seqNum = InvalidSeqNum;
-                TextureRTV rtv;
+                TextureRTV rtvSRGB;
+                TextureRTV rtvGamma;
             };
             std::vector<Backbuffer> backbuffers;
 
@@ -1124,6 +1125,7 @@ namespace xor
             int2 size;
 
             ImGuiIO &io = ImGui::GetIO();
+            io.DeltaTime = 1.f/60.f;
             io.Fonts->AddFontDefault();
             io.Fonts->GetTexDataAsAlpha8(&pixels, &size.x, &size.y);
 
@@ -1160,7 +1162,7 @@ namespace xor
             GraphicsPipeline::Info()
             .vertexShader("ImguiRenderer.vs")
             .pixelShader("ImguiRenderer.ps")
-            .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+            .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM)
             .winding(false)
             .blend(0, true)
             .inputLayout(info::InputLayoutInfoBuilder()
@@ -1214,7 +1216,7 @@ namespace xor
         {
             SwapChainState::Backbuffer bb;
 
-            auto &tex = bb.rtv.m_texture;
+            auto &tex = bb.rtvSRGB.m_texture;
             tex.makeState().setParent(this);
             XOR_CHECK_HR(swapChain.S().swapChain->GetBuffer(
                 i,
@@ -1223,18 +1225,31 @@ namespace xor
 
             tex.makeInfo() = Texture::Info(tex.S().resource.Get());
 
-            bb.rtv.makeState().setParent(this);
-            bb.rtv.S().descriptor = S().rtvs.allocateFromHeap();
+            bb.rtvGamma.m_texture = bb.rtvSRGB.m_texture;
+
+            bb.rtvSRGB.makeState().setParent(this);
+            bb.rtvGamma.makeState().setParent(this);
+
+            bb.rtvSRGB.S().descriptor  = S().rtvs.allocateFromHeap();
+            bb.rtvGamma.S().descriptor = S().rtvs.allocateFromHeap();
+
             {
                 D3D12_RENDER_TARGET_VIEW_DESC desc = {};
                 desc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
                 desc.ViewDimension        = D3D12_RTV_DIMENSION_TEXTURE2D;
                 desc.Texture2D.MipSlice   = 0;
                 desc.Texture2D.PlaneSlice = 0;
+
                 device()->CreateRenderTargetView(
                     tex.S().resource.Get(),
                     &desc,
-                    bb.rtv.S().descriptor.cpu);
+                    bb.rtvSRGB.S().descriptor.cpu);
+
+                desc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM;
+                device()->CreateRenderTargetView(
+                    tex.S().resource.Get(),
+                    &desc,
+                    bb.rtvGamma.S().descriptor.cpu);
             }
 
             swapChain.S().backbuffers.emplace_back(std::move(bb));
@@ -1592,12 +1607,32 @@ namespace xor
         desc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
         desc.Flags              = textureFlags(info);
 
+        D3D12_CLEAR_VALUE clearValue = {};
+        clearValue.Format = info.format;
+        if (info.format.isDepthFormat())
+        {
+            clearValue.DepthStencil.Depth   = 0;
+            clearValue.DepthStencil.Stencil = 0;
+        }
+        else
+        {
+            clearValue.Color[0] = 0;
+            clearValue.Color[1] = 0;
+            clearValue.Color[2] = 0;
+            clearValue.Color[3] = 0;
+        }
+
+        bool hasClearValue =
+            !!(desc.Flags &
+                ( D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+                | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET));
+
         XOR_CHECK_HR(device()->CreateCommittedResource(
             &heap,
             D3D12_HEAP_FLAG_NONE,
             &desc,
             texture.S().state,
-            nullptr,
+            hasClearValue ? &clearValue : nullptr,
             __uuidof(ID3D12Resource),
             &texture.S().resource));
 
@@ -1704,7 +1739,7 @@ namespace xor
 
         {
             auto toPresent = graphicsCommandList();
-            toPresent.transition(backbuffer.rtv.m_texture, D3D12_RESOURCE_STATE_PRESENT);
+            toPresent.transition(backbuffer.rtvSRGB.m_texture, D3D12_RESOURCE_STATE_PRESENT);
             execute(toPresent);
         }
 
@@ -1717,7 +1752,7 @@ namespace xor
         S().progress.retireCommandLists();
     }
 
-    void Device::imguiInput(const Input & input)
+    Device::ImguiInput Device::imguiInput(const Input & input)
     {
         ImGuiIO &io = ImGui::GetIO();
 
@@ -1751,6 +1786,17 @@ namespace xor
 
         for (auto ch : input.characterInput)
             io.AddInputCharacter(static_cast<ImWchar>(ch));
+
+        io.KeyCtrl  = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        io.KeyShift = (GetKeyState(VK_SHIFT)   & 0x8000) != 0;
+        io.KeyAlt   = (GetKeyState(VK_MENU)    & 0x8000) != 0;
+        io.KeySuper = false;
+
+        ImguiInput retval;
+        retval.wantsKeyboard = io.WantCaptureKeyboard;
+        retval.wantsMouse    = io.WantCaptureMouse;
+        retval.wantsText     = io.WantTextInput;
+        return retval;
     }
 
     SeqNum Device::now()
@@ -2225,17 +2271,26 @@ namespace xor
             &srcLocation, srcRect.empty() ? nullptr : &srcBox);
     }
 
-    void CommandList::imguiBeginFrame(TextureRTV & rtv, double deltaTime)
+    void CommandList::imguiBeginFrame(SwapChain &swapChain, double deltaTime)
     {
         ImGuiIO &io = ImGui::GetIO();
-        io.DisplaySize = float2(rtv.m_texture->size);
+        io.DisplaySize = float2(swapChain.backbuffer(false).m_texture->size);
         io.DeltaTime   = static_cast<float>(deltaTime);
+
+        static HCURSOR arrow = LoadCursorA(nullptr, IDC_ARROW);
+
+        if (io.MouseDrawCursor)
+            SetCursor(nullptr);
+        else
+            SetCursor(arrow);
 
         ImGui::NewFrame();
     }
 
-    void CommandList::imguiEndFrame(TextureRTV & rtv)
+    void CommandList::imguiEndFrame(SwapChain &swapChain)
     {
+        auto rtv = swapChain.backbuffer(false);
+
         ImGui::Render();
 
         auto drawData = ImGui::GetDrawData();
@@ -2298,9 +2353,10 @@ namespace xor
         }
     }
 
-    TextureRTV SwapChain::backbuffer()
+    TextureRTV SwapChain::backbuffer(bool sRGB)
     {
-        return S().backbuffers[currentIndex()].rtv;
+        auto &bb = S().backbuffers[currentIndex()];
+        return sRGB ? bb.rtvSRGB : bb.rtvGamma;
     }
 
     Texture TextureView::texture()

@@ -158,7 +158,7 @@ public:
         }
     }
 
-    void mainLoop() override
+    void mainLoop(double deltaTime) override
     {
         auto &f = m_frames[m_frameNumber % BufferCount];
         ++m_frameNumber;

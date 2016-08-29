@@ -447,7 +447,13 @@ namespace xor
         void execute(CommandList &cmd);
         void present(SwapChain &swapChain, bool vsync = true);
 
-        void imguiInput(const Input &input);
+        struct ImguiInput
+        {
+            bool wantsMouse    = false;
+            bool wantsKeyboard = false;
+            bool wantsText     = false;
+        };
+        ImguiInput imguiInput(const Input &input);
 
         SeqNum now();
         void whenCompleted(std::function<void()> f);
@@ -465,7 +471,7 @@ namespace xor
     public:
         SwapChain() = default;
 
-        TextureRTV backbuffer();
+        TextureRTV backbuffer(bool sRGB = true);
     };
 
     class CommandList : private backend::SharedState<backend::CommandListState>
@@ -560,8 +566,8 @@ namespace xor
         void copyTexture(Texture &dst,       ImageRect dstPos,
                          const Texture &src, ImageRect srcArea = {});
 
-        void imguiBeginFrame(TextureRTV &rtv, double deltaTime);
-        void imguiEndFrame(TextureRTV &rtv);
+        void imguiBeginFrame(SwapChain &swapChain, double deltaTime);
+        void imguiEndFrame(SwapChain &swapChain);
     };
 
     // Global initialization and deinitialization of the Xor renderer.

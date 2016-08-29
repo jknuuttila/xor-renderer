@@ -139,23 +139,40 @@ public:
         camera.speed          = 10;
     }
 
+    void handleInput(const Input &input) override
+    {
+        auto imguiInput = device.imguiInput(input);
+    }
+
     void keyDown(int keyCode) override
     {
         if (keyCode == VK_ESCAPE)
             terminate(0);
     }
 
-    void mainLoop() override
+    void mainLoop(double deltaTime) override
     {
         camera.update(*this);
 
         auto cmd        = device.graphicsCommandList();
         auto backbuffer = swapChain.backbuffer();
 
-        ImGui::ShowTestWindow();
-
+        cmd.imguiBeginFrame(swapChain, deltaTime);
         cmd.clearRTV(backbuffer, float4(0, 0, 0, 1));
         cmd.clearDSV(depthBuffer, 0);
+
+        if (ImGui::Begin("Sponza", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Text("Hello, Sponza!");
+            ImGui::InputFloat3("Position", camera.position.data());
+            if (ImGui::Button("Reset"))
+            {
+                camera.position  = { -1000, 500, 0 };
+                camera.azimuth   = Angle::degrees(-90);
+                camera.elevation = Angle(0);
+            }
+        }
+        ImGui::End();
 
         BasicMesh::Constants constants;
         Matrix MVP =
@@ -186,7 +203,7 @@ public:
         }
 
         cmd.setRenderTargets();
-        cmd.imguiEndFrame(backbuffer);
+        cmd.imguiEndFrame(swapChain);
 
         device.execute(cmd);
         device.present(swapChain);
