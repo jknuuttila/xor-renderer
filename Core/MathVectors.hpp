@@ -60,7 +60,7 @@ namespace xor
             T w = 0;
 
             constexpr VectorBase() = default;
-            constexpr VectorBase(T value)  : x(value), y(value), z(value) {}
+            constexpr VectorBase(T value)  : x(value), y(value), z(value), w(value) {}
             constexpr VectorBase(T x, T y, T z = 0, T w = 0) : x(x), y(y), z(z), w(w) {}
 
             template <typename U>

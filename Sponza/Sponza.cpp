@@ -164,7 +164,7 @@ public:
         if (ImGui::Begin("Sponza", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::Text("Hello, Sponza!");
-            ImGui::InputFloat3("Position", camera.position.data());
+            ImGui::InputFloat3("Position", camera.position.data(), 2);
             if (ImGui::Button("Reset"))
             {
                 camera.position  = { -1000, 500, 0 };

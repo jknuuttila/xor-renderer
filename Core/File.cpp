@@ -347,7 +347,14 @@ namespace xor
 
     bool File::exists(const String & path)
     {
-        return fs::exists(fs::path(path.cStr()));
+        try
+        {
+            return fs::exists(fs::path(path.cStr()));
+        }
+        catch (const std::invalid_argument &)
+        {
+            return false;
+        }
     }
 
     uint64_t File::lastWritten(const String & path)

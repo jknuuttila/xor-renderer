@@ -1129,6 +1129,11 @@ namespace xor
             io.Fonts->AddFontDefault();
             io.Fonts->GetTexDataAsAlpha8(&pixels, &size.x, &size.y);
 
+            ImGuiStyle &style = ImGui::GetStyle();
+            style.Colors[ImGuiCol_FrameBg]        = float4(70, 70, 70, 77) / 255;
+            style.Colors[ImGuiCol_FrameBgHovered] = float4(110, 110, 110, 102) / 255;
+            style.Colors[ImGuiCol_FrameBgActive]  = float4(200, 70, 70, 102) / 255;
+
             ImageData data;
             data.size   = uint2(size);
             data.format = DXGI_FORMAT_R8_UNORM;
