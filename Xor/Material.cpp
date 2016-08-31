@@ -34,7 +34,11 @@ namespace xor
 
         if (File::exists(path))
         {
-            texture = device.createTextureSRV(Texture::Info(Image(path)));
+            texture = device.createTextureSRV(
+                Texture::Info(
+                    Image(Image::Builder()
+                          .filename(path)
+                          .generateMipmaps())));
 
             auto bytes = texture.texture()->sizeBytes();
 

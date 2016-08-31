@@ -51,7 +51,10 @@ public:
             .inputLayout(cube.inputLayout())
             .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB));
 
-        lena = device.createTextureSRV(Image(XOR_DATA "/Lena.png"));
+        lena = device.createTextureSRV(
+            Image(Image::Builder()
+                  .filename(XOR_DATA "/Lena.png")
+                  .generateMipmaps()));
     }
 
     void handleInput(const Input &input) override

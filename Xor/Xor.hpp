@@ -190,6 +190,7 @@ namespace xor
         public:
             uint2 size;
             Format format;
+            uint mipLevels = 1;
 
             TextureInfo() = default;
             TextureInfo(uint2 size, Format format)
@@ -560,8 +561,7 @@ namespace xor
                           size_t offset = 0);
         void updateTexture(Texture &texture,
                            ImageData data,
-                           uint2 pos = 0,
-                           Subresource sr = 0);
+                           ImageRect dstPos = {});
 
         void copyTexture(Texture &dst,       ImageRect dstPos,
                          const Texture &src, ImageRect srcArea = {});

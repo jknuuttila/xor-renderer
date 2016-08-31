@@ -928,8 +928,27 @@ namespace xor
         }
 
         TextureInfo::TextureInfo(const Image & image, Format fmt)
-            : TextureInfo(image.subresource(0))
-        {}
+        {
+            size = image.size();
+
+            if (fmt)
+                format = fmt;
+            else
+                format = image.format();
+
+            mipLevels = image.mipLevels();
+
+            m_initializer = [&image] (CommandList &cmd, Texture &tex) 
+            {
+                auto mipLevels = image.mipLevels();
+                for (uint m = 0; m < mipLevels; ++m)
+                {
+                    cmd.updateTexture(tex,
+                                      image.subresource(m),
+                                      Subresource(m));
+                }
+            };
+        }
 
         TextureInfo::TextureInfo(const ImageData & data, Format fmt)
         {
@@ -1593,24 +1612,24 @@ namespace xor
         texture.makeState().setParent(this);
 
         D3D12_HEAP_PROPERTIES heap = {};
-        heap.Type                 = D3D12_HEAP_TYPE_DEFAULT;
-        heap.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-        heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-        heap.CreationNodeMask     = 0;
-        heap.VisibleNodeMask      = 0;
+        heap.Type                  = D3D12_HEAP_TYPE_DEFAULT;
+        heap.CPUPageProperty       = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        heap.MemoryPoolPreference  = D3D12_MEMORY_POOL_UNKNOWN;
+        heap.CreationNodeMask      = 0;
+        heap.VisibleNodeMask       = 0;
 
         D3D12_RESOURCE_DESC desc = {};
-        desc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        desc.Alignment          = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
-        desc.Width              = info.size.x;
-        desc.Height             = info.size.y;
-        desc.DepthOrArraySize   = 1;
-        desc.MipLevels          = 1;
-        desc.Format             = info.format;
-        desc.SampleDesc.Count   = 1;
-        desc.SampleDesc.Quality = 0;
-        desc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-        desc.Flags              = textureFlags(info);
+        desc.Dimension           = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        desc.Alignment           = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+        desc.Width               = info.size.x;
+        desc.Height              = info.size.y;
+        desc.DepthOrArraySize    = 1;
+        desc.MipLevels           = info.mipLevels;
+        desc.Format              = info.format;
+        desc.SampleDesc.Count    = 1;
+        desc.SampleDesc.Quality  = 0;
+        desc.Layout              = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        desc.Flags               = textureFlags(info);
 
         D3D12_CLEAR_VALUE clearValue = {};
         clearValue.Format = info.format;
@@ -2220,16 +2239,16 @@ namespace xor
             block.block.size());
     }
 
-    void CommandList::updateTexture(Texture & texture, ImageData data, uint2 pos, Subresource sr)
+    void CommandList::updateTexture(Texture & texture, ImageData data, ImageRect dstPos)
     {
         auto block = uploadBytes(data.data, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
 
         D3D12_TEXTURE_COPY_LOCATION dst = {};
         dst.pResource                   = texture.get();
         dst.Type                        = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-        dst.SubresourceIndex            = sr.index(1);
+        dst.SubresourceIndex            = dstPos.subresource.index(texture->mipLevels);
 
-        D3D12_TEXTURE_COPY_LOCATION src = {};
+        D3D12_TEXTURE_COPY_LOCATION src        = {};
         src.pResource                          = block.heap;
         src.Type                               = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
         src.PlacedFootprint.Offset             = static_cast<UINT64>(block.block.begin);
@@ -2242,7 +2261,7 @@ namespace xor
         transition(texture, D3D12_RESOURCE_STATE_COPY_DEST);
         cmd()->CopyTextureRegion(
             &dst,
-            pos.x, pos.y, 0,
+            dstPos.leftTop.x, dstPos.leftTop.y, 0,
             &src,
             nullptr);
     }

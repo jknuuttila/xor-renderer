@@ -66,6 +66,9 @@ namespace xor
             : Rect(leftTop)
             , subresource(subresource)
         {}
+        ImageRect(Subresource subresource)
+            : subresource(subresource)
+        {}
     };
 
     struct ImageData
@@ -100,20 +103,47 @@ namespace xor
         }
     };
 
+    namespace info
+    {
+        class ImageInfo
+        {
+        public:
+            static const int NoMipmaps  = 0;
+            static const int AllMipmaps = -1;
+
+            String filename;
+            int generateMipmaps = NoMipmaps;
+
+            ImageInfo() = default;
+            ImageInfo(const char *filename) : filename(filename) {}
+            ImageInfo(String filename) : filename(std::move(filename)) {}
+        };
+
+        class ImageInfoBuilder : public ImageInfo
+        {
+        public:
+            ImageInfoBuilder &filename(String filename) { ImageInfo::filename = std::move(filename); return *this; }
+            ImageInfoBuilder &generateMipmaps(int mipmaps = AllMipmaps) { ImageInfo::generateMipmaps = mipmaps; return *this; }
+        };
+    }
+
     class Image
     {
         struct State;
         std::shared_ptr<State> m_state;
-
-        void load(const String &filename, Format format = Format());
     public:
+        using Info    = info::ImageInfo;
+        using Builder = info::ImageInfoBuilder;
+
         Image() = default;
-        Image(const String &filename);
+        Image(const Info &info);
 
         explicit operator bool() const { return !!m_state; }
 
         uint2 size() const;
         Format format() const;
+        uint mipLevels() const;
+        uint arraySize() const;
         ImageData subresource(Subresource sr) const;
     };
 }

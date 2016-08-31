@@ -6,15 +6,67 @@
 
 namespace xor
 {
-    struct Image::State
+    struct FiBitmap
     {
+        MovingPtr<FIBITMAP *> bmp;
+
+        FiBitmap(FIBITMAP *bmp = nullptr) : bmp(bmp) {}
+
+        FiBitmap(FiBitmap &&) = default;
+        FiBitmap &operator=(FiBitmap &&) = default;
+
+        FiBitmap(const FiBitmap &) = delete;
+        FiBitmap &operator=(const FiBitmap &) = delete;
+
+        ~FiBitmap()
+        {
+            reset();
+        }
+
+        explicit operator bool() const { return !!bmp; }
+        operator FIBITMAP *() { return bmp; }
+
+        void reset(FIBITMAP *b = nullptr)
+        {
+            if (bmp)
+            {
+                FreeImage_Unload(bmp);
+                bmp = b;
+            }
+        }
+
+        Format format()
+        {
+            auto bpp = FreeImage_GetBPP(bmp);
+            switch (bpp)
+            {
+            case 24:
+            case 32:
+                return Format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
+            default:
+                XOR_CHECK(false, "Unknown bits-per-pixel value");
+                __assume(0);
+            }
+        }
+    };
+
+    struct ImageSubresource
+    {
+        FiBitmap fiBmp;
         DynamicBuffer<uint8_t> data;
         uint2 size;
         uint pitch = 0;
         Format format;
 
         Span<uint8_t> scanline(uint y);
-        void importFrom(FIBITMAP *bmp);
+        void importFrom(FiBitmap bmp);
+    };
+
+    struct Image::State
+    {
+        std::vector<ImageSubresource> subresources;
+        uint mipLevels = 0;
+        uint arraySize = 0;
     };
 
     static int defaultFlagsForFormat(FREE_IMAGE_FORMAT format)
@@ -35,18 +87,12 @@ namespace xor
         return pitch;
     }
 
-    static Format computeFormat(FIBITMAP *bmp)
+    static int computeMipAmount(uint2 size)
     {
-        auto bpp = FreeImage_GetBPP(bmp);
-        switch (bpp)
-        {
-        case 24:
-        case 32:
-            return Format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
-        default:
-            XOR_CHECK(false, "Unknown bits-per-pixel value");
-            return Format();
-        }
+        uint maxDim     = std::max(size.x, size.y);
+        float logDim    = std::log2(static_cast<float>(maxDim)); 
+        float extraMips = std::ceil(logDim);
+        return static_cast<int>(extraMips) + 1;
     }
 
     template <typename T> constexpr T opaqueAlpha()
@@ -107,82 +153,117 @@ namespace xor
         }
     }
 
-    void Image::load(const String & filename, Format format)
+    Image::Image(const Info &info)
     {
-        auto fiFormat = FreeImage_GetFileType(filename.cStr());
+        auto fiFormat = FreeImage_GetFileType(info.filename.cStr());
         auto flags  = defaultFlagsForFormat(fiFormat);
 
-        auto bmp = raiiPtr(FreeImage_Load(fiFormat, filename.cStr(), flags),
-                           FreeImage_Unload);
+        FiBitmap bmp = FreeImage_Load(fiFormat, info.filename.cStr(), flags);
 
-        XOR_CHECK(!!bmp, "Failed to load \"%s\"", filename.cStr());
+        XOR_CHECK(!!bmp, "Failed to load \"%s\"", info.filename.cStr());
 
         m_state = std::make_shared<State>();
+        m_state->arraySize = 1;
 
-        if (format)
-            m_state->format = format;
+        m_state->subresources.resize(1);
+        m_state->subresources[0].importFrom(std::move(bmp));
+
+        if (info.generateMipmaps != Info::NoMipmaps)
+        {
+            int mipmaps = info.generateMipmaps == Info::AllMipmaps
+                ? computeMipAmount(size())
+                : info.generateMipmaps;
+
+            XOR_CHECK(mipmaps > 0, "Invalid mipmap count");
+
+            m_state->mipLevels = static_cast<uint>(mipmaps);
+        }
         else
-            m_state->format = computeFormat(bmp.get());
+        {
+            m_state->mipLevels = 1;
+        }
 
-        m_state->size.x = FreeImage_GetWidth(bmp.get());
-        m_state->size.y = FreeImage_GetHeight(bmp.get());
+        m_state->subresources.resize(m_state->mipLevels);
 
-        m_state->pitch  = computePitch(m_state->format, m_state->size);
+        for (uint m = 1; m < m_state->mipLevels; ++m)
+        {
+            auto &prev = m_state->subresources[m - 1];
+            auto &cur  = m_state->subresources[m];
 
-        m_state->data   = DynamicBuffer<uint8_t>(m_state->size.y * m_state->pitch);
-        m_state->importFrom(bmp.get());
-    }
+            int2 size = int2(prev.size) / 2;
+            size      = max(1, size);
 
-    Image::Image(const String & filename)
-    {
-        load(filename);
+            cur.importFrom(FreeImage_Rescale(prev.fiBmp, size.x, size.y));
+        }
+
+        for (auto &s : m_state->subresources)
+            s.fiBmp.reset();
     }
 
     uint2 Image::size() const
     {
-        return m_state->size;
+        return m_state->subresources[0].size;
     }
 
     Format Image::format() const
     {
-        return m_state->format;
+        return m_state->subresources[0].format;
+    }
+
+    uint Image::mipLevels() const
+    {
+        return m_state->mipLevels;
+    }
+
+    uint Image::arraySize() const
+    {
+        return m_state->arraySize;
     }
 
     ImageData Image::subresource(Subresource sr) const
     {
-        (void)sr;
+        auto &s = m_state->subresources[sr.index(m_state->mipLevels)];
 
         ImageData data;
-        data.format    = format();
-        data.size      = size();
-        data.pitch     = m_state->pitch;
+        data.format    = s.format;
+        data.size      = s.size;
+        data.pitch     = s.pitch;
         data.pixelSize = data.format.size();
-        data.data      = m_state->data;
+        data.data      = asConstSpan(s.data);
         return data;
     }
 
-    Span<uint8_t> Image::State::scanline(uint y)
+    Span<uint8_t> ImageSubresource::scanline(uint y)
     {
         return Span<uint8_t>(data.data() + y * pitch, pitch);
     }
 
-    void Image::State::importFrom(FIBITMAP * bmp)
+    void ImageSubresource::importFrom(FiBitmap bmp)
     {
-        auto bpp = FreeImage_GetBPP(bmp);
+        fiBmp = std::move(bmp);
+
+        format = fiBmp.format();
+        size.x = FreeImage_GetWidth(fiBmp);
+        size.y = FreeImage_GetHeight(fiBmp);
+        pitch  = computePitch(format, size);
+        data   = DynamicBuffer<uint8_t>(size.y * pitch);
+
+        auto bpp = FreeImage_GetBPP(fiBmp);
 
         if (bpp == 24)
         {
             for (uint y = 0; y < size.y; ++y)
-                copyAndSwizzle<4, 3, 3, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(bmp, size.y - y - 1), size.x);
+                copyAndSwizzle<4, 3, 3, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(fiBmp, size.y - y - 1), size.x);
         }
         else if (bpp == 32)
         {
             for (uint y = 0; y < size.y; ++y)
-                copyAndSwizzle<4, 4, 4, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(bmp, size.y - y - 1), size.x);
+                copyAndSwizzle<4, 4, 4, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(fiBmp, size.y - y - 1), size.x);
         }
         else
         {
             XOR_CHECK(false, "Unknown bits-per-pixel value.");
+            __assume(0);
         }
     }
 }
