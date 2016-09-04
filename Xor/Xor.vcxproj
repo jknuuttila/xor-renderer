@@ -17,6 +17,12 @@
     <ClInclude Include="Material.hpp" />
     <ClInclude Include="Mesh.hpp" />
     <ClInclude Include="Xor.hpp" />
+    <ClInclude Include="XorBackend.hpp" />
+    <ClInclude Include="XorCommandList.hpp" />
+    <ClInclude Include="XorDevice.hpp" />
+    <ClInclude Include="XorDeviceState.hpp" />
+    <ClInclude Include="XorPCH.hpp" />
+    <ClInclude Include="XorResources.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Format.cpp" />
@@ -24,6 +30,15 @@
     <ClCompile Include="Material.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Xor.cpp" />
+    <ClCompile Include="XorBackend.cpp" />
+    <ClCompile Include="XorCommandList.cpp" />
+    <ClCompile Include="XorDevice.cpp" />
+    <ClCompile Include="XorDeviceState.cpp" />
+    <ClCompile Include="XorPCH.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="XorResources.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Shaders.h">
@@ -107,11 +122,12 @@
   <PropertyGroup />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeaderFile>XorPCH.hpp</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>XorPCH.hpp</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -128,12 +144,13 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeaderFile>XorPCH.hpp</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>XorPCH.hpp</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

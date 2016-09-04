@@ -8,6 +8,12 @@
     <ClInclude Include="Mesh.hpp" />
     <ClInclude Include="Material.hpp" />
     <ClInclude Include="ImguiRenderer.sig.h" />
+    <ClInclude Include="XorDevice.hpp" />
+    <ClInclude Include="XorCommandList.hpp" />
+    <ClInclude Include="XorResources.hpp" />
+    <ClInclude Include="XorBackend.hpp" />
+    <ClInclude Include="XorDeviceState.hpp" />
+    <ClInclude Include="XorPCH.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
@@ -15,6 +21,12 @@
     <ClCompile Include="Format.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Material.cpp" />
+    <ClCompile Include="XorDevice.cpp" />
+    <ClCompile Include="XorCommandList.cpp" />
+    <ClCompile Include="XorResources.cpp" />
+    <ClCompile Include="XorBackend.cpp" />
+    <ClCompile Include="XorDeviceState.cpp" />
+    <ClCompile Include="XorPCH.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\external\FreeImage\FreeImage.dll" />
