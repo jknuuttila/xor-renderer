@@ -5,6 +5,11 @@
 
 XOR_BEGIN_SIGNATURE(BasicMesh)
 
+struct MaterialProperties
+{
+    float roughness;
+    float F0;
+};
 
 XOR_CBUFFER(Constants, 0)
 {
@@ -14,6 +19,10 @@ XOR_CBUFFER(Constants, 0)
     float4 sunColor;
 
     float4 ambientColor;
+    
+    float4 cameraPosition;
+
+    MaterialProperties materialProperties;
 };
 
 XOR_SRV(Texture2D<float4>, albedoTex, 0)

@@ -105,6 +105,8 @@ class Sponza : public Window
         float3 sunColor     = 1.f;
         float3 sunDirection = { 1.f, 1.f, 1.f };
         float3 ambientColor = .05f;
+        float roughness     = 0.5f;
+        float F0            = 0.04f;
     } params;
 
 public:
@@ -180,6 +182,8 @@ public:
             ImGui::InputFloat3("Sun direction", params.sunDirection.data(), 2);
             ImGui::InputFloat3("Sun color",     params.sunColor.data(), 2);
             ImGui::InputFloat3("Ambient color", params.ambientColor.data(), 2);
+            ImGui::InputFloat("Roughness", &params.roughness, 2);
+            ImGui::InputFloat("F0", &params.F0, 2);
         }
         ImGui::End();
 
@@ -194,9 +198,13 @@ public:
                              0);
                              */
         constants.modelViewProj = MVP;
-        constants.sunDirection = float4(normalize(params.sunDirection));
-        constants.sunColor     = float4(params.sunColor);
-        constants.ambientColor = float4(params.ambientColor);
+
+        constants.sunDirection                 = float4(normalize(params.sunDirection));
+        constants.sunColor                     = float4(params.sunColor);
+        constants.ambientColor                 = float4(params.ambientColor);
+        constants.cameraPosition               = float4(camera.position);
+        constants.materialProperties.roughness = params.roughness;
+        constants.materialProperties.F0        = params.F0;
 
         cmd.setRenderTargets(backbuffer, depthBuffer);
         cmd.bind(basicMesh);
