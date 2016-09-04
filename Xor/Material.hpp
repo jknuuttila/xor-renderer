@@ -17,7 +17,7 @@ namespace xor
         struct State
         {
             String name;
-            MaterialLayer diffuse;
+            MaterialLayer albedo;
         };
         std::shared_ptr<State> m_state;
     public:
@@ -29,7 +29,7 @@ namespace xor
 
         void load(Device &device, StringView basePath = {});
 
-        MaterialLayer &diffuse() { return m_state->diffuse; }
+        MaterialLayer &albedo() { return m_state->albedo; }
     };
 }
 

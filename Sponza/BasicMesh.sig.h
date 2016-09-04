@@ -9,9 +9,14 @@ XOR_BEGIN_SIGNATURE(BasicMesh)
 XOR_CBUFFER(Constants, 0)
 {
     float4x4 modelViewProj;
+
+    float4 sunDirection;
+    float4 sunColor;
+
+    float4 ambientColor;
 };
 
-XOR_SRV(Texture2D<float4>, diffuseTex, 0)
+XOR_SRV(Texture2D<float4>, albedoTex, 0)
 
 XOR_SAMPLER_BILINEAR(bilinear)
 

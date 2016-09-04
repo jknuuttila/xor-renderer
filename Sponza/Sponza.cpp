@@ -100,6 +100,13 @@ class Sponza : public Window
 
     Timer time;
 
+    struct Parameters
+    {
+        float3 sunColor     = 1.f;
+        float3 sunDirection = { 1.f, 1.f, 1.f };
+        float3 ambientColor = .05f;
+    } params;
+
 public:
     Sponza()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
@@ -118,7 +125,6 @@ public:
             GraphicsPipeline::Info()
             .vertexShader("BasicMesh.vs")
             .pixelShader("BasicMesh.ps")
-            // .cull(D3D12_CULL_MODE_NONE)
             .inputLayout(meshes[0].inputLayout())
             .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
             .depthFormat(DXGI_FORMAT_D32_FLOAT)
@@ -171,6 +177,9 @@ public:
                 camera.azimuth   = Angle::degrees(-90);
                 camera.elevation = Angle(0);
             }
+            ImGui::InputFloat3("Sun direction", params.sunDirection.data(), 2);
+            ImGui::InputFloat3("Sun color",     params.sunColor.data(), 2);
+            ImGui::InputFloat3("Ambient color", params.ambientColor.data(), 2);
         }
         ImGui::End();
 
@@ -185,6 +194,9 @@ public:
                              0);
                              */
         constants.modelViewProj = MVP;
+        constants.sunDirection = float4(normalize(params.sunDirection));
+        constants.sunColor     = float4(params.sunColor);
+        constants.ambientColor = float4(params.ambientColor);
 
         cmd.setRenderTargets(backbuffer, depthBuffer);
         cmd.bind(basicMesh);
@@ -196,8 +208,8 @@ public:
             m.setForRendering(cmd);
             cmd.setConstants(constants);
 
-            if (mat.diffuse().texture)
-                cmd.setShaderView(BasicMesh::diffuseTex, m.material().diffuse().texture);
+            if (mat.albedo().texture)
+                cmd.setShaderView(BasicMesh::albedoTex, m.material().albedo().texture);
 
             cmd.drawIndexed(m.numIndices());
         }

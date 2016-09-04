@@ -35,5 +35,6 @@
   <ItemGroup>
     <FxCompile Include="ImguiRenderer.vs.hlsl" />
     <FxCompile Include="ImguiRenderer.ps.hlsl" />
+    <FxCompile Include="ShaderMath.h.hlsl" />
   </ItemGroup>
 </Project>

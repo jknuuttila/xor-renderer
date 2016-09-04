@@ -31,6 +31,8 @@ namespace xor
 
 #else
 
+#include "Xor/ShaderMath.h.hlsl"
+
 #define XOR_BEGIN_SIGNATURE(signatureName)
 #define XOR_END_SIGNATURE
 

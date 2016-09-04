@@ -57,7 +57,7 @@ namespace xor
 
             aiString path;
             if (src->Get(AI_MATKEY_TEXTURE_DIFFUSE(0), path) == aiReturn_SUCCESS)
-                dst.diffuse().filename = path.C_Str();
+                dst.albedo().filename = path.C_Str();
 
             if (meshInfo.loadMaterials)
                 dst.load(device, basePath);

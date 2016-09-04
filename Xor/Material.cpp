@@ -15,7 +15,7 @@ namespace xor
             Timer time;
             size_t loadedBytes = 0;
 
-            loadedBytes += m_state->diffuse.load(device, basePath);
+            loadedBytes += m_state->albedo.load(device, basePath);
 
             log("Material", "Loaded material \"%s\" in %.2f ms (%.2f MB / s)\n",
                 m_state->name.cStr(),
