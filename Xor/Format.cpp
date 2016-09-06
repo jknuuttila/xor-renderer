@@ -7,6 +7,9 @@ namespace xor
         if (m_elementSize)
             return m_elementSize;
 
+        if (isCompressed())
+            return 0;
+
         switch (dxgiFormat())
         {
         case DXGI_FORMAT_R8_SINT:
@@ -31,6 +34,43 @@ namespace xor
         return 0;
     }
 
+    uint Format::blockSize() const
+    {
+        return isCompressed() ? 4 : 1;
+    }
+
+    uint Format::blockBytes() const
+    {
+        switch (dxgiFormat())
+        {
+        case DXGI_FORMAT_BC1_TYPELESS:
+        case DXGI_FORMAT_BC1_UNORM:
+        case DXGI_FORMAT_BC1_UNORM_SRGB:
+        case DXGI_FORMAT_BC4_TYPELESS:
+        case DXGI_FORMAT_BC4_SNORM:
+        case DXGI_FORMAT_BC4_UNORM:
+            return 8;
+        case DXGI_FORMAT_BC2_TYPELESS:
+        case DXGI_FORMAT_BC2_UNORM:
+        case DXGI_FORMAT_BC2_UNORM_SRGB:
+        case DXGI_FORMAT_BC3_TYPELESS:
+        case DXGI_FORMAT_BC3_UNORM:
+        case DXGI_FORMAT_BC3_UNORM_SRGB:
+        case DXGI_FORMAT_BC5_TYPELESS:
+        case DXGI_FORMAT_BC5_SNORM:
+        case DXGI_FORMAT_BC5_UNORM:
+        case DXGI_FORMAT_BC6H_TYPELESS:
+        case DXGI_FORMAT_BC6H_SF16:
+        case DXGI_FORMAT_BC6H_UF16:
+        case DXGI_FORMAT_BC7_TYPELESS:
+        case DXGI_FORMAT_BC7_UNORM:
+        case DXGI_FORMAT_BC7_UNORM_SRGB:
+            return 16;
+        default:
+            return 0;
+        }
+    }
+
     bool Format::isDepthFormat() const
     {
         switch (dxgiFormat())
@@ -45,9 +85,49 @@ namespace xor
         }
     }
 
-    uint Format::rowSizeBytes(unsigned rowLength) const
+    bool Format::isCompressed() const
     {
-        // TODO: Block compressed formats
-        return rowLength * size();
+        switch (dxgiFormat())
+        {
+        case DXGI_FORMAT_BC1_TYPELESS:
+        case DXGI_FORMAT_BC1_UNORM:
+        case DXGI_FORMAT_BC1_UNORM_SRGB:
+        case DXGI_FORMAT_BC2_TYPELESS:
+        case DXGI_FORMAT_BC2_UNORM:
+        case DXGI_FORMAT_BC2_UNORM_SRGB:
+        case DXGI_FORMAT_BC3_TYPELESS:
+        case DXGI_FORMAT_BC3_UNORM:
+        case DXGI_FORMAT_BC3_UNORM_SRGB:
+        case DXGI_FORMAT_BC4_TYPELESS:
+        case DXGI_FORMAT_BC4_SNORM:
+        case DXGI_FORMAT_BC4_UNORM:
+        case DXGI_FORMAT_BC5_TYPELESS:
+        case DXGI_FORMAT_BC5_SNORM:
+        case DXGI_FORMAT_BC5_UNORM:
+        case DXGI_FORMAT_BC6H_TYPELESS:
+        case DXGI_FORMAT_BC6H_SF16:
+        case DXGI_FORMAT_BC6H_UF16:
+        case DXGI_FORMAT_BC7_TYPELESS:
+        case DXGI_FORMAT_BC7_UNORM:
+        case DXGI_FORMAT_BC7_UNORM_SRGB:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    uint Format::areaSizeBytes(uint2 area) const
+    {
+        uint b = blockSize();
+        if (b > 1)
+        {
+            area = divRoundUp(area, uint2(b));
+            uint blocks = area.x * area.y;
+            return blocks * blockBytes();
+        }
+        else
+        {
+            return area.x * area.y * size();
+        }
     }
 }

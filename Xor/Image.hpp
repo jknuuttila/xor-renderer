@@ -145,5 +145,6 @@ namespace xor
         uint mipLevels() const;
         uint arraySize() const;
         ImageData subresource(Subresource sr) const;
+        Image compress(Format dstFormat) const;
     };
 }

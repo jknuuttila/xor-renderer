@@ -14,6 +14,7 @@
     <ClInclude Include="XorBackend.hpp" />
     <ClInclude Include="XorDeviceState.hpp" />
     <ClInclude Include="XorPCH.hpp" />
+    <ClInclude Include="ShaderMath.h.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
@@ -35,6 +36,8 @@
   <ItemGroup>
     <FxCompile Include="ImguiRenderer.vs.hlsl" />
     <FxCompile Include="ImguiRenderer.ps.hlsl" />
-    <FxCompile Include="ShaderMath.h.hlsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\external\Compressonator\Compressonator_MD_DLL.dll" />
   </ItemGroup>
 </Project>

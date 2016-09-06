@@ -15,9 +15,14 @@ namespace xor
             return -1;
     }
 
+    template <typename T> T divRoundUp(T value, T divider)
+    {
+        return (value + (divider - 1)) / divider;
+    }
+
     template <typename T> T roundUpToMultiple(T value, T multiplier)
     {
-        return ((value + (multiplier - 1)) / multiplier) * multiplier;
+        return divRoundUp(value, multiplier) * multiplier;
     }
 
     template <typename T> T alignTo(T value, T alignment)

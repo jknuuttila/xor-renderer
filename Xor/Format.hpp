@@ -39,9 +39,12 @@ namespace xor
         operator DXGI_FORMAT() const { return dxgiFormat(); }
 
         uint size() const;
-        uint rowSizeBytes(uint rowLength) const;
+        uint areaSizeBytes(uint2 area) const;
+        uint blockSize() const;
+        uint blockBytes() const;
 
         bool isDepthFormat() const;
+        bool isCompressed() const;
     };
 
 }

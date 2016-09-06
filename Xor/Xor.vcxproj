@@ -88,6 +88,17 @@
       <FileType>Document</FileType>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\external\Compressonator\Compressonator_MD_DLL.dll">
+      <FileType>Document</FileType>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Copying Compressonator DLL</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Copying Compressonator DLL</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">xcopy $(SolutionDir)external\Compressonator\Compressonator_MD_DLL.dll $(OutDir) /Y /I</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">xcopy $(SolutionDir)external\Compressonator\Compressonator_MD_DLL.dll $(OutDir) /Y /I</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)Compressonator_MD_DLL.dll</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)Compressonator_MD_DLL.dll</Outputs>
+    </CustomBuild>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{AC764C74-7D44-43BC-9CAB-B470883B5549}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
@@ -136,10 +147,10 @@
       <SubSystem>Windows</SubSystem>
     </Link>
     <Lib>
-      <AdditionalDependencies>FreeImage.lib;assimp-vc130-mt.lib</AdditionalDependencies>
+      <AdditionalDependencies>FreeImage.lib;assimp-vc130-mt.lib;Compressonator_MD_DLL.lib</AdditionalDependencies>
     </Lib>
     <Lib>
-      <AdditionalLibraryDirectories>$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)external/Compressonator;$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>/IGNORE:4006 /IGNORE:4221 %(AdditionalOptions)</AdditionalOptions>
     </Lib>
     <ProjectReference />
@@ -161,10 +172,10 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
     <Lib>
-      <AdditionalDependencies>FreeImage.lib;assimp-vc130-mt.lib</AdditionalDependencies>
+      <AdditionalDependencies>FreeImage.lib;assimp-vc130-mt.lib;Compressonator_MD_DLL.lib</AdditionalDependencies>
     </Lib>
     <Lib>
-      <AdditionalLibraryDirectories>$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)external/Compressonator;$(SolutionDir)external/assimp;$(SolutionDir)external/FreeImage;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>/IGNORE:4006 /IGNORE:4221 %(AdditionalOptions)</AdditionalOptions>
     </Lib>
     <ProjectReference />
