@@ -81,7 +81,7 @@ namespace xor
 
         ImageData &setDefaultSizes()
         {
-            pitch     = format.rowSizeBytes(size.x);
+            pitch     = format.areaSizeBytes(size.x);
             pixelSize = format.size();
             return *this;
         }
@@ -113,6 +113,8 @@ namespace xor
 
             String filename;
             int generateMipmaps = NoMipmaps;
+            bool compress = false;
+            Format compressFormat;
 
             ImageInfo() = default;
             ImageInfo(const char *filename) : filename(filename) {}
@@ -124,6 +126,7 @@ namespace xor
         public:
             ImageInfoBuilder &filename(String filename) { ImageInfo::filename = std::move(filename); return *this; }
             ImageInfoBuilder &generateMipmaps(int mipmaps = AllMipmaps) { ImageInfo::generateMipmaps = mipmaps; return *this; }
+            ImageInfoBuilder &compress(Format compressFormat = Format()) { ImageInfo::compress = true; ImageInfo::compressFormat = compressFormat; return *this; }
         };
     }
 
@@ -145,6 +148,6 @@ namespace xor
         uint mipLevels() const;
         uint arraySize() const;
         ImageData subresource(Subresource sr) const;
-        Image compress(Format dstFormat) const;
+        Image compress(Format dstFormat = Format()) const;
     };
 }

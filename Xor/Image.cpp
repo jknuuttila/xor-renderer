@@ -57,10 +57,11 @@ namespace xor
         DynamicBuffer<uint8_t> data;
         uint2 size;
         uint pitch = 0;
+        Format format;
 
         Span<uint8_t> scanline(uint y);
         void importFrom(FiBitmap bmp);
-        ImageData imageData(Format format) const;
+        ImageData imageData() const;
     };
 
     struct Image::State
@@ -68,7 +69,6 @@ namespace xor
         std::vector<ImageSubresource> subresources;
         uint mipLevels = 0;
         uint arraySize = 0;
-        Format format;
     };
 
     static int defaultFlagsForFormat(FREE_IMAGE_FORMAT format)
@@ -84,9 +84,15 @@ namespace xor
 
     static uint computePitch(Format format, uint2 size)
     {
-        auto rowLength = format.areaSizeBytes({size.x, 1});
+        auto rowLength = format.areaSizeBytes(size.x);
         auto pitch     = roundUpToMultiple<uint>(rowLength, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
         return pitch;
+    }
+
+    static bool isValidPitch(uint pitch)
+    {
+        return pitch >= D3D12_TEXTURE_DATA_PITCH_ALIGNMENT
+            && (pitch % D3D12_TEXTURE_DATA_PITCH_ALIGNMENT) == 0;
     }
 
     static int computeMipAmount(uint2 size)
@@ -95,6 +101,22 @@ namespace xor
         float logDim    = std::log2(static_cast<float>(maxDim)); 
         float extraMips = std::ceil(logDim);
         return static_cast<int>(extraMips) + 1;
+    }
+
+    static Format defaultCompressedFormat(Format format)
+    {
+        switch (format.dxgiFormat())
+        {
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+        case DXGI_FORMAT_R8G8B8A8_UINT:
+        case DXGI_FORMAT_R8G8B8A8_UNORM:
+            return DXGI_FORMAT_BC3_UNORM;
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+            return DXGI_FORMAT_BC3_UNORM_SRGB;
+        default:
+            XOR_CHECK(false, "No default compressed format defined");
+            __assume(0);
+        }
     }
 
     template <typename T> constexpr T opaqueAlpha()
@@ -166,7 +188,6 @@ namespace xor
 
         m_state = std::make_shared<State>();
         m_state->arraySize = 1;
-        m_state->format    = bmp.format();
 
         m_state->subresources.resize(1);
         m_state->subresources[0].importFrom(std::move(bmp));
@@ -201,6 +222,13 @@ namespace xor
 
         for (auto &s : m_state->subresources)
             s.fiBmp.reset();
+
+        if (info.compress)
+        {
+            Image uncompressed = std::move(*this);
+            Image compressed   = uncompressed.compress(info.compressFormat);
+            *this              = std::move(compressed);
+        }
     }
 
     uint2 Image::size() const
@@ -210,7 +238,7 @@ namespace xor
 
     Format Image::format() const
     {
-        return m_state->format;
+        return m_state->subresources[0].format;
     }
 
     uint Image::mipLevels() const
@@ -225,7 +253,7 @@ namespace xor
 
     ImageData Image::subresource(Subresource sr) const
     {
-        return m_state->subresources[sr.index(m_state->mipLevels)].imageData(format());
+        return m_state->subresources[sr.index(m_state->mipLevels)].imageData();
     }
 
     struct CompressionTexture
@@ -335,19 +363,31 @@ namespace xor
     {
         Image compressed;
 
+        if (!dstFormat)
+            dstFormat = defaultCompressedFormat(format());
+
         compressed.m_state            = std::make_shared<Image::State>();
-        compressed.m_state->format    = dstFormat;
         compressed.m_state->mipLevels = m_state->mipLevels;
         compressed.m_state->arraySize = m_state->arraySize;
 
         compressed.m_state->subresources.resize(m_state->subresources.size());
 
-        for (size_t i = 0; i < m_state->subresources.size(); ++i)
+        for (uint s = 0; s < m_state->subresources.size(); ++s)
         {
-            auto &src = m_state->subresources[i];
-            auto &dst = compressed.m_state->subresources[i];
+            auto &src = m_state->subresources[s];
 
-            CompressionTexture srcCmp(src.imageData(format()));
+            if (any(src.size < dstFormat.blockSize()))
+            {
+                // TODO: Texture arrays
+                log("Image", "Cutting mip levels at %u because of block size\n", s);
+                compressed.m_state->mipLevels = s;
+                compressed.m_state->subresources.resize(s);
+                break;
+            }
+
+            auto &dst = compressed.m_state->subresources[s];
+
+            CompressionTexture srcCmp(src.imageData());
             CompressionTexture dstCmp(src.size, dstFormat);
 
             CMP_CompressOptions options = {};
@@ -356,10 +396,49 @@ namespace xor
             // Compressonator crashes on x64 without it.
             options.fquality            = 1;
 
+            log("Image", "Compressing %u x %u (%u bytes) into %u bytes\n",
+                src.size.x, src.size.y,
+                static_cast<uint>(srcCmp.data.sizeBytes()),
+                static_cast<uint>(dstCmp.data.sizeBytes()));
+
             auto error = CMP_ConvertTexture(&srcCmp.cmpTex, &dstCmp.cmpTex, &options,
                                             nullptr, 0, 0);
             XOR_CHECK(error == CMP_OK, "Texture compression failed");
+
+            dst.format = dstFormat;
+            dst.size   = src.size;
+
+            uint rowSize = dst.format.areaSizeBytes(dst.size.x);
+
+            // If the row size (i.e. one row of compressed blocks) is
+            // a valid pitch, we can use the buffer as-is.
+            if (isValidPitch(rowSize))
+            {
+                dst.data  = std::move(dstCmp.data);
+                dst.pitch = rowSize;
+            }
+            // Otherwise, we have to insert padding to cope with D3D12
+            // requirements.
+            else
+            {
+                uint rows = divRoundUp(dst.size.y, dst.format.blockSize());
+
+                dst.pitch = computePitch(dst.format, dst.size);
+                dst.data.resize(rows * dst.pitch);
+
+                auto dstData = dst.data.data();
+                auto srcData = dstCmp.data.data();
+
+                for (uint i = 0; i < rows; ++i)
+                {
+                    memcpy(dstData, srcData, rowSize);
+                    dstData += dst.pitch;
+                    srcData += rowSize;
+                }
+            }
         }
+
+        return compressed;
     }
 
     Span<uint8_t> ImageSubresource::scanline(uint y)
@@ -371,9 +450,10 @@ namespace xor
     {
         fiBmp = std::move(bmp);
 
+        format = fiBmp.format();
         size.x = FreeImage_GetWidth(fiBmp);
         size.y = FreeImage_GetHeight(fiBmp);
-        pitch  = computePitch(fiBmp.format(), size);
+        pitch  = computePitch(format, size);
         data   = DynamicBuffer<uint8_t>(size.y * pitch);
 
         auto bpp = FreeImage_GetBPP(fiBmp);
@@ -448,14 +528,14 @@ namespace xor
 #endif
     }
 
-    ImageData ImageSubresource::imageData(Format format) const
+    ImageData ImageSubresource::imageData() const
     {
         ImageData data;
         data.format    = format;
         data.size      = size;
         data.pitch     = pitch;
         data.pixelSize = data.format.size();
-        data.data      = asConstSpan(data);
+        data.data      = asConstSpan(this->data);
         return data;
     }
 }

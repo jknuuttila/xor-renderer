@@ -40,6 +40,7 @@ namespace xor
 
         uint size() const;
         uint areaSizeBytes(uint2 area) const;
+        uint areaSizeBytes(uint width) const { return areaSizeBytes({ width, 1 }); }
         uint blockSize() const;
         uint blockBytes() const;
 

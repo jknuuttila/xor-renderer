@@ -101,8 +101,19 @@ namespace xor
 
         size_t TextureInfo::sizeBytes() const
         {
-            // FIXME: This is not accurate
-            return format.rowSizeBytes(size.x) * size.y;
+            size_t total = 0;
+            for (uint i = 0; i < 1; ++i)
+            {
+                uint2 mipSize = size;
+
+                for (uint m = 0; m < mipLevels; ++m)
+                {
+                    total += format.areaSizeBytes(mipSize);
+                    mipSize = max(1, mipSize / 2);
+                }
+            }
+
+            return total;
         }
 
         TextureViewInfo TextureViewInfo::defaults(const TextureInfo & textureInfo) const

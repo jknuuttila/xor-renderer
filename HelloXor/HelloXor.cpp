@@ -54,7 +54,8 @@ public:
         lena = device.createTextureSRV(
             Image(Image::Builder()
                   .filename(XOR_DATA "/Lena.png")
-                  .generateMipmaps()));
+                  .generateMipmaps()
+                  .compress()));
     }
 
     void handleInput(const Input &input) override
