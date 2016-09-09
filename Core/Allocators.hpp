@@ -4,6 +4,9 @@
 #include "Error.hpp"
 
 #include <vector>
+#include <map>
+#include <unordered_map>
+#include <queue>
 #include <algorithm>
 #include <functional>
 
@@ -103,6 +106,8 @@ namespace xor
         size_t size() const { return static_cast<size_t>(end - begin); }
     };
 
+    // Allocating and releasing in a ring buffer fashion (i.e. FIFO),
+    // with support for contiguous longer allocations and alignments.
     class OffsetRing
     {
         // The oldest allocated element, unless equal to tail.
@@ -186,6 +191,62 @@ namespace xor
         {
             release(block.begin, static_cast<size_t>(block.end - block.begin));
         }
+    };
+
+    // Generic best-fit address-ordered heap suballocator.
+    class OffsetHeap
+    {
+        // Size and alignment are bit-packed so that alignment is in
+        // the low-order bits. This way, bigger sizes have larger numbers,
+        // but bigger alignments are larger than smaller alignments
+        // in the same size class.
+        static const uint AlignmentBits = 16;
+        using SizeAlignment = uint64_t;
+
+        struct SizeBin
+        {
+            // Every free offset of this size bin in a priority
+            // queue so we can always obtain the lowest address.
+            std::priority_queue<int64_t> freeOffsets;
+        };
+
+        // Contains the address-ordered free list of each non-empty
+        // size class. Empty size bins are removed from the map.
+        std::map<SizeAlignment, SizeBin> m_sizeBins;
+        // Each released block is stored here with both its begin
+        // and end offsets as keys. Whenever a new block is released,
+        // it can check for its own begin and end here to coalesce
+        // with its neighbor blocks to form larger ones.
+        std::unordered_map<int64_t, Block> m_blocksToCoalesce;
+
+        // Total size of the heap managed by this allocator.
+        int64_t m_size      = -1;
+        uint m_minAlignment = 1;
+    public:
+        OffsetHeap() = default;
+        OffsetHeap(size_t size, uint minimumAlignment = 1);
+
+        // Allocate a block of the given size using the minimum alignment
+        // of this allocator. The size is rounded up to an aligned multiple.
+        // Return an invalid block on failure.
+        Block allocate(size_t size);
+        // Allocate a block with the given size and alignment.
+        // The size is rounded up to be aligned with the minimum alignment.
+        // Return an invalid block on failure.
+        Block allocate(size_t size, uint alignment);
+        // Release a previously allocated block.
+        void release(Block block);
+        // Try to mark the given block (which should currently be free)
+        // as allocated. Return true on success, and false if some part
+        // of the block was allocated already.
+        bool markAsAllocated(Block block);
+
+    private:
+        SizeAlignment encodeSizeAlignment(size_t size, uint alignment);
+        size_t decodeSize(SizeAlignment sa);
+        uint decodeAlignment(SizeAlignment sa);
+        bool canFit(SizeAlignment blockSA, size_t size, uint alignment);
+        void allocateBlock(Block block);
     };
 }
 

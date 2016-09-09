@@ -283,6 +283,8 @@ namespace xor
         return Span<const T>(begin, sizeBytes(s) / sizeof(T));
     }
 
+    // Allocate a dynamic amount of POD memory cheaply,
+    // without requiring initialization.
     template <typename T>
     class DynamicBuffer
     {
@@ -301,7 +303,8 @@ namespace xor
 
         DynamicBuffer(size_t size, T value)
         {
-            resize(size, value);
+            resize(size);
+            fill(value);
         }
 
         bool empty() const
@@ -331,18 +334,147 @@ namespace xor
 
         void resize(size_t size)
         {
-            m_size = size;
-
             if (size)
-                m_data = std::unique_ptr<T[]>(new T[size]);
+            {
+                auto copyElements = std::min(size, m_size);
+                auto copyBytes    = copyElements * sizeof(T);
+
+                auto newData = std::unique_ptr<T[]>(new T[size]);
+
+                memcpy(newData.get(), m_data.get(), copyBytes);
+
+                m_data = std::move(newData);
+            }
             else
+            {
                 m_data = nullptr;
+            }
+
+            m_size = size;
         }
 
-        void resize(size_t size, T value)
+        void fill(T value)
         {
+            if (sizeof(T) == 1)
+            {
+                memset(m_data.get(), value, size);
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                    m_data[i] = value;
+            }
+        }
+
+        T *begin() { return m_data.get(); }
+        T *end()   { return begin() + m_size; }
+        T *data()  { return begin(); } 
+        const T *begin() const { return m_data.get(); }
+        const T *end()   const { return begin() + m_size; }
+        const T *data()  const { return begin(); } 
+
+        T &operator[](size_t i) { return m_data[i]; }
+        const T &operator[](size_t i) const { return m_data[i]; }
+    };
+
+    // Allocate a dynamic amount of POD memory using VirtualAlloc,
+    // so resizing is cheap as it doesn't have to copy. Maximum
+    // size needs to be specified up front.
+    template <typename T>
+    class VirtualBuffer
+    {
+        static_assert(std::is_pod<T>::value,
+                      "VirtualBuffer only supports POD types");
+
+        void allocate(size_t maximumSize)
+        {
+            m_data = VirtualAlloc(nullptr,
+                                  maximumSize,
+                                  MEM_RESERVE,
+                                  PAGE_READWRITE);
+            XOR_CHECK_LAST_ERROR(m_data);
+        }
+
+        static void release(T *p)
+        {
+            VirtualFree(p, 0, MEM_RELEASE);
+        }
+
+        std::unique_ptr<T[], VirtualBuffer::release> m_data = nullptr;
+        size_t m_size        = 0;
+        size_t m_maximumSize = 0;
+
+    public:
+        VirtualBuffer() = default;
+
+        VirtualBuffer(size_t maximumSize, size_t size = 0)
+        {
+            allocate(maximumSize);
+            resize(size);
+        }
+
+        VirtualBuffer(size_t maximumSize, size_t size, T value)
+        {
+            allocate(maximumSize);
             resize(size);
             fill(value);
+        }
+
+        bool empty() const
+        {
+            return m_size == 0;
+        }
+
+        explicit operator bool() const
+        {
+            return !!m_size;
+        }
+
+        size_t size() const
+        {
+            return m_size;
+        }
+
+        size_t sizeBytes() const
+        {
+            return m_size * sizeof(T);
+        }
+
+        void clear()
+        {
+            resize(0);
+        }
+
+        void resize(size_t size)
+        {
+            if (size == m_size)
+                return;
+
+            XOR_CHECK(size <= m_maximumSize, "Cannot exceed the original maximum size");
+
+            if (size > m_size)
+            {
+                // Growing the area, commit more pages
+                auto start = end();
+                auto bytes = size * sizeof(T) - sizeBytes();
+                auto retval = VirtualAlloc(start,
+                                           bytes,
+                                           MEM_COMMIT,
+                                           PAGE_READWRITE);
+                XOR_CHECK_LAST_ERROR(retval);
+            }
+            else
+            {
+                // Shrinking the area, release some pages.
+                auto start = begin() + size * sizeof(T);
+                auto bytes = end() - start;
+                auto retval = VirtualFree(start,
+                                          bytes,
+                                          MEM_DECOMMIT);
+                XOR_CHECK_LAST_ERROR(retval);
+            }
+
+            m_size = size;
         }
 
         void fill(T value)

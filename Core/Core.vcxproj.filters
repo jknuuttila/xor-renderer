@@ -10,6 +10,7 @@
     <ClCompile Include="File.cpp" />
     <ClCompile Include="TLog.cpp" />
     <ClCompile Include="MathVectors.cpp" />
+    <ClCompile Include="ChunkFile.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Utils.hpp" />
@@ -27,5 +28,6 @@
     <ClInclude Include="File.hpp" />
     <ClInclude Include="TLog.hpp" />
     <ClInclude Include="Hash.hpp" />
+    <ClInclude Include="ChunkFile.hpp" />
   </ItemGroup>
 </Project>

@@ -191,4 +191,167 @@ namespace xor
         // We just released something, so the ring cannot be full.
         m_full = false;
     }
+
+    OffsetHeap::OffsetHeap(size_t size, uint minimumAlignment)
+        : m_size(static_cast<int64_t>(size))
+        , m_minAlignment(minimumAlignment)
+    {
+        // Insert the entire free space into the allocator
+        // by "releasing" it.
+        Block entireHeap;
+        entireHeap.begin = 0;
+        entireHeap.end   = m_size;
+        release(entireHeap);
+    }
+
+    OffsetHeap::SizeAlignment OffsetHeap::encodeSizeAlignment(size_t size, uint alignment)
+    {
+        static const uint64_t AlignmentMask = (1ULL << AlignmentBits) - 1;
+        SizeAlignment sa = size << AlignmentBits;
+        sa |= static_cast<uint64_t>(alignment) & AlignmentMask;
+        return sa;
+    }
+
+    Block OffsetHeap::allocate(size_t size)
+    {
+        return allocate(size, m_minAlignment);
+    }
+
+    Block OffsetHeap::allocate(size_t size, uint alignment)
+    {
+        SizeAlignment key = encodeSizeAlignment(size, alignment);
+
+        auto it  = m_sizeBins.lower_bound(key);
+        auto end = m_sizeBins.end();
+
+        for (;;)
+        {
+            if (it == end)
+            {
+                // We didn't find any blocks that could fit
+                // the given size and alignment requirements.
+                return Block();
+            }
+
+            // Check if the size class can actually hold this
+            // allocation. Even if the size is enough, alignment
+            // might not match. Misaligned size classes will also
+            // do, if they are large enough so they can be adjusted.
+
+            if (canFit(it->first, size, alignment))
+            {
+                // We found a suitable block!
+                auto blockSize      = decodeSize(it->first);
+                auto blockAlignment = decodeAlignment(it->first);
+
+                // Find the actual offset for it.
+
+                auto &sizeBin = it->second;
+                XOR_ASSERT(!sizeBin.freeOffsets.empty(),
+                           "Size bins should always be non-empty.");
+                int64_t offset = sizeBin.freeOffsets.top();
+                sizeBin.freeOffsets.pop();
+                int64_t blockEnd = offset + static_cast<int64_t>(blockSize);
+
+                // If we just emptied the size bin, remove it from the
+                // map.
+                if (sizeBin.freeOffsets.empty())
+                    m_sizeBins.erase(it);
+
+                // Check if we need to chop off extra bits first.
+
+                if (blockSize == size)
+                {
+                    // The block is an exact match, so no leftovers.
+                    Block b;
+                    b.begin = offset;
+                    b.end   = b.begin + size;
+                    allocateBlock(b);
+
+                    return b;
+                }
+                else
+                {
+                    // First, find the first properly aligned offset
+                    // from within the block.
+                    Block b;
+                    b.begin = roundUpToMultiple<int64_t>(offset, alignment);
+                    b.end   = b.begin + size;
+                    allocateBlock(b);
+
+                    // Was there space left in the beginning because
+                    // of alignment?
+                    if (b.begin > offset)
+                    {
+                        Block prefix;
+                        prefix.begin = offset;
+                        prefix.end   = b.begin;
+                        release(prefix);
+                    }
+
+                    // Was there space left in the end because the
+                    // block was larger?
+                    if (b.end < blockEnd)
+                    {
+                        Block suffix;
+                        suffix.begin = b.end;
+                        suffix.end   = blockEnd;
+                        release(suffix);
+                    }
+
+                    return b;
+                }
+            }
+            else
+            {
+                // Advance to the next larger size class.
+                ++it;
+            }
+        }
+    }
+
+    void OffsetHeap::release(Block block)
+    {
+        XOR_ASSERT(block.begin >= 0 && block.begin < m_size,
+                   "Released block is out of bounds");
+        XOR_ASSERT(block.end > 0 && block.end <= m_size,
+                   "Released block is out of bounds");
+        XOR_ASSERT(block.size() > 0, "Released block is empty");
+
+        // Check if there's a block on the left we can merge with.
+        auto left = m_blocksToCoalesce.find(block.begin);
+        if (left != m_blocksToCoalesce.end())
+        {
+            // Yes there is, merge it to the block being released.
+            block.begin = left->second.begin;
+            m_blocksToCoalesce.erase(left);
+        }
+
+        // Check on the right.
+        auto right = m_blocksToCoalesce.find(block.end);
+        if (right != m_blocksToCoalesce.end())
+        {
+            block.end = right->second.end;
+            m_blocksToCoalesce.erase(right);
+        }
+
+        // Insert this block in the coalescing table.
+        m_blocksToCoalesce[block.begin] = block;
+        m_blocksToCoalesce[block.end]   = block;
+
+        // Determine the size class to put this block in.
+        size_t size = block.size();
+        uint alignment = static_cast<uint>(firstbitlow(static_cast<uint64_t>(block.begin)));
+        // Clamp it to the maximum representable alignment.
+        alignment = std::min(alignment, 1U << (AlignmentBits - 1));
+        auto key = encodeSizeAlignment(size, alignment);
+
+        // Finally, insert it to the free list.
+        m_sizeBins[key].freeOffsets.emplace(block.begin);
+    }
+
+    bool OffsetHeap::markAsAllocated(Block block)
+    {
+        return false;
+    }
 }
