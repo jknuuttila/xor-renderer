@@ -21,6 +21,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sponza", "Sponza\Sponza.vcx
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DearImGui", "external\imgui\DearImGui\DearImGui.vcxproj", "{C02D4E4A-A8A6-4763-A485-9541F4FADE76}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zstdlib", "external\zstd-1.0.0\projects\VS2010\zstdlib\zstdlib.vcxproj", "{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -83,6 +85,14 @@ Global
 		{C02D4E4A-A8A6-4763-A485-9541F4FADE76}.Release|x64.Build.0 = Release|x64
 		{C02D4E4A-A8A6-4763-A485-9541F4FADE76}.Release|x86.ActiveCfg = Release|Win32
 		{C02D4E4A-A8A6-4763-A485-9541F4FADE76}.Release|x86.Build.0 = Release|Win32
+		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Debug|x64.ActiveCfg = Debug|x64
+		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Debug|x64.Build.0 = Debug|x64
+		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Debug|x86.ActiveCfg = Debug|Win32
+		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Debug|x86.Build.0 = Debug|Win32
+		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Release|x64.ActiveCfg = Release|x64
+		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Release|x64.Build.0 = Release|x64
+		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Release|x86.ActiveCfg = Release|Win32
+		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -90,5 +100,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
 		{C02D4E4A-A8A6-4763-A485-9541F4FADE76} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
+		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
 	EndGlobalSection
 EndGlobal

@@ -13,6 +13,7 @@
   <ItemGroup>
     <ClCompile Include="Allocators.cpp" />
     <ClCompile Include="ChunkFile.cpp" />
+    <ClCompile Include="Compression.cpp" />
     <ClCompile Include="Error.cpp" />
     <ClCompile Include="File.cpp" />
     <ClCompile Include="Log.cpp" />
@@ -25,6 +26,7 @@
   <ItemGroup>
     <ClInclude Include="Allocators.hpp" />
     <ClInclude Include="ChunkFile.hpp" />
+    <ClInclude Include="Compression.hpp" />
     <ClInclude Include="Core.hpp" />
     <ClInclude Include="Error.hpp" />
     <ClInclude Include="File.hpp" />
@@ -43,6 +45,10 @@
   <ItemGroup>
     <ProjectReference Include="..\external\SpookyHash\SpookyHash.vcxproj">
       <Project>{6caf7f93-4204-4ce4-b9e1-b6d750467d2d}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\external\zstd-1.0.0\projects\VS2010\zstdlib\zstdlib.vcxproj">
+      <Project>{8bfd8150-94d5-4bf9-8a50-7bd9929a0850}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
     </ProjectReference>
   </ItemGroup>
   <PropertyGroup Label="Globals">

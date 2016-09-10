@@ -394,7 +394,7 @@ namespace xor
                              MEM_RESERVE,
                              PAGE_READWRITE),
                 &VirtualBuffer::release);
-            XOR_CHECK_LAST_ERROR(m_data);
+            XOR_CHECK_LAST_ERROR;
         }
 
         static void release(T *p)
@@ -402,7 +402,7 @@ namespace xor
             VirtualFree(p, 0, MEM_RELEASE);
         }
 
-        using DataPtr = std::unique_ptr<T[], decltype(VirtualBuffer::release)>;
+        using DataPtr = std::unique_ptr<T[], decltype(&VirtualBuffer::release)>;
         DataPtr m_data = nullptr;
         size_t m_size        = 0;
         size_t m_maximumSize = 0;
@@ -464,7 +464,7 @@ namespace xor
                                            bytes,
                                            MEM_COMMIT,
                                            PAGE_READWRITE);
-                XOR_CHECK_LAST_ERROR(retval);
+                XOR_CHECK_LAST_ERROR;
             }
             else
             {
@@ -474,7 +474,7 @@ namespace xor
                 auto retval = VirtualFree(start,
                                           bytes,
                                           MEM_DECOMMIT);
-                XOR_CHECK_LAST_ERROR(retval);
+                XOR_CHECK_LAST_ERROR;
             }
 
             m_size = size;
@@ -502,6 +502,53 @@ namespace xor
 
         T &operator[](size_t i) { return m_data[i]; }
         const T &operator[](size_t i) const { return m_data[i]; }
+    };
+
+    // Store a pointer using a 32-bit difference to the address
+    // of the object. Is POD and absolute position independent,
+    // so can be stored to disk and can be
+    // used directly inside e.g. memory-mapped or loaded files.
+    template <typename T, uint DiscardLowBits = 0>
+    class DiffPtr
+    {
+        int32_t diff = 0;
+    public:
+        DiffPtr() = default;
+        DiffPtr(T *p)
+        {
+            *this = p;
+        }
+
+        explicit operator bool() const { return diff != 0; }
+
+        DiffPtr &operator=(T *p)
+        {
+            intptr_t d =
+                reinterpret_cast<intptr_t>(p) -
+                reinterpret_cast<intptr_t>(this);
+            diff = static_cast<int32_t>(d >> DiscardLowBits);
+            XOR_ASSERT(get() == p, "Cannot encode pointer in the available space");
+            return *this;
+        }
+
+        const T *get() const
+        {
+            return reinterpret_cast<const T *>(
+                reinterpret_cast<intptr_t>(this) +
+                (diff << DiscardLowBits));
+        }
+
+        T *get()
+        {
+            return reinterpret_cast<T *>(
+                reinterpret_cast<intptr_t>(this) +
+                (diff << DiscardLowBits));
+        }
+
+        const T *operator->() const { return get(); }
+        T *operator->() { return get(); }
+        const T &operator*() const { return *get(); }
+        T &operator*() { return *get(); }
     };
 
     String toString(bool b);
