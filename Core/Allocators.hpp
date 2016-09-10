@@ -100,6 +100,12 @@ namespace xor
         int64_t begin = -1;
         int64_t end   = -1;
 
+        Block() = default;
+        Block(int64_t begin, int64_t end)
+            : begin(begin)
+            , end(end)
+        {}
+
         bool valid() const { return begin >= 0; }
         explicit operator bool() const { return valid(); }
 
@@ -200,7 +206,7 @@ namespace xor
         // the low-order bits. This way, bigger sizes have larger numbers,
         // but bigger alignments are larger than smaller alignments
         // in the same size class.
-        static const uint AlignmentBits = 16;
+        static const uint AlignmentBits = 6;
         using SizeAlignment = uint64_t;
 
         struct SizeBin
@@ -214,17 +220,28 @@ namespace xor
         // size class. Empty size bins are removed from the map.
         std::map<SizeAlignment, SizeBin> m_sizeBins;
         // Each released block is stored here with both its begin
-        // and end offsets as keys. Whenever a new block is released,
+        // and end offsets as keys. The begin key will have the end
+        // as the value and vice versa. Whenever a new block is released,
         // it can check for its own begin and end here to coalesce
         // with its neighbor blocks to form larger ones.
-        std::unordered_map<int64_t, Block> m_blocksToCoalesce;
+        std::unordered_map<int64_t, int64_t> m_blocksToCoalesce;
 
         // Total size of the heap managed by this allocator.
         int64_t m_size      = -1;
         uint m_minAlignment = 1;
+        size_t m_freeSpace  = 0;
     public:
         OffsetHeap() = default;
         OffsetHeap(size_t size, uint minimumAlignment = 1);
+
+        bool empty() const { return freeSpace() == static_cast<size_t>(m_size); }
+        bool full() const { return freeSpace() == 0; }
+        size_t freeSpace() const { return m_freeSpace; }
+
+        // Attempt to shrink or grow this allocator. Growing always succeeds,
+        // but shrinking fails if it would turn allocated areas invalid.
+        // Returns true on success.
+        bool resize(size_t newSize);
 
         // Allocate a block of the given size using the minimum alignment
         // of this allocator. The size is rounded up to an aligned multiple.

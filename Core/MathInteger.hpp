@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <intrin.h>
+#include <nmmintrin.h>
 
 namespace xor
 {
@@ -13,6 +14,20 @@ namespace xor
             return static_cast<int64_t>(index);
         else
             return -1;
+    }
+
+    inline uint countTrailingZeros(uint64_t value)
+    {
+        unsigned long index;
+        if (_BitScanForward64(&index, value))
+            return index;
+        else
+            return 64;
+    }
+
+    inline uint popCount(uint64_t value)
+    {
+        return static_cast<uint>(_mm_popcnt_u64(value));
     }
 
     template <typename T> T divRoundUp(T value, T divider)

@@ -388,10 +388,12 @@ namespace xor
 
         void allocate(size_t maximumSize)
         {
-            m_data = VirtualAlloc(nullptr,
-                                  maximumSize,
-                                  MEM_RESERVE,
-                                  PAGE_READWRITE);
+            m_data = DataPtr(
+                VirtualAlloc(nullptr,
+                             maximumSize,
+                             MEM_RESERVE,
+                             PAGE_READWRITE),
+                &VirtualBuffer::release);
             XOR_CHECK_LAST_ERROR(m_data);
         }
 
@@ -400,7 +402,8 @@ namespace xor
             VirtualFree(p, 0, MEM_RELEASE);
         }
 
-        std::unique_ptr<T[], VirtualBuffer::release> m_data = nullptr;
+        using DataPtr = std::unique_ptr<T[], decltype(VirtualBuffer::release)>;
+        DataPtr m_data = nullptr;
         size_t m_size        = 0;
         size_t m_maximumSize = 0;
 
