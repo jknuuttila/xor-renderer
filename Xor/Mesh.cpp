@@ -30,6 +30,7 @@ namespace xor
             .remove_filename()
             .c_str();
 
+        Timer importTime;
         Assimp::Importer importer;
         auto scene = importer.ReadFile(
             meshInfo.filename.cStr(),
@@ -40,6 +41,9 @@ namespace xor
             (meshInfo.calculateTangentSpace ?
              aiProcess_CalcTangentSpace : 0)
         );
+        log("Mesh", "Loaded and processed \"%s\" in %.2f ms\n",
+            meshInfo.filename.cStr(),
+            importTime.milliseconds());
 
         std::vector<Mesh> meshes;
         meshes.reserve(scene->mNumMeshes);
@@ -60,7 +64,10 @@ namespace xor
                 dst.albedo().filename = path.C_Str();
 
             if (meshInfo.loadMaterials)
-                dst.load(device, basePath);
+                dst.load(device,
+                         Material::Builder()
+                         .basePath(basePath)
+                         .import());
 
             materials[m] = std::move(dst);
         }
@@ -162,8 +169,9 @@ namespace xor
             dst->inputLayout = il;
         }
 
-        log("Mesh", "Loaded \"%s\" in %.2f ms (%.2f MB / s)\n",
+        log("Mesh", "Loaded \"%s\" and %u materials in %.2f ms (%.2f MB / s)\n",
             meshInfo.filename.cStr(),
+            meshInfo.loadMaterials ? scene->mNumMaterials : 0,
             time.milliseconds(),
             time.bandwidthMB(loadedBytes));
 

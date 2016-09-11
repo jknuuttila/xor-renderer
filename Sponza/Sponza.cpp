@@ -111,7 +111,11 @@ class Sponza : public Window
 
 public:
     Sponza()
+#if 1
+        : Window { XOR_PROJECT_NAME, { 800, 450 } }
+#else
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
+#endif
     {
         xor.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
 
@@ -119,9 +123,11 @@ public:
         swapChain = device.createSwapChain(*this);
         depthBuffer = device.createTextureDSV(Texture::Info(size(), DXGI_FORMAT_D32_FLOAT));
 
+        Timer loadingTime;
         meshes = Mesh::loadFromFile(device, Mesh::Builder()
                                     .filename(XOR_DATA "/crytek-sponza/sponza.obj")
                                     .loadMaterials(true));
+        log("Sponza", "Loaded scene in %.2f ms\n", loadingTime.milliseconds());
 
         basicMesh = device.createGraphicsPipeline(
             GraphicsPipeline::Info()

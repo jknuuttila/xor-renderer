@@ -49,9 +49,12 @@ namespace xor
             }
         }
 
-        bool checkLastErrorImpl()
+        bool checkLastErrorImpl(bool cond)
         {
-            return checkHRImpl(HRESULT_FROM_WIN32(GetLastError()));
+            if (!cond)
+                return checkHRImpl(HRESULT_FROM_WIN32(GetLastError()));
+            else
+                return true;
         }
 
     }

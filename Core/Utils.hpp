@@ -1,6 +1,7 @@
 #pragma once
 
-#include "OS.hpp"
+#include "Core/OS.hpp"
+#include "Core/Error.hpp"
 
 #include <vector>
 #include <string>
@@ -15,6 +16,14 @@ namespace xor
     using uint = uint32_t;
     using ll   = long long;
     using llu  = unsigned long long;
+
+    template <typename T>
+    struct IsPod
+    {
+        static const bool value =
+            std::is_trivially_copyable<T>::value &&
+            std::is_trivially_destructible<T>::value;
+    };
 
     // Pointer wrapper that becomes nullptr when moved from.
     // Helpful for concisely implementing Movable types.
@@ -291,8 +300,9 @@ namespace xor
         static_assert(std::is_pod<T>::value,
                       "DynamicBuffer only supports POD types");
 
-        std::unique_ptr<T[]> m_data = nullptr;
-        size_t               m_size = 0;
+        std::unique_ptr<T[]> m_data     = nullptr;
+        size_t               m_size     = 0;
+        size_t               m_capacity = 0;
     public:
         DynamicBuffer() = default;
 
@@ -332,14 +342,56 @@ namespace xor
             resize(0);
         }
 
-        void resize(size_t size)
+        void reserve(size_t capacity)
         {
-            if (size)
+            if (capacity > m_capacity)
             {
+                auto actualSize = m_size;
+                resize(capacity);
+                resize(actualSize);
+            }
+        }
+
+        void resize(size_t size, bool shrink = false)
+        {
+            if (size == m_size)
+                return;
+
+            if (size || !shrink)
+            {
+                // If we are reducing size and can shrink, do so.
+                if (size < m_size && !shrink)
+                {
+                    m_size = size;
+                    return;
+                }
+
+                // Otherwise, if we are reducing size we
+                // allocate a smaller array.
+                if (size < m_size)
+                {
+                    m_capacity = size;
+                }
+                // If we are growing, but the capacity is enough,
+                // just adjust the size.
+                else if (size <= m_capacity)
+                {
+                    m_size = size;
+                    return;
+                }
+                // Finally, if there is not enough capacity, get
+                // more space.
+                else
+                {
+                    auto capacity = m_capacity * 3 / 2;
+                    capacity = std::max(capacity, size);
+                    m_capacity = capacity;
+                }
+
                 auto copyElements = std::min(size, m_size);
                 auto copyBytes    = copyElements * sizeof(T);
 
-                auto newData = std::unique_ptr<T[]>(new T[size]);
+                auto newData = std::unique_ptr<T[]>(new T[m_capacity]);
 
                 memcpy(newData.get(), m_data.get(), copyBytes);
 
@@ -388,27 +440,34 @@ namespace xor
 
         void allocate(size_t maximumSize)
         {
-            m_data = DataPtr(
+            release();
+
+            m_data = reinterpret_cast<T *>(
                 VirtualAlloc(nullptr,
                              maximumSize,
                              MEM_RESERVE,
-                             PAGE_READWRITE),
-                &VirtualBuffer::release);
-            XOR_CHECK_LAST_ERROR;
+                             PAGE_READWRITE));
+            XOR_CHECK_LAST_ERROR(!!m_data);
+
+            m_maximumSize = maximumSize;
         }
 
-        static void release(T *p)
+        void release()
         {
-            VirtualFree(p, 0, MEM_RELEASE);
+            if (m_data)
+            {
+                VirtualFree(m_data.get(), 0, MEM_RELEASE);
+                m_data = nullptr;
+            }
         }
 
-        using DataPtr = std::unique_ptr<T[], decltype(&VirtualBuffer::release)>;
-        DataPtr m_data = nullptr;
-        size_t m_size        = 0;
-        size_t m_maximumSize = 0;
+        MovingPtr<T *> m_data        = nullptr;
+        size_t         m_size        = 0;
+        size_t         m_maximumSize = 0;
 
     public:
         VirtualBuffer() = default;
+        ~VirtualBuffer() { release(); }
 
         VirtualBuffer(size_t maximumSize, size_t size = 0)
         {
@@ -448,6 +507,8 @@ namespace xor
             resize(0);
         }
 
+        void reserve(size_t) {}
+
         void resize(size_t size)
         {
             if (size == m_size)
@@ -464,17 +525,17 @@ namespace xor
                                            bytes,
                                            MEM_COMMIT,
                                            PAGE_READWRITE);
-                XOR_CHECK_LAST_ERROR;
+                XOR_CHECK_LAST_ERROR(!!retval);
             }
             else
             {
                 // Shrinking the area, release some pages.
-                auto start = begin() + size * sizeof(T);
+                auto start = begin() + size;
                 auto bytes = end() - start;
                 auto retval = VirtualFree(start,
                                           bytes,
                                           MEM_DECOMMIT);
-                XOR_CHECK_LAST_ERROR;
+                XOR_CHECK_LAST_ERROR(!!retval);
             }
 
             m_size = size;

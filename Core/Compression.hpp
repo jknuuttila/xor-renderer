@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/Utils.hpp"
+#include "Core/Exception.hpp"
 
 namespace xor
 {
@@ -9,5 +10,7 @@ namespace xor
 
     size_t decompressZstd(Span<uint8_t> decompressed, Span<const uint8_t> compressed);
     DynamicBuffer<uint8_t> decompressZstd(size_t decompressedSize, Span<const uint8_t> compressed);
+
+    XOR_EXCEPTION_TYPE(CompressionException)
 }
 

@@ -7,6 +7,24 @@
 
 namespace xor
 {
+    struct ImageHeader
+    {
+        static const uint VersionNumber = 1;
+
+        uint2 size;
+        uint mipLevels = 0;
+        uint arraySize = 0;
+        Format format;
+    };
+
+    struct SubresourceHeader
+    {
+        static const uint VersionNumber = 1;
+
+        uint2 size;
+        uint pitch = 0;
+    };
+
     struct FiBitmap
     {
         MovingPtr<FIBITMAP *> bmp;
@@ -179,56 +197,12 @@ namespace xor
 
     Image::Image(const Info &info)
     {
-        auto fiFormat = FreeImage_GetFileType(info.filename.cStr());
-        auto flags  = defaultFlagsForFormat(fiFormat);
-
-        FiBitmap bmp = FreeImage_Load(fiFormat, info.filename.cStr(), flags);
-
-        XOR_CHECK(!!bmp, "Failed to load \"%s\"", info.filename.cStr());
-
-        m_state = std::make_shared<State>();
-        m_state->arraySize = 1;
-
-        m_state->subresources.resize(1);
-        m_state->subresources[0].importFrom(std::move(bmp));
-
-        if (info.generateMipmaps != Info::NoMipmaps)
-        {
-            int mipmaps = info.generateMipmaps == Info::AllMipmaps
-                ? computeMipAmount(size())
-                : info.generateMipmaps;
-
-            XOR_CHECK(mipmaps > 0, "Invalid mipmap count");
-
-            m_state->mipLevels = static_cast<uint>(mipmaps);
-        }
+        if (!info.blob.empty())
+            loadFromBlob(info);
+        else if (info.filename)
+            loadFromFile(info);
         else
-        {
-            m_state->mipLevels = 1;
-        }
-
-        m_state->subresources.resize(m_state->mipLevels);
-
-        for (uint m = 1; m < m_state->mipLevels; ++m)
-        {
-            auto &prev = m_state->subresources[m - 1];
-            auto &cur  = m_state->subresources[m];
-
-            int2 size = int2(prev.size) / 2;
-            size      = max(1, size);
-
-            cur.importFrom(FreeImage_Rescale(prev.fiBmp, size.x, size.y));
-        }
-
-        for (auto &s : m_state->subresources)
-            s.fiBmp.reset();
-
-        if (info.compress)
-        {
-            Image uncompressed = std::move(*this);
-            Image compressed   = uncompressed.compress(info.compressFormat);
-            *this              = std::move(compressed);
-        }
+            XOR_CHECK(false, "Invalid Image creation parameters");
     }
 
     uint2 Image::size() const
@@ -439,6 +413,124 @@ namespace xor
         }
 
         return compressed;
+    }
+
+    DynamicBuffer<uint8_t> Image::serialize() const
+    {
+        size_t sizeEstimate = sizeof(ImageHeader) + 16;
+        for (auto &s : m_state->subresources)
+            sizeEstimate += s.data.sizeBytes() + sizeof(SubresourceHeader) + 16;
+
+        DynamicBuffer<uint8_t> blob;
+        auto blobWriter = makeWriter(blob, sizeEstimate);
+
+        ImageHeader header;
+        header.size      = size();
+        header.mipLevels = mipLevels();
+        header.arraySize = arraySize();
+        header.format    = format();
+
+        blobWriter.writeStruct(header);
+
+        for (uint i = 0; i < header.arraySize; ++i)
+        {
+            for (uint m = 0; m < header.mipLevels; ++m)
+            {
+                auto &s = subresource(Subresource(m, i).index(header.mipLevels));
+
+                SubresourceHeader srHeader;
+                srHeader.size  = s.size;
+                srHeader.pitch = s.pitch;
+
+                blobWriter.writeStruct(srHeader);
+                blobWriter.writeBlob(s.data);
+            }
+        }
+
+        return blob;
+    }
+
+    void Image::loadFromFile(const Info & info)
+    {
+        auto fiFormat = FreeImage_GetFileType(info.filename.cStr());
+        auto flags  = defaultFlagsForFormat(fiFormat);
+
+        FiBitmap bmp = FreeImage_Load(fiFormat, info.filename.cStr(), flags);
+
+        XOR_CHECK(!!bmp, "Failed to load \"%s\"", info.filename.cStr());
+
+        m_state = std::make_shared<State>();
+        m_state->arraySize = 1;
+
+        m_state->subresources.resize(1);
+        m_state->subresources[0].importFrom(std::move(bmp));
+
+        if (info.generateMipmaps != Info::NoMipmaps)
+        {
+            int mipmaps = info.generateMipmaps == Info::AllMipmaps
+                ? computeMipAmount(size())
+                : info.generateMipmaps;
+
+            XOR_CHECK(mipmaps > 0, "Invalid mipmap count");
+
+            m_state->mipLevels = static_cast<uint>(mipmaps);
+        }
+        else
+        {
+            m_state->mipLevels = 1;
+        }
+
+        m_state->subresources.resize(m_state->mipLevels);
+
+        for (uint m = 1; m < m_state->mipLevels; ++m)
+        {
+            auto &prev = m_state->subresources[m - 1];
+            auto &cur  = m_state->subresources[m];
+
+            int2 size = int2(prev.size) / 2;
+            size      = max(1, size);
+
+            cur.importFrom(FreeImage_Rescale(prev.fiBmp, size.x, size.y));
+        }
+
+        for (auto &s : m_state->subresources)
+            s.fiBmp.reset();
+
+        if (info.compress)
+        {
+            Image uncompressed = std::move(*this);
+            Image compressed   = uncompressed.compress(info.compressFormat);
+            *this              = std::move(compressed);
+        }
+    }
+
+    void Image::loadFromBlob(const Info & info)
+    {
+        Reader blobReader(info.blob);
+
+        auto header = blobReader.readStruct<ImageHeader>();
+        m_state = std::make_shared<State>();
+        m_state->mipLevels = header.mipLevels;
+        m_state->arraySize = header.arraySize;
+
+        m_state->subresources.resize(mipLevels() * arraySize());
+
+        for (uint i = 0; i < header.arraySize; ++i)
+        {
+            for (uint m = 0; m < header.mipLevels; ++m)
+            {
+                auto &s = m_state->subresources[Subresource(m, i).index(header.mipLevels)];
+
+                auto srHeader = blobReader.readStruct<SubresourceHeader>();
+                s.size        = srHeader.size;
+                s.pitch       = srHeader.pitch;
+                s.format      = header.format;
+
+                auto data = blobReader.readBlob();
+                s.data.resize(data.sizeBytes());
+                memcpy(s.data.data(), data.data(), data.sizeBytes());
+            }
+        }
     }
 
     Span<uint8_t> ImageSubresource::scanline(uint y)

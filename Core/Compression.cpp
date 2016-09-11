@@ -7,12 +7,14 @@
 
 namespace xor
 {
+    static const int DefaultCompressionLevel = 20;
+
     size_t compressZstd(Span<uint8_t> compressed, Span<const uint8_t> src, int compressionLevel)
     {
         int maxLevel = ZSTD_maxCLevel();
 
         if (compressionLevel < 0)
-            compressionLevel = maxLevel;
+            compressionLevel = DefaultCompressionLevel;
 
         compressionLevel = std::min(compressionLevel, maxLevel);
 
@@ -28,10 +30,7 @@ namespace xor
         auto retval = compressZstd(compressed, src, compressionLevel);
 
         if (ZSTD_isError(retval))
-        {
-            XOR_CHECK(false, "ZSTD compression failed: %s", ZSTD_getErrorName(retval));
-            __assume(0);
-        }
+            XOR_THROW(false, CompressionException, "ZSTD compression failed: %s", ZSTD_getErrorName(retval));
 
         compressed.resize(retval);
         return compressed;
@@ -50,8 +49,7 @@ namespace xor
 
         if (ZSTD_isError(retval))
         {
-            XOR_CHECK(false, "ZSTD decompression failed: %s", ZSTD_getErrorName(retval));
-            __assume(0);
+            XOR_THROW(false, CompressionException, "ZSTD decompression failed: %s", ZSTD_getErrorName(retval));
         }
 
         return decompressed;

@@ -14,10 +14,16 @@
     <ClCompile Include="Allocators.cpp" />
     <ClCompile Include="ChunkFile.cpp" />
     <ClCompile Include="Compression.cpp" />
+    <ClCompile Include="CorePCH.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="Error.cpp" />
+    <ClCompile Include="Exception.cpp" />
     <ClCompile Include="File.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="MathVectors.cpp" />
+    <ClCompile Include="Serialization.cpp" />
     <ClCompile Include="String.cpp" />
     <ClCompile Include="TLog.cpp" />
     <ClCompile Include="Utils.cpp" />
@@ -28,7 +34,9 @@
     <ClInclude Include="ChunkFile.hpp" />
     <ClInclude Include="Compression.hpp" />
     <ClInclude Include="Core.hpp" />
+    <ClInclude Include="CorePCH.hpp" />
     <ClInclude Include="Error.hpp" />
+    <ClInclude Include="Exception.hpp" />
     <ClInclude Include="File.hpp" />
     <ClInclude Include="Hash.hpp" />
     <ClInclude Include="Log.hpp" />
@@ -37,6 +45,7 @@
     <ClInclude Include="MathInteger.hpp" />
     <ClInclude Include="MathVectors.hpp" />
     <ClInclude Include="OS.hpp" />
+    <ClInclude Include="Serialization.hpp" />
     <ClInclude Include="String.hpp" />
     <ClInclude Include="TLog.hpp" />
     <ClInclude Include="Utils.hpp" />
@@ -88,11 +97,12 @@
   <PropertyGroup />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeaderFile>CorePCH.hpp</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>CorePCH.hpp</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -101,12 +111,13 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
+      <PrecompiledHeader>Use</PrecompiledHeader>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeaderFile>CorePCH.hpp</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>CorePCH.hpp</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

@@ -112,6 +112,7 @@ namespace xor
             static const int AllMipmaps = -1;
 
             String filename;
+            Span<const uint8_t> blob;
             int generateMipmaps = NoMipmaps;
             bool compress = false;
             Format compressFormat;
@@ -119,12 +120,14 @@ namespace xor
             ImageInfo() = default;
             ImageInfo(const char *filename) : filename(filename) {}
             ImageInfo(String filename) : filename(std::move(filename)) {}
+            ImageInfo(Span<const uint8_t> blob) : blob(blob) {}
         };
 
         class ImageInfoBuilder : public ImageInfo
         {
         public:
             ImageInfoBuilder &filename(String filename) { ImageInfo::filename = std::move(filename); return *this; }
+            ImageInfoBuilder &blob(Span<const uint8_t> blob) { ImageInfo::blob = blob; return *this; }
             ImageInfoBuilder &generateMipmaps(int mipmaps = AllMipmaps) { ImageInfo::generateMipmaps = mipmaps; return *this; }
             ImageInfoBuilder &compress(Format compressFormat = Format()) { ImageInfo::compress = true; ImageInfo::compressFormat = compressFormat; return *this; }
         };
@@ -149,5 +152,10 @@ namespace xor
         uint arraySize() const;
         ImageData subresource(Subresource sr) const;
         Image compress(Format dstFormat = Format()) const;
+        DynamicBuffer<uint8_t> serialize() const;
+
+    private:
+        void loadFromFile(const Info &info);
+        void loadFromBlob(const Info &info);
     };
 }

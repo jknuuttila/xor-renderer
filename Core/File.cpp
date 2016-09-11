@@ -137,6 +137,8 @@ namespace xor
             break;
         case Create::Overwrite:
             creation = TRUNCATE_EXISTING;
+        case Create::CreateAlways:
+            creation = CREATE_ALWAYS;
             break;
         }
 
@@ -190,7 +192,7 @@ namespace xor
     {
         LARGE_INTEGER sz = {};
         if (!GetFileSizeEx(m_file.get(), &sz))
-            XOR_CHECK_LAST_ERROR();
+            XOR_CHECK_LAST_ERROR(false);
         return static_cast<size_t>(sz.QuadPart);
     }
 
@@ -203,7 +205,7 @@ namespace xor
                               distance,
                               nullptr,
                               from))
-            XOR_CHECK_LAST_ERROR();
+            XOR_CHECK_LAST_ERROR(false);
     }
 
     void File::seekRelative(int64_t pos)
@@ -214,7 +216,7 @@ namespace xor
                               distance,
                               nullptr,
                               FILE_CURRENT))
-            XOR_CHECK_LAST_ERROR();
+            XOR_CHECK_LAST_ERROR(false);
     }
 
     void File::close()
@@ -378,6 +380,13 @@ namespace xor
         return absPath ? absPath.lower() : path.lower();
     }
 
+    bool File::ensureDirectoryExists(const String & path)
+    {
+        auto p = path.path();
+        p.remove_filename();
+        return fs::create_directories(p);
+    }
+
     struct Pipe
     {
         Handle read;
@@ -394,7 +403,7 @@ namespace xor
             security.bInheritHandle       = true;
 
             if (!CreatePipe(p.read.outRef(), p.write.outRef(), &security, 0))
-                XOR_CHECK_LAST_ERROR();
+                XOR_CHECK_LAST_ERROR(false);
 
             return p;
         }
@@ -410,7 +419,7 @@ namespace xor
                            text.data(), static_cast<DWORD>(text.size()),
                            nullptr,
                            nullptr))
-                XOR_CHECK_LAST_ERROR();
+                XOR_CHECK_LAST_ERROR(false);
         }
 
         String readFrom()
@@ -426,7 +435,7 @@ namespace xor
                 if (!PeekNamedPipe(read.get(),
                                    nullptr, 0, nullptr,
                                    &bytes, nullptr))
-                    XOR_CHECK_LAST_ERROR();
+                    XOR_CHECK_LAST_ERROR(false);
 
                 if (bytes == 0)
                     break;
@@ -438,7 +447,7 @@ namespace xor
 
                 DWORD got = 0;
                 if (!ReadFile(read.get(), &s[tail], toRead, &got, nullptr))
-                    XOR_CHECK_LAST_ERROR();
+                    XOR_CHECK_LAST_ERROR(false);
 
                 len += got;
             }
@@ -478,7 +487,7 @@ namespace xor
             nullptr,
             &startupInfo,
             &procInfo))
-            XOR_CHECK_LAST_ERROR();
+            XOR_CHECK_LAST_ERROR(false);
 
         if (stdIn)
             in.writeTo(*stdIn);
@@ -492,7 +501,7 @@ namespace xor
 
         DWORD exitCode = 0;
         if (!GetExitCodeProcess(procInfo.hProcess, &exitCode))
-            XOR_CHECK_LAST_ERROR();
+            XOR_CHECK_LAST_ERROR(false);
 
         CloseHandle(procInfo.hProcess);
         CloseHandle(procInfo.hThread);

@@ -12,6 +12,9 @@
     <ClCompile Include="MathVectors.cpp" />
     <ClCompile Include="ChunkFile.cpp" />
     <ClCompile Include="Compression.cpp" />
+    <ClCompile Include="Exception.cpp" />
+    <ClCompile Include="CorePCH.cpp" />
+    <ClCompile Include="Serialization.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Utils.hpp" />
@@ -31,5 +34,8 @@
     <ClInclude Include="Hash.hpp" />
     <ClInclude Include="ChunkFile.hpp" />
     <ClInclude Include="Compression.hpp" />
+    <ClInclude Include="Exception.hpp" />
+    <ClInclude Include="Serialization.hpp" />
+    <ClInclude Include="CorePCH.hpp" />
   </ItemGroup>
 </Project>

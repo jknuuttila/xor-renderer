@@ -265,7 +265,9 @@ namespace xor
         if (iNewSize > m_size)
         {
             // We can grow the allocator just by releasing a block past the end.
-            release(Block(m_size, iNewSize));
+            Block b(m_size, iNewSize);
+            m_size = iNewSize;
+            release(b);
             return true;
         }
         else
@@ -282,6 +284,7 @@ namespace xor
             Block freeBlock(it->second, m_size);
             if (iNewSize >= freeBlock.begin)
             {
+                m_size = iNewSize;
                 // Cut off the reduced part of the final free block.
                 allocateBlock(freeBlock);
                 if (freeBlock.begin < iNewSize)

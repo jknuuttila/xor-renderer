@@ -11,6 +11,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cstdarg>
 
 namespace xor
 {
@@ -420,6 +421,7 @@ namespace xor
         }
 
         static String format(const char *fmt, ...);
+        static String vformat(const char *fmt, va_list ap);
 
         const char *cStr() const { return m_str.c_str(); }
         std::wstring wideStr() const;

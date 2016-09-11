@@ -37,6 +37,8 @@
 # Vim
 *.swp
 *.TMP
+
+# Other stuff
 /data/crytek-sponza
 /data/crytek-sponza.zip
 *.zip

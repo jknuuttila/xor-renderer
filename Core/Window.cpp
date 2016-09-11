@@ -149,7 +149,7 @@ namespace xor
             GetModuleHandle(nullptr),
             nullptr);
 
-        XOR_CHECK_LAST_ERROR();
+        XOR_CHECK_LAST_ERROR(!!m_hWnd);
 
         SetWindowLongPtrA(m_hWnd, WindowThisPtrIndex, reinterpret_cast<LONG_PTR>(this));
     }

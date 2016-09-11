@@ -23,6 +23,7 @@ namespace xor
             DontCreate,
             CreateNew,
             Overwrite,
+            CreateAlways,
         };
         enum class Mode
         {
@@ -64,6 +65,7 @@ namespace xor
         static bool exists(const String &path);
         static uint64_t lastWritten(const String &path);
         static String canonicalize(const String &path, bool absolute = false);
+        static bool ensureDirectoryExists(const String &path);
     };
 
     int shellCommand(const String &exe, StringView args,

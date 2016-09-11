@@ -109,6 +109,7 @@ namespace xor
         bool valid() const { return begin >= 0; }
         explicit operator bool() const { return valid(); }
 
+        bool empty() const { return size() == 0; }
         size_t size() const { return static_cast<size_t>(end - begin); }
     };
 
@@ -227,7 +228,7 @@ namespace xor
         std::unordered_map<int64_t, int64_t> m_blocksToCoalesce;
 
         // Total size of the heap managed by this allocator.
-        int64_t m_size      = -1;
+        int64_t m_size      = 0;
         uint m_minAlignment = 1;
         size_t m_freeSpace  = 0;
     public:

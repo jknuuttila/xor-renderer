@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <cstdlib>
-#include <cstdarg>
 #include <locale>
 #include <codecvt>
 #include <cctype>
@@ -24,7 +23,7 @@ namespace xor
         updateView();
     }
 
-    static String vformat(const char *fmt, va_list ap)
+    String String::vformat(const char *fmt, va_list ap)
     {
         char buffer[1024];
         int size = vsnprintf(buffer, sizeof(buffer), fmt, ap);
