@@ -103,12 +103,15 @@ namespace xor
         {
             if (info.import && kv)
             {
-                Reader chunk      = kv->chunk(path)->reader();
+                auto chunk = kv->chunk(path);
+                XOR_THROW(chunk, MaterialException, "Chunk for material layer was missing");
+
+                Reader reader     = chunk->reader();
                 auto fileTime     = File::lastWritten(path);
-                auto header       = chunk.readStruct<MaterialLayerHeader>();
+                auto header       = reader.readStruct<MaterialLayerHeader>();
                 XOR_THROW(fileTime <= header.importedTime, MaterialException, "Imported texture out of date");
 
-                auto compressed   = chunk.readBlob();
+                auto compressed   = reader.readBlob();
                 auto decompressed = decompressZstd(header.decompressedSize, compressed);
 
                 texture = device.createTextureSRV(
