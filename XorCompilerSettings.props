@@ -21,7 +21,7 @@
     </FxCompile>
     <FxCompile>
       <EnableUnboundedDescriptorTables>true</EnableUnboundedDescriptorTables>
-      <AdditionalOptions>/Zpr %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/Zpr /force_rootsig_ver rootsig_1_0 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>$(SolutionDir)</AdditionalIncludeDirectories>
     </FxCompile>
   </ItemDefinitionGroup>

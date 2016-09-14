@@ -111,11 +111,7 @@ class Sponza : public Window
 
 public:
     Sponza()
-#if 1
-        : Window { XOR_PROJECT_NAME, { 800, 450 } }
-#else
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
-#endif
     {
         xor.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
 

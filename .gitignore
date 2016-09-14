@@ -25,6 +25,7 @@
 *.app
 
 # VS stuff
+*.vspx
 *.db
 *.opendb
 **/bin/**

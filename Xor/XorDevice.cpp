@@ -622,6 +622,8 @@ namespace xor
 
     CommandList Device::graphicsCommandList()
     {
+        S().progress.retireCommandLists();
+
         CommandList cmd = S().freeGraphicsCommandLists.allocate([this]
         {
             return std::make_shared<CommandListState>(*this);
