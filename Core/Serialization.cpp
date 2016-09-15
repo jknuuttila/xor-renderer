@@ -9,12 +9,7 @@ namespace xor
 
         if (shortLength == 255)
         {
-            static const uint Rest = sizeof(uint) - 1;
-            checkBounds(Rest);
-            length = 0;
-            memcpy(&length, m_cursor, Rest);
-            m_cursor += Rest;
-            length += shortLength;
+            length = read<uint>();
         }
         else
         {

@@ -19,7 +19,7 @@ namespace xor
         Timer time;
 
         size_t bytes = 0;
-        bytes += albedo().import(materialFile.toc(), info);
+        bytes += albedo().import(materialFile.mainChunk(), info);
         materialFile.write();
 
         log("Material", "Imported material \"%s\" in %.2f ms (%.2f MB / s)\n",
@@ -46,7 +46,7 @@ namespace xor
                     try
                     {
                         materialFile.read();
-                        loadedBytes += albedo().load(device, info, &materialFile.toc());
+                        loadedBytes += albedo().load(device, info, &materialFile.mainChunk());
                         loadedImported = true;
                         break;
                     }
@@ -91,7 +91,7 @@ namespace xor
 
     size_t MaterialLayer::load(Device &device,
                                const info::MaterialInfo &info,
-                               const ChunkFile::KeyValue *kv)
+                               const ChunkFile::Chunk *chunk)
     {
         if (!filename)
             return 0;
@@ -101,12 +101,9 @@ namespace xor
 
         if (File::exists(path))
         {
-            if (info.import && kv)
+            if (info.import && chunk)
             {
-                auto chunk = kv->chunk(path);
-                XOR_THROW(chunk, MaterialException, "Chunk for material layer was missing");
-
-                Reader reader     = chunk->reader();
+                Reader reader     = chunk->chunk(path).reader();
                 auto fileTime     = File::lastWritten(path);
                 auto header       = reader.readStruct<MaterialLayerHeader>();
                 XOR_THROW(fileTime <= header.importedTime, MaterialException, "Imported texture out of date");
@@ -151,7 +148,7 @@ namespace xor
         return info.basePath ? (info.basePath + "/" + filename) : filename;
     }
 
-    size_t MaterialLayer::import(ChunkFile::KeyValue & kv,
+    size_t MaterialLayer::import(ChunkFile::Chunk & chunk,
                                  const info::MaterialInfo &info)
     {
         if (!filename)
@@ -178,10 +175,10 @@ namespace xor
             header.importedTime     = File::lastWritten(path);
             header.decompressedSize = blockCompressed.sizeBytes();
 
-            auto chunk = kv.setChunk(path).writer(
+            auto writer = chunk.setChunk(path).writer(
                 sizeof(header) + 16 + compressed.sizeBytes());
-            chunk.writeStruct(header);
-            chunk.writeBlob(compressed);
+            writer.writeStruct(header);
+            writer.writeBlob(compressed);
 
             log("Material", "Imported texture \"%s\" in %.2f ms (%.2f MB / s)\n",
                 filename.cStr(),

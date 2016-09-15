@@ -15,6 +15,7 @@ namespace xor
             String filename;
             bool calculateTangentSpace = true;
             bool loadMaterials = false;
+            bool import = false;
 
             MeshInfo() = default;
             MeshInfo(String filename) : filename(std::move(filename)) {}
@@ -24,8 +25,9 @@ namespace xor
         {
         public:
             MeshInfoBuilder &filename(String path) { MeshInfo::filename = std::move(path); return *this; }
-            MeshInfoBuilder &calculateTangentSpace(bool tangents) { MeshInfo::calculateTangentSpace = tangents; return *this; }
-            MeshInfoBuilder &loadMaterials(bool load) { MeshInfo::loadMaterials = load; return *this; }
+            MeshInfoBuilder &calculateTangentSpace(bool tangents = true) { MeshInfo::calculateTangentSpace = tangents; return *this; }
+            MeshInfoBuilder &loadMaterials(bool load = true) { MeshInfo::loadMaterials = load; return *this; }
+            MeshInfoBuilder &import(bool import = true) { MeshInfo::import = import; return *this; }
         };
     }
 

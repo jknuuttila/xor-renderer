@@ -127,13 +127,7 @@ namespace xor
             {
                 uint8_t shortLength = 255;
                 write(shortLength);
-                length -= 255;
-                uint8_t rest[sizeof(uint) - 1];
-                memcpy(rest, &length, sizeof(rest));
-                uint storedLen = 0;
-                memcpy(&storedLen, rest, sizeof(rest));
-                XOR_THROW(storedLen == length, SerializationException, "Length is too large to store");
-                write(rest);
+                write(length);
             }
         }
 

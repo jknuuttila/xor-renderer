@@ -38,34 +38,64 @@ namespace xor
     {
         static const uint VersionNumber = 1;
         FourCC fourCC;
-        FileBlock toc;
+        FileBlock mainChunk;
     };
 
     static const FourCC ChunkFileFourCC { "XORC" };
     static const size_t ChunkFileMaxSize = 1024ULL * 1024ULL * 1024ULL;
 
-    ChunkFile::Chunk *ChunkFile::KeyValue::chunk(StringView name)
+    ChunkFile::Chunk *ChunkFile::Chunk::maybeChunk(StringView name)
     {
-        auto it = m_kv.find(name);
-        if (it == m_kv.end())
+        auto it = m_chunks.find(name);
+        if (it == m_chunks.end())
             return nullptr;
         else
             return it->second.get();
     }
 
-    const ChunkFile::Chunk * ChunkFile::KeyValue::chunk(StringView name) const
+    const ChunkFile::Chunk * ChunkFile::Chunk::maybeChunk(StringView name) const
     {
-        auto it = m_kv.find(name);
-        if (it == m_kv.end())
+        auto it = m_chunks.find(name);
+        if (it == m_chunks.end())
             return nullptr;
         else
             return it->second.get();
     }
 
-    ChunkFile::Chunk & ChunkFile::KeyValue::setChunk(StringView name)
+    ChunkFile::Chunk & ChunkFile::Chunk::chunk(StringView name)
     {
-        m_kv[name].reset(new Chunk(*m_file));
-        return *m_kv[name];
+        auto c = maybeChunk(name);
+        XOR_THROW(c, SerializationException, "Chunk \"%s\" missing", name.str().cStr());
+        return *c;
+    }
+
+    const ChunkFile::Chunk & ChunkFile::Chunk::chunk(StringView name) const
+    {
+        auto c = maybeChunk(name);
+        XOR_THROW(c, SerializationException, "Chunk \"%s\" missing", name.str().cStr());
+        return *c;
+    }
+
+    ChunkFile::Chunk & ChunkFile::Chunk::setChunk(StringView name)
+    {
+        m_chunks[name].reset(new Chunk(*m_file));
+        return *m_chunks[name];
+    }
+
+    std::vector<std::pair<String, ChunkFile::Chunk *>> ChunkFile::Chunk::allChunks()
+    {
+        std::vector<std::pair<String, Chunk *>> chunks;
+        for (auto &c : m_chunks)
+            chunks.emplace_back(c.first, c.second.get());
+        return chunks;
+    }
+
+    std::vector<std::pair<String, const ChunkFile::Chunk *>> ChunkFile::Chunk::allChunks() const
+    {
+        std::vector<std::pair<String, const Chunk *>> chunks;
+        for (auto &c : m_chunks)
+            chunks.emplace_back(c.first, c.second.get());
+        return chunks;
     }
 
     Span<uint8_t> ChunkFile::span(Block block)
@@ -86,18 +116,10 @@ namespace xor
                 m_allocator.release(block);
 
             block = m_allocator.allocate(bytes);
+
+            if (static_cast<size_t>(block.end) > m_contents.size())
+                m_contents.resize(static_cast<size_t>(block.end));
         }
-    }
-
-    void ChunkFile::writeToContents(Block & block, Span<const uint8_t> bytes)
-    {
-        obtainBlock(block, bytes.sizeBytes());
-
-        if (static_cast<size_t>(block.end) > m_contents.size())
-            m_contents.resize(static_cast<size_t>(block.end));
-
-        auto dst = span(block);
-        memcpy(dst.data(), bytes.data(), bytes.sizeBytes());
     }
 
     ChunkFile::ChunkFile(String path)
@@ -111,17 +133,18 @@ namespace xor
             "Failed to mark header as allocated");
     }
 
-    ChunkFile::KeyValue & ChunkFile::toc()
+    ChunkFile::Chunk & ChunkFile::mainChunk()
     {
-        if (!m_toc)
-            m_toc.reset(new KeyValue(*this));
+        if (!m_mainChunk)
+            m_mainChunk.reset(new Chunk(*this));
 
-        return *m_toc;
+        return *m_mainChunk;
     }
 
-    const ChunkFile::KeyValue & ChunkFile::toc() const
+    const ChunkFile::Chunk & ChunkFile::mainChunk() const
     {
-        return *m_toc;
+        XOR_THROW(m_mainChunk, SerializationException, "Main chunk missing");
+        return *m_mainChunk;
     }
 
     void ChunkFile::read()
@@ -134,17 +157,17 @@ namespace xor
         auto header = Reader(m_contents).readStruct<ChunkFileHeader>();
         XOR_THROW(header.fourCC.asUint() == ChunkFileFourCC.asUint(), SerializationException, "Wrong 4CC");
 
-        m_toc.reset(new KeyValue(*this, header.toc));
-        m_toc->read();
+        m_mainChunk.reset(new Chunk(*this, header.mainChunk));
+        m_mainChunk->read();
     }
 
     void ChunkFile::write() 
     {
-        toc().write();
+        mainChunk().write();
 
         ChunkFileHeader header;
-        header.fourCC = ChunkFileFourCC;
-        header.toc    = toc().m_block;
+        header.fourCC    = ChunkFileFourCC;
+        header.mainChunk = mainChunk().m_block;
 
         makeWriter(m_contents).writeStruct(header);
 
@@ -163,42 +186,16 @@ namespace xor
         , m_block(block)
     {}
 
-    Reader ChunkFile::Chunk::reader() const { return Reader(m_file->span(m_block)); }
+    Reader ChunkFile::Chunk::reader() const { return Reader(m_file->span(m_dataBlock)); }
 
     void ChunkFile::Chunk::write()
     {
-        m_file->writeToContents(m_block, m_writeData);
-    }
-
-    ChunkFile::KeyValue::KeyValue(ChunkFile & file)
-        : m_file(&file)
-    {}
-
-    ChunkFile::KeyValue::KeyValue(ChunkFile & file, serialization::FileBlock block)
-        : m_file(&file)
-        , m_block(block)
-    {}
-
-    void ChunkFile::KeyValue::read()
-    {
-        auto kvReader = Reader(m_file->span(m_block));
-        uint length   = kvReader.readLength();
-
-        for (uint i = 0; i < length; ++i)
-        {
-            auto key  = kvReader.readString();
-            auto val  = kvReader.read<FileBlock>();
-            m_kv[key].reset(new Chunk(*m_file, val));
-        }
-    }
-
-    void ChunkFile::KeyValue::write()
-    {
         DynamicBuffer<uint8_t> buffer;
         auto writer = makeWriter(buffer, 1024);
-        writer.writeLength(static_cast<uint>(m_kv.size()));
+        writer.writeLength(static_cast<uint>(m_chunks.size()));
+        writer.writeLength(static_cast<uint>(m_data.sizeBytes()));
 
-        for (auto &&kv : m_kv)
+        for (auto &&kv : m_chunks)
         {
             kv.second->write();
 
@@ -206,7 +203,30 @@ namespace xor
             writer.write(FileBlock(kv.second->m_block));
         }
 
-        m_file->writeToContents(m_block, buffer);
+        auto totalBytes = buffer.sizeBytes() + m_data.sizeBytes();
+        m_file->obtainBlock(m_block, totalBytes);
+        m_dataBlock.begin = m_block.end - static_cast<int64_t>(m_data.sizeBytes());
+        m_dataBlock.end   = m_block.end;
+
+        auto dst = m_file->span(m_block);
+        memcpy(dst.data(), buffer.data(), buffer.sizeBytes());
+        memcpy(dst.data() + buffer.sizeBytes(), m_data.data(), m_data.sizeBytes());
     }
 
+    void ChunkFile::Chunk::read()
+    {
+        auto reader  = Reader(m_file->span(m_block));
+        uint numChunks = reader.readLength();
+        uint dataBytes = reader.readLength();
+
+        m_dataBlock.begin = m_block.end - dataBytes;
+        m_dataBlock.end   = m_block.end;
+
+        for (uint i = 0; i < numChunks; ++i)
+        {
+            auto key  = reader.readString();
+            auto val  = reader.read<FileBlock>();
+            m_chunks[key].reset(new Chunk(*m_file, val));
+        }
+    }
 }

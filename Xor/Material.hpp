@@ -36,11 +36,11 @@ namespace xor
 
     private:
         String path(const info::MaterialInfo &info);
-        size_t import(ChunkFile::KeyValue &kv,
+        size_t import(ChunkFile::Chunk &chunk,
                       const info::MaterialInfo &info);
         size_t load(Device &device,
                     const info::MaterialInfo &info,
-                    const ChunkFile::KeyValue *kv = nullptr);
+                    const ChunkFile::Chunk *chunk = nullptr);
     };
 
     class Material
