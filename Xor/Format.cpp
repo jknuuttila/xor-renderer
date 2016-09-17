@@ -27,6 +27,12 @@ namespace xor
         case DXGI_FORMAT_R32_UINT:
         case DXGI_FORMAT_D32_FLOAT:
             return 4;
+        case DXGI_FORMAT_R32G32_FLOAT:
+            return 8;
+        case DXGI_FORMAT_R32G32B32_FLOAT:
+            return 12;
+        case DXGI_FORMAT_R32G32B32A32_FLOAT:
+            return 16;
         default:
             XOR_CHECK(false, "Unknown format");
         }
@@ -114,6 +120,11 @@ namespace xor
         default:
             return false;
         }
+    }
+
+    Format Format::asStructure() const
+    {
+        return Format::structure(size());
     }
 
     uint Format::areaSizeBytes(uint2 area) const

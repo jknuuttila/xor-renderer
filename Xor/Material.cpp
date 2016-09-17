@@ -10,6 +10,11 @@ namespace xor
         m_state->name = std::move(name);
     }
 
+    struct MaterialFileHeader
+    {
+        static const uint VersionNumber = 1;
+    };
+
     void Material::import(ChunkFile &materialFile, const info::MaterialInfo &info)
     {
         log("Material", "Importing material \"%s\" into \"%s\"\n",
@@ -19,6 +24,7 @@ namespace xor
         Timer time;
 
         size_t bytes = 0;
+        materialFile.mainChunk().writer().writeStruct(MaterialFileHeader {});
         bytes += albedo().import(materialFile.mainChunk(), info);
         materialFile.write();
 
@@ -43,9 +49,12 @@ namespace xor
 
                 for (;;)
                 {
+
                     try
                     {
+                        loadedBytes = 0;
                         materialFile.read();
+                        materialFile.mainChunk().reader().readStruct<MaterialFileHeader>();
                         loadedBytes += albedo().load(device, info, &materialFile.mainChunk());
                         loadedImported = true;
                         break;
@@ -57,13 +66,17 @@ namespace xor
                     {
                         import(materialFile, info);
                         // If the import succeeds, try loading it again.
-                        continue;
+                        loadedBytes = 0;
+                        materialFile.read();
+                        materialFile.mainChunk().reader().readStruct<MaterialFileHeader>();
+                        loadedBytes += albedo().load(device, info, &materialFile.mainChunk());
+                        loadedImported = true;
                     }
                     catch (const Exception &)
                     {
                         // If the import fails, bail out.
-                        break;
                     }
+                    break;
                 }
             }
 
@@ -167,9 +180,7 @@ namespace xor
                 .serialize();
             log("Material", "    Block compression: %.2f ms\n", blockCompressionTime.milliseconds());
 
-            Timer zstdCompressionTime;
             auto compressed = compressZstd(blockCompressed);
-            log("Material", "    Zstd compression: %.2f ms\n", zstdCompressionTime.milliseconds());
 
             MaterialLayerHeader header;
             header.importedTime     = File::lastWritten(path);

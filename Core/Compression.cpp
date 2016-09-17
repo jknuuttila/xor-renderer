@@ -1,5 +1,6 @@
 #include "Core/Error.hpp"
 #include "Core/Compression.hpp"
+#include "Core/Utils.hpp"
 
 #include "external/zstd-1.0.0/lib/zstd.h"
 
@@ -27,12 +28,21 @@ namespace xor
     {
         DynamicBuffer<uint8_t> compressed;
         compressed.resize(ZSTD_compressBound(src.size()));
+
+        Timer compressionTime;
         auto retval = compressZstd(compressed, src, compressionLevel);
 
         if (ZSTD_isError(retval))
             XOR_THROW(false, CompressionException, "ZSTD compression failed: %s", ZSTD_getErrorName(retval));
 
         compressed.resize(retval);
+
+        log("Compression", "    Zstd compression: %.2f ms (%zu -> %zu, compression ratio: %.2f)\n",
+            compressionTime.milliseconds(),
+            src.sizeBytes(),
+            compressed.sizeBytes(),
+            static_cast<double>(src.sizeBytes()) / static_cast<double>(compressed.sizeBytes()));
+
         return compressed;
     }
 

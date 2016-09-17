@@ -1,6 +1,14 @@
 #include "Core/ChunkFile.hpp"
 #include "Core/Utils.hpp"
 
+// #define XOR_LOG_CHUNKFILE_OPS
+
+#ifdef XOR_LOG_CHUNKFILE_OPS
+#define XOR_CHUNKFILE_OP(...) log("ChunkFile", __VA_ARGS__)
+#else
+#define XOR_CHUNKFILE_OP(...)
+#endif
+
 namespace xor
 {
     namespace serialization
@@ -149,6 +157,7 @@ namespace xor
 
     void ChunkFile::read()
     {
+        XOR_CHUNKFILE_OP("\nReading ChunkFile(\"%s\")\n", m_path.cStr());
         File f(m_path);
         XOR_THROW(!!f, SerializationException, "Failed to open file");
         m_contents.resize(f.size());
@@ -163,6 +172,7 @@ namespace xor
 
     void ChunkFile::write() 
     {
+        XOR_CHUNKFILE_OP("\nWriting ChunkFile(\"%s\")\n", m_path.cStr());
         mainChunk().write();
 
         ChunkFileHeader header;
@@ -175,6 +185,12 @@ namespace xor
         File f(m_path, File::Mode::ReadWrite, File::Create::CreateAlways);
         XOR_THROW(!!f, SerializationException, "Failed to open file");
         f.write(m_contents);
+    }
+
+    void ChunkFile::printDescription()
+    {
+        print("ChunkFile(\"%s\"):\n", m_path.cStr());
+        mainChunk().printDescription(1);
     }
 
     ChunkFile::Chunk::Chunk(ChunkFile & file)
@@ -192,14 +208,20 @@ namespace xor
     {
         DynamicBuffer<uint8_t> buffer;
         auto writer = makeWriter(buffer, 1024);
+        XOR_CHUNKFILE_OP("Writing subchunk count: %zu\n", m_chunks.size());
         writer.writeLength(static_cast<uint>(m_chunks.size()));
+        XOR_CHUNKFILE_OP("Writing chunk data size: %zu\n", m_data.sizeBytes());
         writer.writeLength(static_cast<uint>(m_data.sizeBytes()));
 
         for (auto &&kv : m_chunks)
         {
             kv.second->write();
 
+            XOR_CHUNKFILE_OP("Writing subchunk name: %s\n", kv.first.cStr());
             writer.writeString(kv.first);
+            XOR_CHUNKFILE_OP("Writing subchunk block: (%lld, %lld)\n",
+                             static_cast<lld>(kv.second->m_block.begin),
+                             static_cast<lld>(kv.second->m_block.end));
             writer.write(FileBlock(kv.second->m_block));
         }
 
@@ -209,15 +231,30 @@ namespace xor
         m_dataBlock.end   = m_block.end;
 
         auto dst = m_file->span(m_block);
+        XOR_CHUNKFILE_OP("Writing chunk header: %zu bytes\n", buffer.sizeBytes());
         memcpy(dst.data(), buffer.data(), buffer.sizeBytes());
+        XOR_CHUNKFILE_OP("Writing chunk data: %zu bytes\n", m_data.sizeBytes());
         memcpy(dst.data() + buffer.sizeBytes(), m_data.data(), m_data.sizeBytes());
+    }
+
+    void ChunkFile::Chunk::printDescription(uint depth)
+    {
+        String prefix = StringView("    ").repeat(depth);
+        print("%sDATA: %zu bytes\n", prefix.cStr(), m_dataBlock.size());
+        for (auto &&c : m_chunks)
+        {
+            print("%s\"%s\":\n", prefix.cStr(), c.first.cStr());
+            c.second->printDescription(depth + 1);
+        }
     }
 
     void ChunkFile::Chunk::read()
     {
         auto reader  = Reader(m_file->span(m_block));
         uint numChunks = reader.readLength();
+        XOR_CHUNKFILE_OP("Reading subchunk count: %u\n", numChunks);
         uint dataBytes = reader.readLength();
+        XOR_CHUNKFILE_OP("Reading chunk data size: %u\n", dataBytes);
 
         m_dataBlock.begin = m_block.end - dataBytes;
         m_dataBlock.end   = m_block.end;
@@ -225,8 +262,13 @@ namespace xor
         for (uint i = 0; i < numChunks; ++i)
         {
             auto key  = reader.readString();
-            auto val  = reader.read<FileBlock>();
-            m_chunks[key].reset(new Chunk(*m_file, val));
+            XOR_CHUNKFILE_OP("Reading subchunk name: %s\n", key.str().cStr());
+            auto block  = reader.read<FileBlock>();
+            XOR_CHUNKFILE_OP("Reading subchunk block: (%d, %d)\n", block.begin, block.end);
+            m_chunks[key].reset(new Chunk(*m_file, block));
+            m_chunks[key]->read();
         }
+
+        XOR_CHUNKFILE_OP("Reading subchunk data: %zu\n", m_dataBlock.size());
     }
 }

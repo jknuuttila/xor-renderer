@@ -116,14 +116,14 @@ namespace xor
     {
         XOR_ASSERT(seqNum >= 0, "Sequence numbers must be non-negative.");
         XOR_ASSERT(!hasCompleted(seqNum),
-                   "Sequence number %ll was completed twice.",
-                   static_cast<ll>(seqNum));
+                   "Sequence number %lld was completed twice.",
+                   static_cast<lld>(seqNum));
 
         auto b = bit(seqNum);
 
         XOR_ASSERT(b.qword >= 0,
-                   "Sequence number %ll was never started.",
-                   static_cast<ll>(seqNum));
+                   "Sequence number %lld was never started.",
+                   static_cast<lld>(seqNum));
 
         m_uncompletedBits[b.qword] &= ~b.mask;
 
@@ -155,8 +155,8 @@ namespace xor
         auto b = bit(seqNum);
 
         XOR_ASSERT(b.qword >= 0,
-                   "Sequence number %ll was never started.",
-                   static_cast<ll>(seqNum));
+                   "Sequence number %lld was never started.",
+                   static_cast<lld>(seqNum));
 
         return (m_uncompletedBits[b.qword] & b.mask) == 0;
     }

@@ -37,15 +37,10 @@ namespace xor
             static BufferInfo fromBytes(Span<const uint8_t> data, Format format);
 
             template <typename T>
-            BufferInfo(Span<const T> data, Format format = Format::structure<T>())
+            static BufferInfo fromSpan(T &&span, Format format = Format::structure<ElementType<T>>())
             {
-                *this = fromBytes(asBytes(data), format);
+                return fromBytes(asBytes(span), format);
             }
-
-            template <typename T>
-            BufferInfo(std::initializer_list<T> data, Format format = Format::structure<T>())
-                : BufferInfo(asConstSpan(data), format)
-            {}
 
             size_t sizeBytes() const { return size * format.size(); }
         };
@@ -143,6 +138,7 @@ namespace xor
             friend class Device;
         public:
             D3D12_INPUT_LAYOUT_DESC desc() const;
+            D3D12_INPUT_ELEMENT_DESC operator[](size_t i) const { return m_elements[i]; }
         };
 
         class InputLayoutInfoBuilder : public InputLayoutInfo
@@ -180,6 +176,7 @@ namespace xor
             GraphicsPipelineInfo &vertexShader(const String &vsName);
             GraphicsPipelineInfo &pixelShader(const String &psName);
             GraphicsPipelineInfo &renderTargetFormats(Format format);
+            GraphicsPipelineInfo &renderTargetFormats(DXGI_FORMAT format);
             GraphicsPipelineInfo &renderTargetFormats(Span<const Format> formats);
             GraphicsPipelineInfo &renderTargetFormats(Span<const DXGI_FORMAT> formats);
             GraphicsPipelineInfo &depthFormat(Format format);

@@ -37,8 +37,8 @@ struct FPSCamera
     float3 position = 0;
     Angle azimuth   = Angle(0);
     Angle elevation = Angle(0);
-    float speed     = 1;
-    float turnSpeed = .2f;
+    float speed     = 10;
+    float turnSpeed = .075f;
 
     void update(const Window &window)
     {
@@ -122,7 +122,9 @@ public:
         Timer loadingTime;
         meshes = Mesh::loadFromFile(device, Mesh::Builder()
                                     .filename(XOR_DATA "/crytek-sponza/sponza.obj")
-                                    .loadMaterials(true));
+                                    .loadMaterials()
+                                    .import()
+        );
         log("Sponza", "Loaded scene in %.2f ms\n", loadingTime.milliseconds());
 
         basicMesh = device.createGraphicsPipeline(
@@ -146,7 +148,6 @@ public:
         camera.keys.moveFast  = VK_SHIFT;
         camera.position       = { -1000, 500, 0 };
         camera.azimuth        = Angle::degrees(-90);
-        camera.speed          = 10;
     }
 
     void handleInput(const Input &input) override

@@ -174,6 +174,11 @@ namespace xor
             return *this;
         }
 
+        GraphicsPipelineInfo & GraphicsPipelineInfo::renderTargetFormats(DXGI_FORMAT format)
+        {
+            return renderTargetFormats(Format(format));
+        }
+
         GraphicsPipelineInfo &GraphicsPipelineInfo::renderTargetFormats(Span<const Format> formats)
         {
             NumRenderTargets = static_cast<uint>(formats.size());

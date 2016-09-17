@@ -89,7 +89,7 @@ namespace xor
         inline BufferIBV dynamicBufferIBV(Span<const T> indices);
         BufferIBV dynamicBufferIBV(Span<const uint8_t> bytes, Format format);
 
-        void setVBV(const BufferVBV &vbv);
+        void setVBV(const BufferVBV &vbv, uint index = 0);
         void setVBVs(Span<const BufferVBV> vbvs);
         void setIBV(const BufferIBV &ibv);
 

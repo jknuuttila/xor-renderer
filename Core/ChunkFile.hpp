@@ -21,11 +21,11 @@ namespace xor
         {
             friend class ChunkFile;
 
-            ChunkFile *                                        m_file = nullptr;
-            Block                                              m_block;
-            std::unordered_map<String, std::unique_ptr<Chunk>> m_chunks;
-            Block                                              m_dataBlock;
-            DynamicBuffer<uint8_t>                             m_data;
+            ChunkFile *                              m_file = nullptr;
+            Block                                    m_block;
+            std::map<String, std::unique_ptr<Chunk>> m_chunks;
+            Block                                    m_dataBlock;
+            DynamicBuffer<uint8_t>                   m_data;
 
             Chunk(ChunkFile &file);
             Chunk(ChunkFile &file, serialization::FileBlock block);
@@ -46,6 +46,7 @@ namespace xor
 
             void read();
             void write();
+            void printDescription(uint depth = 0);
         };
 
     private:
@@ -57,7 +58,6 @@ namespace xor
         Span<uint8_t> span(Block block);
         Span<const uint8_t> span(Block block) const;
         void obtainBlock(Block &block, size_t bytes);
-        void writeToContents(Block &block, Span<const uint8_t> bytes);
     public:
         ChunkFile() = default;
         ChunkFile(String path);
@@ -69,5 +69,6 @@ namespace xor
 
         void read();
         void write();
+        void printDescription();
     };
 }

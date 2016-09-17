@@ -242,4 +242,20 @@ namespace xor
 
         return String(std::move(result));
     }
+
+    String StringView::repeat(uint count) const
+    {
+        if (count == 0)
+            return String();
+
+        std::string result;
+        std::string s = stdString();
+
+        result.reserve(count * static_cast<uint>(length()));
+
+        for (uint i = 0; i < count; ++i)
+            result += s;
+
+        return String(std::move(result));
+    }
 }

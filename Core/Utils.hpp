@@ -14,7 +14,7 @@ namespace xor
     class String;
 
     using uint = uint32_t;
-    using ll   = long long;
+    using lld  = long long;
     using llu  = unsigned long long;
 
     template <typename T>
@@ -185,8 +185,6 @@ namespace xor
         }
     };
 
-
-
     template <typename T>
     class Span
     {
@@ -196,9 +194,7 @@ namespace xor
         Span() = default;
 
         template <typename U>
-        Span(U &&u, decltype(*std::begin(u)) * = nullptr) : Span(std::begin(u), std::end(u)) {}
-
-        Span(std::initializer_list<T> init) : Span(std::begin(init), std::end(init)) {}
+        Span(U &&u) : Span(std::begin(u), std::end(u)) {}
 
         template <typename Iter>
         Span(Iter begin, Iter end)
@@ -239,6 +235,9 @@ namespace xor
         Span<T> operator()(int64_t begin) { return operator()(begin, size()); }
         Span<const T> operator()(int64_t begin) const { return operator()(begin, size()); }
     };
+
+    template <typename T>
+    using ElementType = std::remove_reference_t<decltype(std::declval<T>()[0])>;
 
     template <typename T>
     auto makeSpan(T *ptr, size_t size)
@@ -317,6 +316,12 @@ namespace xor
             fill(value);
         }
 
+        DynamicBuffer(Span<const T> data)
+        {
+            resize(data.size());
+            memcpy(m_data.get(), data.data(), sizeBytes());
+        }
+
         bool empty() const
         {
             return m_size == 0;
@@ -339,7 +344,12 @@ namespace xor
 
         void clear()
         {
-            resize(0);
+            resize(0, false);
+        }
+
+        void release()
+        {
+            resize(0, true);
         }
 
         void reserve(size_t capacity)
