@@ -225,6 +225,14 @@ namespace xor
         return m_state->arraySize;
     }
 
+    size_t Image::sizeBytes() const
+    {
+        size_t totalSize = 0;
+        for (auto &s : m_state->subresources)
+            totalSize += s.imageData().sizeBytes();
+        return totalSize;
+    }
+
     ImageData Image::subresource(Subresource sr) const
     {
         return m_state->subresources[sr.index(m_state->mipLevels)].imageData();
@@ -465,6 +473,8 @@ namespace xor
     {
         auto fiFormat = FreeImage_GetFileType(info.filename.cStr());
 
+        Timer loadTime;
+
         if (fiFormat != FIF_UNKNOWN)
         {
             loadUsingFreeImage(info);
@@ -482,6 +492,11 @@ namespace xor
                 XOR_CHECK(false, "Unknown file format \"%s\"", ext.cStr());
             }
         }
+
+        log("Image", "Loaded image \"%s\" in %.2f ms (%.2f MB / s)\n",
+            info.filename.cStr(),
+            loadTime.milliseconds(),
+            loadTime.bandwidthMB(sizeBytes()));
     }
 
     void Image::loadFromBlob(const Info & info)

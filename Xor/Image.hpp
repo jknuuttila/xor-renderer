@@ -158,6 +158,7 @@ namespace xor
         Format format() const;
         uint mipLevels() const;
         uint arraySize() const;
+        size_t sizeBytes() const;
         ImageData subresource(Subresource sr) const;
         std::vector<ImageData> allSubresources() const;
         Image compress(Format dstFormat = Format()) const;
