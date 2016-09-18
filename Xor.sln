@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.25123.0
+VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HelloD3D12", "HelloD3D12\HelloD3D12.vcxproj", "{B58848C6-CC27-4592-9533-613D119F6990}"
 EndProject
@@ -22,6 +22,8 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DearImGui", "external\imgui\DearImGui\DearImGui.vcxproj", "{C02D4E4A-A8A6-4763-A485-9541F4FADE76}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zstdlib", "external\zstd-1.0.0\projects\VS2010\zstdlib\zstdlib.vcxproj", "{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Terrain", "Terrain\Terrain.vcxproj", "{E557E6CC-8CDB-4C01-B10C-9104195978FD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -93,6 +95,14 @@ Global
 		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Release|x64.Build.0 = Release|x64
 		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Release|x86.ActiveCfg = Release|Win32
 		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850}.Release|x86.Build.0 = Release|Win32
+		{E557E6CC-8CDB-4C01-B10C-9104195978FD}.Debug|x64.ActiveCfg = Debug|x64
+		{E557E6CC-8CDB-4C01-B10C-9104195978FD}.Debug|x64.Build.0 = Debug|x64
+		{E557E6CC-8CDB-4C01-B10C-9104195978FD}.Debug|x86.ActiveCfg = Debug|Win32
+		{E557E6CC-8CDB-4C01-B10C-9104195978FD}.Debug|x86.Build.0 = Debug|Win32
+		{E557E6CC-8CDB-4C01-B10C-9104195978FD}.Release|x64.ActiveCfg = Release|x64
+		{E557E6CC-8CDB-4C01-B10C-9104195978FD}.Release|x64.Build.0 = Release|x64
+		{E557E6CC-8CDB-4C01-B10C-9104195978FD}.Release|x86.ActiveCfg = Release|Win32
+		{E557E6CC-8CDB-4C01-B10C-9104195978FD}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

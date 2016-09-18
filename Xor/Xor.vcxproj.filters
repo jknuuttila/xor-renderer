@@ -15,6 +15,7 @@
     <ClInclude Include="XorDeviceState.hpp" />
     <ClInclude Include="XorPCH.hpp" />
     <ClInclude Include="ShaderMath.h.hlsl" />
+    <ClInclude Include="FPSCamera.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
@@ -32,12 +33,10 @@
   <ItemGroup>
     <CustomBuild Include="..\external\FreeImage\FreeImage.dll" />
     <CustomBuild Include="..\external\assimp\assimp-vc130-mt.dll" />
+    <CustomBuild Include="..\external\Compressonator\Compressonator_MD_DLL.dll" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="ImguiRenderer.vs.hlsl" />
     <FxCompile Include="ImguiRenderer.ps.hlsl" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\external\Compressonator\Compressonator_MD_DLL.dll" />
   </ItemGroup>
 </Project>

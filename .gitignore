@@ -40,7 +40,8 @@
 *.TMP
 
 # Other stuff
-/data/crytek-sponza
+/data/crytek-sponza/**
+/data/heightmaps/**
 /data/crytek-sponza.zip
 *.zip
 *.ipch

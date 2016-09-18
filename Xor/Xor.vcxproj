@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Format.hpp" />
+    <ClInclude Include="FPSCamera.hpp" />
     <ClInclude Include="Image.hpp" />
     <ClInclude Include="ImguiRenderer.sig.h" />
     <ClInclude Include="Material.hpp" />
