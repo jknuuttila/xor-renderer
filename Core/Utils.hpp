@@ -225,12 +225,12 @@ namespace xor
         Span<T> operator()(int64_t begin, int64_t end)
         {
             if (end < 0) end += size();
-            return Span<T>(m_begin + begin, m_begin + end);
+            return Span<T>(m_begin + begin, std::min(m_begin + end, m_end));
         }
         Span<const T> operator()(int64_t begin, int64_t end) const
         {
             if (end < 0) end += size();
-            return Span<const T>(m_begin + begin, m_begin + end);
+            return Span<const T>(m_begin + begin, std::min(m_begin + end, m_end));
         }
         Span<T> operator()(int64_t begin) { return operator()(begin, size()); }
         Span<const T> operator()(int64_t begin) const { return operator()(begin, size()); }
@@ -240,13 +240,13 @@ namespace xor
     using ElementType = std::remove_reference_t<decltype(std::declval<T>()[0])>;
 
     template <typename T>
-    auto makeSpan(T *ptr, size_t size)
+    auto makeSpan(T *ptr, size_t size = 1)
     {
         return Span<T>(ptr, size);
     }
 
     template <typename T>
-    auto makeConstSpan(T *ptr, size_t size)
+    auto makeConstSpan(T *ptr, size_t size = 1)
     {
         return Span<const T>(ptr, size);
     }

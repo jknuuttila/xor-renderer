@@ -37,10 +37,10 @@ namespace xor
 
             BufferInfo info(numElements, format);
 
-            info.m_initializer = [data] (CommandList &cmd, Buffer &buf) 
+            info.m_initializer = ResourceInitializer<Buffer>([data](Device &dev, Buffer &buf)
             {
-                cmd.updateBuffer(buf, data);
-            };
+                dev.initializeBufferWith(buf, data);
+            });
 
             return info;
         }
@@ -64,16 +64,10 @@ namespace xor
 
             mipLevels = image.mipLevels();
 
-            m_initializer = [&image] (CommandList &cmd, Texture &tex) 
+            m_initializer = ResourceInitializer<Texture>([&image](Device &dev, Texture &tex)
             {
-                auto mipLevels = image.mipLevels();
-                for (uint m = 0; m < mipLevels; ++m)
-                {
-                    cmd.updateTexture(tex,
-                                      image.subresource(m),
-                                      Subresource(m));
-                }
-            };
+                dev.initializeTextureWith(tex, image.allSubresources());
+            });
         }
 
         TextureInfo::TextureInfo(const ImageData & data, Format fmt)
@@ -84,10 +78,10 @@ namespace xor
             else
                 format = data.format;
 
-            m_initializer = [data] (CommandList &cmd, Texture &tex) 
+            m_initializer = ResourceInitializer<Texture>([data](Device &dev, Texture &tex)
             {
-                cmd.updateTexture(tex, data);
-            };
+                dev.initializeTextureWith(tex, makeSpan(&data));
+            });
         }
 
         TextureInfo::TextureInfo(ID3D12Resource * texture)
@@ -303,7 +297,7 @@ namespace xor
 
         struct ShaderBinary : public D3D12_SHADER_BYTECODE
         {
-            std::vector<uint8_t> bytecode;
+            DynamicBuffer<uint8_t> bytecode;
 
             ShaderBinary()
             {

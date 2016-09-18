@@ -17,6 +17,14 @@ namespace xor
             , slice(slice)
         {}
 
+        static Subresource fromIndex(uint subresourceIndex, uint mipLevels)
+        {
+            Subresource sr;
+            sr.mip   = subresourceIndex % mipLevels;
+            sr.slice = subresourceIndex / mipLevels;
+            return sr;
+        }
+
         uint index(uint mipLevels) const
         {
             return slice * mipLevels + mip;
@@ -151,11 +159,15 @@ namespace xor
         uint mipLevels() const;
         uint arraySize() const;
         ImageData subresource(Subresource sr) const;
+        std::vector<ImageData> allSubresources() const;
         Image compress(Format dstFormat = Format()) const;
         DynamicBuffer<uint8_t> serialize() const;
 
     private:
         void loadFromFile(const Info &info);
         void loadFromBlob(const Info &info);
+
+        void loadUsingFreeImage(const Info &info);
+        void loadGridFloat(const Info &info);
     };
 }

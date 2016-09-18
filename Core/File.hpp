@@ -58,7 +58,7 @@ namespace xor
         HRESULT read(Span<uint8_t> dst);
         HRESULT write(Span<const uint8_t> src);
 
-        std::vector<uint8_t> read();
+        DynamicBuffer<uint8_t> read();
         String readText();
         std::wstring readWideText();
 

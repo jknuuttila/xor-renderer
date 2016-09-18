@@ -8,6 +8,11 @@ namespace xor
 {
     using namespace xor::backend;
 
+    // Largest amount of data that we push to the upload heap at once during initial
+    // data uploading.
+    static const size_t InitialDataLimit = UploadHeap::UploadHeapSize / 4;
+    static const bool WaitForLargeInitialData = true;
+
     namespace backend
     {
         struct SwapChainState : DeviceChild
@@ -401,6 +406,85 @@ namespace xor
         return graphicsCommandList();
     }
 
+    void Device::initializeBufferWith(Buffer & buffer, Span<const uint8_t> bytes)
+    {
+        bool isLarge = bytes.sizeBytes() > InitialDataLimit;
+
+        for (size_t offset = 0; offset < bytes.sizeBytes(); offset += InitialDataLimit)
+        {
+            auto cmd = initializerCommandList();
+            cmd.updateBuffer(buffer, bytes(offset, offset + InitialDataLimit), offset);
+            auto number = cmd.number();
+            execute(cmd);
+
+            if (WaitForLargeInitialData && isLarge)
+                waitUntilCompleted(number);
+        }
+    }
+
+    void Device::initializeTextureWith(Texture & texture, Span<const ImageData> subresources)
+    {
+        size_t totalSize = 0;
+        for (auto &s : subresources)
+            totalSize += s.sizeBytes();
+
+        // If all the subresources fit nicely within the upload heap, 
+        // just do it all in one command list, since it's faster and
+        // places less pressure on the driver.
+        if (totalSize < UploadHeap::UploadHeapSize)
+        {
+            auto cmd = initializerCommandList();
+            for (uint s = 0; s < subresources.size(); ++s)
+            {
+                auto &data = subresources[s];
+                auto sr = Subresource::fromIndex(s, texture->mipLevels);
+                cmd.updateTexture(texture, data, sr);
+            }
+            execute(cmd);
+            return;
+        }
+
+        // Otherwise, update each subresource with a separate list,
+        // and break huge subresources down to smaller blocks that fit.
+        for (uint s = 0; s < subresources.size(); ++s)
+        {
+            auto &data = subresources[s];
+            bool isLarge = data.sizeBytes() > InitialDataLimit;
+
+            auto sr = Subresource::fromIndex(s, texture->mipLevels);
+
+            if (isLarge)
+            {
+                uint rows = static_cast<uint>(InitialDataLimit / data.pitch);
+                for (uint y = 0; y < data.size.y; y += rows)
+                {
+                    uint begin = y;
+                    uint end   = std::min(y + rows, data.size.y);
+
+                    ImageData block;
+                    block.data   = data.data(begin * data.pitch, end * data.pitch);
+                    block.pitch  = data.pitch;
+                    block.format = data.format;
+                    block.size   = { data.size.x, end - begin };
+
+                    auto cmd = initializerCommandList();
+                    cmd.updateTexture(texture, block, ImageRect(int2(0, begin), sr));
+                    auto number = cmd.number();
+                    execute(cmd);
+
+                    if (WaitForLargeInitialData)
+                        waitUntilCompleted(number);
+                }
+            }
+            else
+            {
+                auto cmd = initializerCommandList();
+                cmd.updateTexture(texture, data, sr); 
+                execute(cmd);
+            }
+        }
+    }
+
     Buffer Device::createBuffer(const Buffer::Info & info)
     {
         Buffer buffer;
@@ -436,10 +520,14 @@ namespace xor
             __uuidof(ID3D12Resource),
             &buffer.S().resource));
 
-        if (info.m_initializer)
+        if (info.m_initializer.m_withDevice)
+        {
+            info.m_initializer.m_withDevice(*this, buffer);
+        }
+        else if (info.m_initializer.m_withCommandList)
         {
             auto initCmd = initializerCommandList();
-            info.m_initializer(initCmd, buffer);
+            info.m_initializer.m_withCommandList(initCmd, buffer);
             execute(initCmd);
         }
 
@@ -551,10 +639,14 @@ namespace xor
             __uuidof(ID3D12Resource),
             &texture.S().resource));
 
-        if (info.m_initializer)
+        if (info.m_initializer.m_withDevice)
+        {
+            info.m_initializer.m_withDevice(*this, texture);
+        }
+        else if (info.m_initializer.m_withCommandList)
         {
             auto initCmd = initializerCommandList();
-            info.m_initializer(initCmd, texture);
+            info.m_initializer.m_withCommandList(initCmd, texture);
             execute(initCmd);
         }
 

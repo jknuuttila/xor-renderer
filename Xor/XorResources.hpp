@@ -19,10 +19,32 @@ namespace xor
             Write,
         };
 
+        template <typename Resource>
+        class ResourceInitializer
+        {
+            friend class xor::Device;
+            std::function<void(Device &device, Resource &res)>   m_withDevice;
+            std::function<void(CommandList &cmd, Resource &res)> m_withCommandList;
+        public:
+            ResourceInitializer() = default;
+            ResourceInitializer(std::function<void(Device &device, Resource &res)> initWithDevice)
+                : m_withDevice(std::move(initWithDevice))
+            {}
+            ResourceInitializer(std::function<void(CommandList &cmd, Resource &res)> initWithCommandList)
+                : m_withCommandList(std::move(initWithCommandList))
+            {}
+
+            explicit operator bool() const
+            {
+                return static_cast<bool>(m_withDevice) ||
+                    static_cast<bool>(m_withCommandList);
+            }
+        };
+
         class BufferInfo
         {
         protected:
-            std::function<void(CommandList &cmd, Buffer &buf)> m_initializer;
+            ResourceInitializer<Buffer> m_initializer;
             friend class Device;
         public:
             size_t size = 0;
@@ -83,7 +105,7 @@ namespace xor
         class TextureInfo
         {
         protected:
-            std::function<void(CommandList &cmd, Texture &tex)> m_initializer;
+            ResourceInitializer<Texture> m_initializer;
             friend class Device;
         public:
             uint2 size;

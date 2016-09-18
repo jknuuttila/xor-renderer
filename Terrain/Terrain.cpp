@@ -2,6 +2,7 @@
 #include "Core/TLog.hpp"
 #include "Xor/Xor.hpp"
 #include "Xor/FPSCamera.hpp"
+#include "Xor/Blit.hpp"
 
 using namespace xor;
 
@@ -12,8 +13,13 @@ class Terrain : public Window
     SwapChain swapChain;
     TextureDSV depthBuffer;
     FPSCamera camera;
+    Blit blit;
 
     Timer time;
+
+    TextureSRV hm;
+    float minHeight = 200;
+    float maxHeight = 2500;
 
 public:
     Terrain()
@@ -24,6 +30,7 @@ public:
         device    = xor.defaultDevice();
         swapChain = device.createSwapChain(*this);
         depthBuffer = device.createTextureDSV(Texture::Info(size(), DXGI_FORMAT_D32_FLOAT));
+        blit = Blit(device);
 
         Timer loadingTime;
         camera.keys.forward   = 'W';
@@ -37,6 +44,9 @@ public:
         camera.keys.moveFast  = VK_SHIFT;
         camera.position       = { -1000, 500, 0 };
         camera.azimuth        = Angle::degrees(-90);
+
+        Image heightmap(Image::Builder().filename(XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt"));
+        hm = device.createTextureSRV(heightmap);
     }
 
     void handleInput(const Input &input) override
@@ -61,6 +71,15 @@ public:
 
         cmd.clearRTV(backbuffer, float4(0, 0, 0.25f, 1));
         cmd.clearDSV(depthBuffer, 0);
+
+        // (b - a) * s + a = x
+        // (b - a) * s = x - a
+        // s = (x - a) / (b - a)
+        // s = x / (b - a) - a / (b - a)
+        float heightRange = maxHeight - minHeight;
+        blit.blit(cmd, backbuffer, 0, hm, ImageRect(int2(0), int2(900, 900)),
+                  float4(1 / heightRange, 0, 0, 0),
+                  float4(minHeight / heightRange, 0, 0, 1));
 
         cmd.imguiEndFrame(swapChain);
 

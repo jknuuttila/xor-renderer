@@ -230,6 +230,17 @@ namespace xor
         return m_state->subresources[sr.index(m_state->mipLevels)].imageData();
     }
 
+    std::vector<ImageData> Image::allSubresources() const
+    {
+        std::vector<ImageData> srs;
+        srs.reserve(m_state->subresources.size());
+
+        for (auto &s : m_state->subresources)
+            srs.emplace_back(s.imageData());
+
+        return srs;
+    }
+
     struct CompressionTexture
     {
         DynamicBuffer<uint8_t> data;
@@ -453,6 +464,58 @@ namespace xor
     void Image::loadFromFile(const Info & info)
     {
         auto fiFormat = FreeImage_GetFileType(info.filename.cStr());
+
+        if (fiFormat != FIF_UNKNOWN)
+        {
+            loadUsingFreeImage(info);
+        }
+        else
+        {
+            auto ext = String(info.filename.path().extension().c_str()).lower();
+
+            if (ext == ".flt")
+            {
+                loadGridFloat(info);
+            }
+            else
+            {
+                XOR_CHECK(false, "Unknown file format \"%s\"", ext.cStr());
+            }
+        }
+    }
+
+    void Image::loadFromBlob(const Info & info)
+    {
+        Reader blobReader(info.blob);
+
+        auto header = blobReader.readStruct<ImageHeader>();
+        m_state = std::make_shared<State>();
+        m_state->mipLevels = header.mipLevels;
+        m_state->arraySize = header.arraySize;
+
+        m_state->subresources.resize(mipLevels() * arraySize());
+
+        for (uint i = 0; i < header.arraySize; ++i)
+        {
+            for (uint m = 0; m < header.mipLevels; ++m)
+            {
+                auto &s = m_state->subresources[Subresource(m, i).index(header.mipLevels)];
+
+                auto srHeader = blobReader.readStruct<SubresourceHeader>();
+                s.size        = srHeader.size;
+                s.pitch       = srHeader.pitch;
+                s.format      = header.format;
+
+                auto data = blobReader.readBlob();
+                s.data.resize(data.sizeBytes());
+                memcpy(s.data.data(), data.data(), data.sizeBytes());
+            }
+        }
+    }
+
+    void Image::loadUsingFreeImage(const Info & info)
+    {
+        auto fiFormat = FreeImage_GetFileType(info.filename.cStr());
         auto flags  = defaultFlagsForFormat(fiFormat);
 
         FiBitmap bmp = FreeImage_Load(fiFormat, info.filename.cStr(), flags);
@@ -504,33 +567,46 @@ namespace xor
         }
     }
 
-    void Image::loadFromBlob(const Info & info)
+    void Image::loadGridFloat(const Info & info)
     {
-        Reader blobReader(info.blob);
+        auto hdrFilename = String(info.filename.path().replace_extension(".hdr"));
 
-        auto header = blobReader.readStruct<ImageHeader>();
-        m_state = std::make_shared<State>();
-        m_state->mipLevels = header.mipLevels;
-        m_state->arraySize = header.arraySize;
-
-        m_state->subresources.resize(mipLevels() * arraySize());
-
-        for (uint i = 0; i < header.arraySize; ++i)
+        uint2 imageSize;
         {
-            for (uint m = 0; m < header.mipLevels; ++m)
+            auto header = File(hdrFilename).readText().lower();
+
+            for (auto &&l : header.lines())
             {
-                auto &s = m_state->subresources[Subresource(m, i).index(header.mipLevels)];
-
-                auto srHeader = blobReader.readStruct<SubresourceHeader>();
-                s.size        = srHeader.size;
-                s.pitch       = srHeader.pitch;
-                s.format      = header.format;
-
-                auto data = blobReader.readBlob();
-                s.data.resize(data.sizeBytes());
-                memcpy(s.data.data(), data.data(), data.sizeBytes());
+                auto fields = l.splitNonEmpty();
+                if (fields[0] == "ncols")
+                    imageSize.x = std::stoul(fields[1].stdString());
+                else if (fields[0] == "nrows")
+                    imageSize.y = std::stoul(fields[1].stdString());
             }
         }
+
+        XOR_CHECK(all(imageSize > 0), "Could not determine GridFloat file dimensions");
+        m_state = std::make_shared<State>();
+        m_state->arraySize = 1;
+        m_state->mipLevels = 1;
+        m_state->subresources.resize(1);
+
+        auto &s  = m_state->subresources.front();
+        s.format = DXGI_FORMAT_R32_FLOAT;
+        s.size   = imageSize;
+        s.pitch  = computePitch(s.format, s.size);
+        s.data.resize(s.pitch * s.size.y);
+
+        // Since the GridFloat file is tightly packed and we need to respect
+        // pitch requirements, read it in line by line.
+        auto rowBytes = s.format.areaSizeBytes(s.size.x);
+
+        File dataFile(info.filename);
+        XOR_CHECK(dataFile.size() >= s.format.areaSizeBytes(imageSize),
+                  "Data file unexpectedly small");
+
+        for (uint y = 0; y < s.size.y; ++y)
+            dataFile.read(s.scanline(y)(0, rowBytes));
     }
 
     Span<uint8_t> ImageSubresource::scanline(uint y)

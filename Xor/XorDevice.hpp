@@ -34,6 +34,8 @@ namespace xor
         friend struct backend::ResourceState;
         friend struct backend::DescriptorViewState;
         friend struct backend::PipelineState;
+        friend class info::BufferInfo;
+        friend class info::TextureInfo;
 
         ID3D12Device *device();
 
@@ -42,6 +44,8 @@ namespace xor
         void releaseCommandList(std::shared_ptr<backend::CommandListState> cmdList);
 
         CommandList initializerCommandList();
+        void initializeBufferWith(Buffer &buffer, Span<const uint8_t> bytes);
+        void initializeTextureWith(Texture &texture, Span<const ImageData> subresources);
 
         backend::RootSignature collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
 

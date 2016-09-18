@@ -16,6 +16,8 @@
     <ClInclude Include="XorPCH.hpp" />
     <ClInclude Include="ShaderMath.h.hlsl" />
     <ClInclude Include="FPSCamera.hpp" />
+    <ClInclude Include="Blit.hpp" />
+    <ClInclude Include="Blit.sig.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
@@ -29,6 +31,7 @@
     <ClCompile Include="XorBackend.cpp" />
     <ClCompile Include="XorDeviceState.cpp" />
     <ClCompile Include="XorPCH.cpp" />
+    <ClCompile Include="Blit.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\external\FreeImage\FreeImage.dll" />
@@ -38,5 +41,7 @@
   <ItemGroup>
     <FxCompile Include="ImguiRenderer.vs.hlsl" />
     <FxCompile Include="ImguiRenderer.ps.hlsl" />
+    <FxCompile Include="Blit.vs.hlsl" />
+    <FxCompile Include="Blit.ps.hlsl" />
   </ItemGroup>
 </Project>

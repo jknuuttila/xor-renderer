@@ -314,9 +314,9 @@ namespace xor
             return S_OK;
     }
 
-    std::vector<uint8_t> File::read()
+    DynamicBuffer<uint8_t> File::read()
     {
-        std::vector<uint8_t> contents;
+        DynamicBuffer<uint8_t> contents;
         contents.resize(size());
         seek(0);
         XOR_CHECK_HR(read(contents));

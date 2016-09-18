@@ -11,6 +11,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Blit.hpp" />
+    <ClInclude Include="Blit.sig.h" />
     <ClInclude Include="Format.hpp" />
     <ClInclude Include="FPSCamera.hpp" />
     <ClInclude Include="Image.hpp" />
@@ -26,6 +28,7 @@
     <ClInclude Include="XorResources.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Blit.cpp" />
     <ClCompile Include="Format.cpp" />
     <ClCompile Include="Image.cpp" />
     <ClCompile Include="Material.cpp" />
@@ -77,6 +80,14 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="Blit.ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="Blit.vs.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+    </FxCompile>
     <FxCompile Include="ImguiRenderer.ps.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
