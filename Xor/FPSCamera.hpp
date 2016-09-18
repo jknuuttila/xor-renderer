@@ -8,15 +8,15 @@ namespace xor
     {
         struct Keys
         {
-            int forward   = 0;
-            int backward  = 0;
-            int left      = 0;
-            int right     = 0;
-            int lookUp    = 0;
-            int lookDown  = 0;
-            int lookLeft  = 0;
-            int lookRight = 0;
-            int moveFast  = 0;
+            int forward   = 'W';
+            int left      = 'A';
+            int backward  = 'S';
+            int right     = 'D';
+            int lookUp    = VK_UP;
+            int lookLeft  = VK_LEFT;
+            int lookDown  = VK_DOWN;
+            int lookRight = VK_RIGHT;
+            int moveFast  = VK_SHIFT;
         } keys;
 
         float3 position = 0;

@@ -2,11 +2,8 @@
 
 float4 main(float4 uv : TEXCOORD0) : SV_Target
 {
-    float4 color = src.SampleLevel(pointSampler, uv.xy, 0);
-
+    float4 color = src.SampleLevel(pointSampler, uv.xy, mip);
     color = color * multiplier + bias;
-    color.gb = 0;
-    color.a = 1;
-
+    color.rgb *= color.a;
     return color;
 }

@@ -33,17 +33,6 @@ public:
         blit = Blit(device);
 
         Timer loadingTime;
-        camera.keys.forward   = 'W';
-        camera.keys.left      = 'A';
-        camera.keys.backward  = 'S';
-        camera.keys.right     = 'D';
-        camera.keys.lookUp    = VK_UP;
-        camera.keys.lookLeft  = VK_LEFT;
-        camera.keys.lookDown  = VK_DOWN;
-        camera.keys.lookRight = VK_RIGHT;
-        camera.keys.moveFast  = VK_SHIFT;
-        camera.position       = { -1000, 500, 0 };
-        camera.azimuth        = Angle::degrees(-90);
 
         Image heightmap(Image::Builder().filename(XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt"));
         hm = device.createTextureSRV(heightmap);
