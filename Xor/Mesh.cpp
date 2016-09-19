@@ -428,6 +428,40 @@ namespace xor
         return meshes;
     }
 
+    Mesh Mesh::generate(Device & device,
+                        Span<const std::tuple<const char *, Format, Span<const uint8_t>>> vertexAttributes,
+                        Span<const uint> indices)
+    {
+        Mesh m;
+        m.m_state = std::make_shared<State>();
+        auto &s = *m.m_state;
+
+        info::InputLayoutInfoBuilder il;
+
+        using std::get;
+        for (auto &&attr : vertexAttributes)
+        {
+            Format format = get<1>(attr);
+            il.element(get<0>(attr), 0, format, static_cast<uint>(s.vertexBuffers.size()));
+            s.vertexBuffers.emplace_back();
+            auto &vb = s.vertexBuffers.back();
+            vb.data   = get<2>(attr);
+            vb.format = format;
+            vb.view   = device.createBufferVBV(Buffer::Info::fromBytes(vb.data, vb.format));
+        }
+
+        s.indexBuffer.data.resize(indices.sizeBytes());
+        memcpy(s.indexBuffer.data.data(), indices.data(), indices.sizeBytes());
+        s.indexBuffer.format = DXGI_FORMAT_R32_UINT;
+        s.indexBuffer.view   = device.createBufferIBV(Buffer::Info::fromBytes(s.indexBuffer.data, s.indexBuffer.format));
+
+        s.inputLayout = il;
+        s.numVertices = s.vertexBuffers.front().view.buffer()->size;
+        s.numIndices  = static_cast<uint>(indices.size());
+
+        return m;
+    }
+
     info::InputLayoutInfo Mesh::inputLayout() const
     {
         return m_state->inputLayout;

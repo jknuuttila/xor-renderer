@@ -3,4 +3,11 @@
   <ItemGroup>
     <ClCompile Include="Terrain.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="RenderTerrain.vs.hlsl" />
+    <FxCompile Include="RenderTerrain.ps.hlsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="RenderTerrain.sig.h" />
+  </ItemGroup>
 </Project>

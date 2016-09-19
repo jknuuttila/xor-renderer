@@ -19,6 +19,7 @@
     <ClInclude Include="ImguiRenderer.sig.h" />
     <ClInclude Include="Material.hpp" />
     <ClInclude Include="Mesh.hpp" />
+    <ClInclude Include="ProcessingMesh.hpp" />
     <ClInclude Include="Xor.hpp" />
     <ClInclude Include="XorBackend.hpp" />
     <ClInclude Include="XorCommandList.hpp" />
@@ -33,6 +34,7 @@
     <ClCompile Include="Image.cpp" />
     <ClCompile Include="Material.cpp" />
     <ClCompile Include="Mesh.cpp" />
+    <ClCompile Include="ProcessingMesh.cpp" />
     <ClCompile Include="Xor.cpp" />
     <ClCompile Include="XorBackend.cpp" />
     <ClCompile Include="XorCommandList.cpp" />
@@ -139,6 +141,7 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\XorCompilerSettings.props" />
+    <Import Project="..\EditAndContinue.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />

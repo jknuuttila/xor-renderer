@@ -35,12 +35,12 @@ namespace xor
         };
     }
 
-    template <typename View>
+    template <typename View = bool>
     struct MeshData
     {
         DynamicBuffer<uint8_t> data;
-        View view;
         Format format;
+        View view = View {};
 
         MeshData() = default;
     };
@@ -69,6 +69,9 @@ namespace xor
         Mesh(Device &device, const Info &meshInfo);
 
         static std::vector<Mesh> loadFromFile(Device &device, const Info &meshInfo);
+        static Mesh generate(Device &device,
+                             Span<const std::tuple<const char *, Format, Span<const uint8_t>>> vertexAttributes,
+                             Span<const uint> indices = {});
 
         info::InputLayoutInfo inputLayout() const;
         void setForRendering(CommandList &cmd) const;

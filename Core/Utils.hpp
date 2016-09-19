@@ -196,6 +196,8 @@ namespace xor
         template <typename U>
         Span(U &&u) : Span(std::begin(u), std::end(u)) {}
 
+        Span(std::initializer_list<T> init) : Span(init.begin(), init.end()) {}
+
         template <typename Iter>
         Span(Iter begin, Iter end)
             : m_begin(begin == end ? nullptr : std::addressof(*begin))

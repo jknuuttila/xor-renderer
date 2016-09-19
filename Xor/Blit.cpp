@@ -23,14 +23,14 @@ namespace xor
 
         float2 pos     = float2(dstPos);
         float2 dstSize = float2(dst.texture()->size);
-        float2 srcSize = float2(srcRect.size());
+        float2 srcSize = float2(src.texture()->size);
 
         float2 topLeft = float2(-1, 1);
         float2 pixel = 2.f / dstSize * float2(1, -1);
 
         BlitShader::Constants constants;
         constants.posBegin   = topLeft + pos * pixel;
-        constants.posEnd     = constants.posBegin + srcSize * pixel;
+        constants.posEnd     = constants.posBegin + float2(srcRect.size()) * pixel;
         constants.uvBegin    = float2(srcRect.leftTop) / srcSize;
         constants.uvEnd      = float2(srcRect.rightBottom) / srcSize;
         constants.mip        = static_cast<float>(srcRect.subresource.mip);

@@ -105,6 +105,14 @@ namespace xor
             return reinterpret_cast<const T &>(data[offset]);
         }
 
+        template <typename T>
+        Span<const T> scanline(uint y) const
+        {
+            uint offset = y * pitch;
+            uint length = format.areaSizeBytes(size.x);
+            return reinterpretSpan<const T>(data(offset, offset + length));
+        }
+
         size_t sizeBytes() const
         {
             return static_cast<size_t>(size.y) * pitch;
