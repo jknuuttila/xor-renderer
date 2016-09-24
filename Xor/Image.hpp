@@ -43,6 +43,19 @@ namespace xor
             , rightBottom(rightBottom)
         {}
 
+        static Rect withSize(int2 leftTop, int2 size)
+        {
+            Rect rect;
+            rect.leftTop     = leftTop;
+            rect.rightBottom = leftTop + size;
+            return rect;
+        }
+
+        static Rect withSize(int2 size)
+        {
+            return withSize(0, size);
+        }
+
         bool empty() const
         {
             auto s = size();
@@ -60,6 +73,9 @@ namespace xor
         Subresource subresource = 0;
 
         ImageRect() = default;
+        ImageRect(Rect rect)
+            : Rect(rect)
+        {}
         ImageRect(int2 leftTop)
             : Rect(leftTop)
         {}

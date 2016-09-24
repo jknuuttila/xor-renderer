@@ -14,25 +14,28 @@ namespace xor
     }
 
     void Blit::blit(CommandList & cmd,
-                    TextureRTV & dst, int2 dstPos,
+                    TextureRTV & dst, Rect dstRect,
                     TextureSRV src, ImageRect srcRect,
                     float4 multiplier, float4 bias)
     {
         cmd.bind(m_blit);
         cmd.setRenderTargets(dst);
 
-        float2 pos     = float2(dstPos);
-        float2 dstSize = float2(dst.texture()->size);
-        float2 srcSize = float2(src.texture()->size);
+        float2 pos     = float2(dstRect.leftTop);
+        float2 dstSize = float2(dstRect.empty()
+                                ? srcRect.size()
+                                : dstRect.size());
+        float2 dstTexSize = float2(dst.texture()->size);
+        float2 srcTexSize = float2(src.texture()->size);
 
         float2 topLeft = float2(-1, 1);
-        float2 pixel = 2.f / dstSize * float2(1, -1);
+        float2 pixel = 2.f / dstTexSize * float2(1, -1);
 
         BlitShader::Constants constants;
-        constants.posBegin   = topLeft + pos * pixel;
-        constants.posEnd     = constants.posBegin + float2(srcRect.size()) * pixel;
-        constants.uvBegin    = float2(srcRect.leftTop) / srcSize;
-        constants.uvEnd      = float2(srcRect.rightBottom) / srcSize;
+        constants.posBegin   = topLeft            +     pos * pixel;
+        constants.posEnd     = constants.posBegin + dstSize * pixel;
+        constants.uvBegin    = float2(srcRect.leftTop)     / srcTexSize;
+        constants.uvEnd      = float2(srcRect.rightBottom) / srcTexSize;
         constants.mip        = static_cast<float>(srcRect.subresource.mip);
         constants.multiplier = multiplier;
         constants.bias       = bias;

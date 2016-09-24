@@ -39,4 +39,20 @@ namespace xor
         float m = V - C;
         return rgb1 + float3(m);
     }
+
+    inline float2 normalizationMultiplyAdd(float a, float b)
+    {
+        if (b < a) std::swap(a, b);
+
+        // (b - a) * s + a = x
+        // (b - a) * s = x - a
+        // s = (x - a) / (b - a)
+        // s = x / (b - a) - a / (b - a)
+
+        float s = 1.f / (b - a);
+        float c = -a / (b - a);
+
+        return { s, c };
+    }
+
 }

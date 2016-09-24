@@ -12,9 +12,8 @@ namespace xor
         Blit(Device &device);
 
         void blit(CommandList &cmd,
-                  TextureRTV &dst, int2 dstPos,
-                  TextureSRV src,
-                  ImageRect srcRect = {},
+                  TextureRTV &dst, Rect dstRect,
+                  TextureSRV src, ImageRect srcRect = {},
                   float4 multiplier = 1, float4 bias = 0);
     };
 }

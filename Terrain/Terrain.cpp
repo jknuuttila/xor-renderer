@@ -12,14 +12,17 @@ using namespace xor;
 
 static const float ArcSecond = 30.87f;
 
+static const float NearPlane = 1.f;
+
 struct Heightmap
 {
     Image image;
     TextureSRV srv;
     int2 size;
     float2 worldSize;
-    float min = 1e10;
-    float max = -1e10;
+    float texelSize;
+    float minHeight = 1e10;
+    float maxHeight = -1e10;
 
     Heightmap() = default;
     Heightmap(Device &device, StringView file, float texelSize = ArcSecond / 3.f)
@@ -27,11 +30,12 @@ struct Heightmap
         image = Image(Image::Builder().filename(file));
         srv   = device.createTextureSRV(Texture::Info(image));
         size  = int2(image.size());
+        this->texelSize = texelSize;
         worldSize = texelSize * float2(size);
 
 #if defined(_DEBUG)
-        min = 340.f;
-        max = 2600.f;
+        minHeight = 340.f;
+        maxHeight = 2600.f;
 #else
         Timer t;
         auto size = image.size();
@@ -40,54 +44,56 @@ struct Heightmap
         {
             for (float f : sr.scanline<float>(y))
             {
-                min = std::min(f, min);
-                max = std::max(f, max);
+                minHeight = std::min(f, minHeight);
+                maxHeight = std::max(f, maxHeight);
             }
         }
         log("Heightmap", "Scanned heightmap bounds in %.2f ms\n", t.milliseconds());
 #endif
     }
 
-    ProcessingMesh uniformGrid(int vertexDistance = 0)
+    ProcessingMesh uniformGrid(Rect area, int vertexDistance = 0)
     {
         Timer t;
+
+        area.rightBottom = min(area.rightBottom, size);
+        if (all(area.size() < uint2(128)))
+            area.leftTop = area.rightBottom - 128;
+
+        int2 sz        = int2(area.size());
+        float2 szWorld = float2(sz) * texelSize;
+
         ProcessingMesh mesh;
 
         if (vertexDistance <= 0)
         {
-            static const int DefaultVertexDim = 2048;
-            int minDim = std::min(size.x, size.y);
-            vertexDistance = minDim / DefaultVertexDim;
+            static const int DefaultVertexDim = 1024;
+            int vertexDim = (vertexDistance < 0) ? -vertexDistance : DefaultVertexDim;
+            int minDim = std::min(sz.x, sz.y);
+            vertexDistance = minDim / vertexDim;
         }
 
-        static const float Divisor = 10;
-
-        int2 verts = size / vertexDistance;
+        int2 verts = sz / vertexDistance;
         float2 fVerts = float2(verts);
-        float2 fRes   = float2(size);
-        float2 S       = worldSize / Divisor;
-        float2 topLeft = -S / 2.f;
+        float2 fRes   = float2(sz);
+        float2 topLeft = -szWorld / 2.f;
 
         auto heightData = image.subresource(0);
 
         mesh.positions.reserve((verts.x + 1) * (verts.y + 1));
 
-        float minY = 1e10;
-        float maxY = -1e10;
-
         for (int y = 0; y <= verts.y; ++y)
         {
             for (int x = 0; x <= verts.x; ++x)
             {
-                int2 coords = int2(x, y);
-                float2 uv = float2(coords * vertexDistance) / fRes;
+                int2 vertexGridCoords = int2(x, y);
+                int2 texCoords = min(vertexGridCoords * vertexDistance + area.leftTop, size - 1);
+                float2 uv = float2(vertexGridCoords * vertexDistance) / fRes;
 
                 float3 pos;
-                pos.s_xz = uv * S + topLeft;
-                pos.y = heightData.pixel<float>(uint2(coords));
+                pos.s_xz = uv * szWorld + topLeft;
+                pos.y = heightData.pixel<float>(uint2(texCoords));
                 mesh.positions.emplace_back(pos);
-                minY = std::min(pos.y, minY);
-                maxY = std::max(pos.y, maxY);
             }
         }
 
@@ -132,8 +138,11 @@ class Terrain : public Window
     Timer time;
 
     Heightmap heightmap;
-    Mesh mesh;
     GraphicsPipeline renderTerrain;
+    Mesh mesh;
+    int2 areaStart = 0;
+    int areaSize  = 2048;
+    bool blitArea  = true;
 
 public:
     Terrain()
@@ -144,21 +153,19 @@ public:
         device    = xor.defaultDevice();
         swapChain = device.createSwapChain(*this);
         depthBuffer = device.createTextureDSV(Texture::Info(size(), DXGI_FORMAT_D32_FLOAT));
-        // blit = Blit(device);
+        blit = Blit(device);
 
         Timer loadingTime;
 
-        heightmap = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
-        mesh      = heightmap.uniformGrid().mesh(device);
-        renderTerrain = device.createGraphicsPipeline(GraphicsPipeline::Info()
+        heightmap      = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
+        updateTerrain();
+        renderTerrain  = device.createGraphicsPipeline(GraphicsPipeline::Info()
                                                       .vertexShader("RenderTerrain.vs")
                                                       .pixelShader("RenderTerrain.ps")
                                                       .depthMode(info::DepthMode::Write)
                                                       .depthFormat(DXGI_FORMAT_D32_FLOAT)
                                                       .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
                                                       .inputLayout(mesh.inputLayout()));
-
-        camera.position = float3(0, heightmap.max + 100.f, 0);
     }
 
     void handleInput(const Input &input) override
@@ -172,6 +179,12 @@ public:
             terminate(0);
     }
 
+    void updateTerrain()
+    {
+        mesh = heightmap.uniformGrid(Rect::withSize(areaStart, areaSize)).mesh(device);
+        camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
+    }
+
     void mainLoop(double deltaTime) override
     {
         camera.update(*this);
@@ -181,35 +194,46 @@ public:
 
         cmd.imguiBeginFrame(swapChain, deltaTime);
 
-#if 0
         if (ImGui::Begin("Terrain", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::SliderInt2("Coords", blitDst.data(), 0, heightmap.srv.texture()->size.x);
+            ImGui::SliderInt("Size", &areaSize, 0, heightmap.size.x);
+            ImGui::SliderInt2("Start", areaStart.data(), 0, heightmap.size.x - areaSize);
+            ImGui::Checkbox("Show area", &blitArea);
+
+            if (ImGui::Button("Update"))
+                updateTerrain();
+
             ImGui::End();
         }
-#endif
 
         cmd.clearRTV(backbuffer, float4(0, 0, 0, 1));
         cmd.clearDSV(depthBuffer, 0);
 
-        // (b - a) * s + a = x
-        // (b - a) * s = x - a
-        // s = (x - a) / (b - a)
-        // s = x / (b - a) - a / (b - a)
-
         cmd.setRenderTargets(backbuffer, depthBuffer);
         cmd.bind(renderTerrain);
         RenderTerrain::Constants constants;
-        constants.viewProj = Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov, 100.f, heightmap.max * 2)
+        constants.viewProj =
+            Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov,
+                                          1.f, heightmap.worldSize.x * 1.5f)
             * camera.viewMatrix();
-        constants.heightMin = heightmap.min;
-        constants.heightMax = heightmap.max;
+        constants.heightMin = heightmap.minHeight;
+        constants.heightMax = heightmap.maxHeight;
 
         cmd.setConstants(constants);
         mesh.setForRendering(cmd);
         cmd.drawIndexed(mesh.numIndices());
 
         cmd.setRenderTargets();
+
+        if (blitArea)
+        {
+            float2 norm = normalizationMultiplyAdd(heightmap.minHeight, heightmap.maxHeight);
+
+            blit.blit(cmd,
+                      backbuffer, Rect::withSize(int2(backbuffer.texture()->size - 300).s_x0, 300),
+                      heightmap.srv, Rect::withSize(areaStart, areaSize),
+                      norm.s_x000, norm.s_y001);
+        }
 
         cmd.imguiEndFrame(swapChain);
 
