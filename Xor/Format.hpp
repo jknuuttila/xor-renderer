@@ -8,18 +8,8 @@ namespace xor
 {
     class Format
     {
-        // Use a trick with anonymous unions and structs to
-        // keep the class 32 bits long, with two 16-bit fields,
-        // but see the DXGI_FORMAT value in the debugger.
-        union
-        {
-            struct
-            {
-                uint16_t m_dxgiFormat;
-                uint16_t m_elementSize;
-            };
-            DXGI_FORMAT m_asDxgiFormat; // This is shown by the debugger in symbolic form
-        };
+        uint16_t m_dxgiFormat;
+        uint16_t m_elementSize;
     public:
         Format(DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN)
             : m_dxgiFormat(static_cast<uint16_t>(format))

@@ -46,4 +46,7 @@
     <FxCompile Include="Blit.vs.hlsl" />
     <FxCompile Include="Blit.ps.hlsl" />
   </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="Xor.natvis" />
+  </ItemGroup>
 </Project>

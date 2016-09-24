@@ -39,4 +39,9 @@
     <ClInclude Include="CorePCH.hpp" />
     <ClInclude Include="MathVectorSwizzle.hpp" />
   </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="MathVectors.natvis" />
+    <Natvis Include="Utils.natvis" />
+    <Natvis Include="String.natvis" />
+  </ItemGroup>
 </Project>

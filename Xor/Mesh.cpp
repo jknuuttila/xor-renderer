@@ -456,7 +456,7 @@ namespace xor
         s.indexBuffer.view   = device.createBufferIBV(Buffer::Info::fromBytes(s.indexBuffer.data, s.indexBuffer.format));
 
         s.inputLayout = il;
-        s.numVertices = s.vertexBuffers.front().view.buffer()->size;
+        s.numVertices = static_cast<uint>(s.vertexBuffers.front().view.buffer()->size);
         s.numIndices  = static_cast<uint>(indices.size());
 
         return m;
