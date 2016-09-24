@@ -37,5 +37,6 @@
     <ClInclude Include="Exception.hpp" />
     <ClInclude Include="Serialization.hpp" />
     <ClInclude Include="CorePCH.hpp" />
+    <ClInclude Include="MathVectorSwizzle.hpp" />
   </ItemGroup>
 </Project>

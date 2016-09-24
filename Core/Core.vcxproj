@@ -44,6 +44,7 @@
     <ClInclude Include="MathFloat.hpp" />
     <ClInclude Include="MathInteger.hpp" />
     <ClInclude Include="MathVectors.hpp" />
+    <ClInclude Include="MathVectorSwizzle.hpp" />
     <ClInclude Include="OS.hpp" />
     <ClInclude Include="Serialization.hpp" />
     <ClInclude Include="String.hpp" />

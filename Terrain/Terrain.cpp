@@ -65,7 +65,8 @@ struct Heightmap
         int2 verts = size / vertexDistance;
         float2 fVerts = float2(verts);
         float2 fRes   = float2(size);
-        float2 topLeft = -worldSize / 2.f / Divisor;
+        float2 S       = worldSize / Divisor;
+        float2 topLeft = -S / 2.f;
 
         auto heightData = image.subresource(0);
 
@@ -81,11 +82,9 @@ struct Heightmap
                 int2 coords = int2(x, y);
                 float2 uv = float2(coords * vertexDistance) / fRes;
 
-                float3 pos = float3(uv * worldSize) + float3(topLeft);
-                pos.z = pos.y;
+                float3 pos;
+                pos.s_xz = uv * S + topLeft;
                 pos.y = heightData.pixel<float>(uint2(coords));
-                pos.x /= Divisor;
-                pos.z /= Divisor;
                 mesh.positions.emplace_back(pos);
                 minY = std::min(pos.y, minY);
                 maxY = std::max(pos.y, maxY);

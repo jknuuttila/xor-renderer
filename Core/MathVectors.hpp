@@ -12,7 +12,21 @@ namespace xor
     {
         using xor::uint;
 
-        static const float Pi = 3.1415926535f;
+        static constexpr float Pi = 3.1415926535f;
+
+        static constexpr int SwizzleDontCare = -1;
+        static constexpr int SwizzleZero     = -2;
+        static constexpr int SwizzleOne      = -3;
+
+        static constexpr bool isSwizzleValid(int i, uint N)
+        {
+            return i >= SwizzleOne && i < static_cast<int>(N);
+        }
+
+        static constexpr bool isSwizzleAssignable(int i)
+        {
+            return i >= SwizzleDontCare;
+        }
 
         template <typename T, uint N> struct VectorBase;
 
@@ -75,6 +89,8 @@ namespace xor
         template <typename T, uint N>
         struct Vector : public VectorBase<T, N>
         {
+            static constexpr uint Dim = N;
+
             using VectorBase<T, N>::VectorBase;
             Vector() = default;
 
@@ -204,7 +220,94 @@ namespace xor
             Vector &operator-=(Vector a) { *this = *this - a; return *this; }
             Vector &operator*=(Vector a) { *this = *this * a; return *this; }
             Vector &operator/=(Vector a) { *this = *this / a; return *this; }
+
+            template <typename V, int SX, int SY = SwizzleDontCare, int SZ = SwizzleDontCare, int SW = SwizzleDontCare>
+            class Swizzle
+            {
+                static constexpr uint Dim =
+                    static_cast<uint>(SX != SwizzleDontCare) +
+                    static_cast<uint>(SY != SwizzleDontCare) +
+                    static_cast<uint>(SZ != SwizzleDontCare) +
+                    static_cast<uint>(SW != SwizzleDontCare);
+
+                using Vec = Vector<T, Dim>;
+
+                V &v;
+
+                __forceinline void lhs(int S, const Vec &a, int i)
+                {
+                    if (S != SwizzleDontCare && i < Dim)
+                        v[S] = a[i];
+                }
+
+                __forceinline void rhs(Vec &c, int i, int S) const
+                {
+                    if (S != SwizzleDontCare && i < Dim)
+                    {
+                        if (S == SwizzleZero)
+                            c[i] = 0;
+                        else if (S == SwizzleOne)
+                            c[i] = 1;
+                        else
+                            c[i] = v[S];
+                    }
+                }
+
+            public:
+
+                static_assert(isSwizzleValid(SX, N) &&
+                              isSwizzleValid(SY, N) &&
+                              isSwizzleValid(SZ, N) &&
+                              isSwizzleValid(SW, N),
+                              "Invalid swizzle components for vector");
+
+                explicit Swizzle(V  &v) : v(v) {}
+                explicit Swizzle(V &&v) : v(v) {}
+
+                operator Vec() const
+                {
+                    Vec c;
+                    rhs(c, 0, SX);
+                    rhs(c, 1, SY);
+                    rhs(c, 2, SZ);
+                    rhs(c, 3, SW);
+                    return c;
+                }
+
+                Swizzle &operator=(Vec a)
+                {
+                    lhs(SX, a, 0);
+                    lhs(SY, a, 1);
+                    lhs(SZ, a, 2);
+                    lhs(SW, a, 3);
+                    return *this;
+                }
+
+                Swizzle &operator=(const Swizzle &s)
+                {
+                    return operator=(static_cast<Vec>(s));
+                }
+
+                Swizzle &operator+=(Vec a) { *this = Vec(*this) + a; return *this; }
+                Swizzle &operator-=(Vec a) { *this = Vec(*this) - a; return *this; }
+                Swizzle &operator*=(Vec a) { *this = Vec(*this) * a; return *this; }
+                Swizzle &operator/=(Vec a) { *this = Vec(*this) / a; return *this; }
+            };
+
+            template <int SX, int SY = SwizzleDontCare, int SZ = SwizzleDontCare, int SW = SwizzleDontCare>
+            auto swizzle()
+            {
+                return Swizzle<Vector, SX, SY, SZ, SW>(*this);
+            }
+
+            template <int SX, int SY = SwizzleDontCare, int SZ = SwizzleDontCare, int SW = SwizzleDontCare>
+            auto swizzle() const
+            {
+                return Swizzle<const Vector, SX, SY, SZ, SW>(*this);
+            }
         };
+
+#include "MathVectorSwizzle.hpp"
 
         using int2   = Vector<int, 2>;
         using int3   = Vector<int, 3>;
