@@ -140,9 +140,10 @@ class Terrain : public Window
     Heightmap heightmap;
     GraphicsPipeline renderTerrain;
     Mesh mesh;
-    int2 areaStart = 0;
+    int2 areaStart = { 2000, 0 };
     int areaSize  = 2048;
     bool blitArea  = true;
+    bool wireframe = false;
 
 public:
     Terrain()
@@ -166,6 +167,9 @@ public:
                                                       .depthFormat(DXGI_FORMAT_D32_FLOAT)
                                                       .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
                                                       .inputLayout(mesh.inputLayout()));
+
+        camera.speed /= 10;
+        camera.fastMultiplier *= 5;
     }
 
     void handleInput(const Input &input) override
@@ -199,6 +203,7 @@ public:
             ImGui::SliderInt("Size", &areaSize, 0, heightmap.size.x);
             ImGui::SliderInt2("Start", areaStart.data(), 0, heightmap.size.x - areaSize);
             ImGui::Checkbox("Show area", &blitArea);
+            ImGui::Checkbox("Wireframe", &wireframe);
 
             if (ImGui::Button("Update"))
                 updateTerrain();
@@ -218,10 +223,22 @@ public:
             * camera.viewMatrix();
         constants.heightMin = heightmap.minHeight;
         constants.heightMax = heightmap.maxHeight;
+        constants.wireframe = 0;
 
         cmd.setConstants(constants);
         mesh.setForRendering(cmd);
         cmd.drawIndexed(mesh.numIndices());
+
+        if (wireframe)
+        {
+            cmd.bind(renderTerrain.variant()
+                     .depthMode(info::DepthMode::ReadOnly)
+                     .depthBias(10000)
+                     .fill(D3D12_FILL_MODE_WIREFRAME));
+            constants.wireframe = 1;
+            cmd.setConstants(constants);
+            cmd.drawIndexed(mesh.numIndices());
+        }
 
         cmd.setRenderTargets();
 

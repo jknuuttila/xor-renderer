@@ -161,6 +161,8 @@ namespace xor
         public:
             D3D12_INPUT_LAYOUT_DESC desc() const;
             D3D12_INPUT_ELEMENT_DESC operator[](size_t i) const { return m_elements[i]; }
+            const D3D12_INPUT_ELEMENT_DESC *begin() const { return m_elements.data(); }
+            const D3D12_INPUT_ELEMENT_DESC *end()   const { return m_elements.data() + m_elements.size(); }
         };
 
         class InputLayoutInfoBuilder : public InputLayoutInfo
@@ -184,6 +186,8 @@ namespace xor
             }
         };
 
+        using PipelineKey = uint64_t;
+
         class GraphicsPipelineInfo : private D3D12_GRAPHICS_PIPELINE_STATE_DESC
         {
             friend class Device;
@@ -203,6 +207,8 @@ namespace xor
             GraphicsPipelineInfo &renderTargetFormats(Span<const DXGI_FORMAT> formats);
             GraphicsPipelineInfo &depthFormat(Format format);
             GraphicsPipelineInfo &depthMode(info::DepthMode mode);
+            GraphicsPipelineInfo &depthFunction(D3D12_COMPARISON_FUNC testFunction);
+            GraphicsPipelineInfo &depthBias(int bias, float slopeScaled = 0, float clamp = 0);
             GraphicsPipelineInfo &inputLayout(const info::InputLayoutInfo &ilInfo);
             GraphicsPipelineInfo &multisampling(uint samples, uint quality = 0);
             GraphicsPipelineInfo &topology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
@@ -214,8 +220,10 @@ namespace xor
                                         D3D12_BLEND src = D3D12_BLEND_ONE,
                                         D3D12_BLEND dst = D3D12_BLEND_INV_SRC_ALPHA,
                                         D3D12_BLEND_OP op = D3D12_BLEND_OP_ADD);
+            GraphicsPipelineInfo &antialiasedLine(bool lineAA);
 
             D3D12_GRAPHICS_PIPELINE_STATE_DESC desc() const;
+            PipelineKey key() const;
         };
     }
 
@@ -298,6 +306,8 @@ namespace xor
         GraphicsPipeline() = default;
 
         using Info = info::GraphicsPipelineInfo;
+
+        Info variant() const;
     };
 
     class Buffer : public backend::ResourceWithInfo<info::BufferInfoBuilder>

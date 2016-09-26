@@ -121,17 +121,21 @@ namespace xor
         }
 
         GraphicsPipelineInfo::GraphicsPipelineInfo()
-            : D3D12_GRAPHICS_PIPELINE_STATE_DESC {}
         {
+            zero(static_cast<D3D12_GRAPHICS_PIPELINE_STATE_DESC &>(*this));
+
             RasterizerState.FillMode              = D3D12_FILL_MODE_SOLID;
             RasterizerState.CullMode              = D3D12_CULL_MODE_BACK;
             RasterizerState.FrontCounterClockwise = TRUE;
             RasterizerState.ConservativeRaster    = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
             RasterizerState.DepthClipEnable       = TRUE;
+            RasterizerState.DepthBias             = 0;
+            RasterizerState.SlopeScaledDepthBias  = 0;
+            RasterizerState.DepthBiasClamp        = 0;
 
             DepthStencilState.DepthEnable    = FALSE;
             DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-            DepthStencilState.DepthFunc      = D3D12_COMPARISON_FUNC_ALWAYS;
+            DepthStencilState.DepthFunc      = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
 
             PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
@@ -147,6 +151,23 @@ namespace xor
         D3D12_GRAPHICS_PIPELINE_STATE_DESC GraphicsPipelineInfo::desc() const
         {
             return *this;
+        }
+
+        PipelineKey GraphicsPipelineInfo::key() const
+        {
+            Hash hash;
+
+            hash.pod(desc());
+            hash.bytes(asBytes(m_vs));
+            hash.bytes(asBytes(m_ps));
+            // FIXME: This hashes semantics names by pointer, which is bad
+            if (m_inputLayout)
+            {
+                for (auto &&il : *m_inputLayout)
+                    hash.pod(il);
+            }
+
+            return hash.done();
         }
 
         GraphicsPipelineInfo &GraphicsPipelineInfo::vertexShader(const String & vsName)
@@ -212,8 +233,20 @@ namespace xor
                 DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
             }
 
-            DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_GREATER_EQUAL;
+            return *this;
+        }
 
+        GraphicsPipelineInfo & GraphicsPipelineInfo::depthFunction(D3D12_COMPARISON_FUNC testFunction)
+        {
+            DepthStencilState.DepthFunc = testFunction;
+            return *this;
+        }
+
+        GraphicsPipelineInfo & GraphicsPipelineInfo::depthBias(int bias, float slopeScaled, float clamp)
+        {
+            RasterizerState.DepthBias            = bias;
+            RasterizerState.SlopeScaledDepthBias = slopeScaled;
+            RasterizerState.DepthBiasClamp       = clamp;
             return *this;
         }
 
@@ -269,6 +302,12 @@ namespace xor
             rt.BlendOpAlpha   = D3D12_BLEND_OP_ADD;
             rt.SrcBlendAlpha  = D3D12_BLEND_SRC_ALPHA;
             rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+            return *this;
+        }
+
+        GraphicsPipelineInfo & GraphicsPipelineInfo::antialiasedLine(bool lineAA)
+        {
+            RasterizerState.AntialiasedLineEnable = static_cast<BOOL>(lineAA);
             return *this;
         }
 
@@ -485,5 +524,10 @@ namespace xor
     ID3D12Resource *Resource::get() const
     {
         return m_state ? S().resource.Get() : nullptr;
+    }
+
+    GraphicsPipeline::Info GraphicsPipeline::variant() const
+    {
+        return *S().graphicsInfo;
     }
 }

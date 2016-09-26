@@ -11,6 +11,7 @@ XOR_CBUFFER(Constants, 0)
     float4x4 viewProj;
     float heightMin;
     float heightMax;
+    uint wireframe;
 };
 
 XOR_END_SIGNATURE

@@ -329,9 +329,21 @@ namespace xor
     {
 
         GraphicsPipeline pipeline;
-        pipeline.makeState().setParent(this);
-        pipeline.S().graphicsInfo = std::make_shared<GraphicsPipeline::Info>(info);
-        pipeline.S().reload();
+
+        auto key = info.key();
+        auto it = S().pipelines.find(key);
+        if (it == S().pipelines.end())
+        {
+            pipeline.makeState().setParent(this);
+            pipeline.S().graphicsInfo = std::make_shared<GraphicsPipeline::Info>(info);
+            pipeline.S().reload();
+            S().pipelines.emplace(key, pipeline.m_state);
+        }
+        else
+        {
+            pipeline.m_state = it->second;
+        }
+
         return pipeline;
     }
 

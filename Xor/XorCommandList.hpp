@@ -70,6 +70,7 @@ namespace xor
         Device device();
 
         void bind(GraphicsPipeline &pipeline);
+        void bind(const info::GraphicsPipelineInfo &pipelineInfo);
 
         void clearRTV(TextureRTV &rtv, float4 color = 0);
         void clearDSV(TextureDSV &dsv, float depth = 0);

@@ -235,6 +235,12 @@ namespace xor
         S().uavs.resize(pipeline.S().rootSignature.numUAVs);
     }
 
+    void CommandList::bind(const info::GraphicsPipelineInfo & pipelineInfo)
+    {
+        GraphicsPipeline pipeline = device().createGraphicsPipeline(pipelineInfo);
+        bind(pipeline);
+    }
+
     void CommandList::clearRTV(TextureRTV &rtv, float4 color)
     {
         transition(rtv.m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);

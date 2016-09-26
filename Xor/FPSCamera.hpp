@@ -23,7 +23,8 @@ namespace xor
         Angle azimuth   = Angle(0);
         Angle elevation = Angle(0);
         float speed     = 10;
-        float turnSpeed = .075f;
+        float turnSpeed = .055f;
+        float fastMultiplier = 10;
 
         void update(const Window &window)
         {
@@ -31,7 +32,7 @@ namespace xor
             float z = 0;
             float s = 1;
 
-            if (window.isKeyHeld(keys.moveFast)) s = 10;
+            if (window.isKeyHeld(keys.moveFast)) s = fastMultiplier;
 
             if (window.isKeyHeld(keys.forward))  z -= 1;
             if (window.isKeyHeld(keys.backward)) z += 1;

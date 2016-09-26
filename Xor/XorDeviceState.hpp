@@ -350,6 +350,7 @@ namespace xor
             ViewHeap shaderViews;
 
             std::shared_ptr<ShaderLoader> shaderLoader;
+            std::unordered_map<info::PipelineKey, std::shared_ptr<PipelineState>> pipelines;
 
             struct ImGui
             {
