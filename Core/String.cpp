@@ -243,6 +243,19 @@ namespace xor
         return String(std::move(result));
     }
 
+    String StringView::replace(int start, int end, StringView replacement) const
+    {
+        start = idx(start);
+        end   = idx(end);
+
+        std::string result;
+        result.reserve(length() + replacement.length() + start - end);
+        result.insert(result.end(), begin(), begin() + start);
+        result.insert(result.end(), replacement.begin(), replacement.end());
+        result.insert(result.end(), begin() + end, this->end());
+        return String(std::move(result));
+    }
+
     String StringView::repeat(uint count) const
     {
         if (count == 0)

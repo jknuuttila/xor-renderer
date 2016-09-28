@@ -10,6 +10,10 @@ struct PSInput
 float4 main(PSInput i) : SV_Target
 {
     float h = (i.worldPos.y - heightMin) / (heightMax - heightMin);
+#ifdef WIREFRAME
+    float3 color = 1;
+#else
     float3 color = wireframe ? 1 : h;
+#endif
 	return float4(color, 1);
 }

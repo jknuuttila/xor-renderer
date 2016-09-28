@@ -232,10 +232,10 @@ public:
         if (wireframe)
         {
             cmd.bind(renderTerrain.variant()
+                     .pixelShader(info::SameShader {}, { { "WIREFRAME" } })
                      .depthMode(info::DepthMode::ReadOnly)
                      .depthBias(10000)
                      .fill(D3D12_FILL_MODE_WIREFRAME));
-            constants.wireframe = 1;
             cmd.setConstants(constants);
             cmd.drawIndexed(mesh.numIndices());
         }

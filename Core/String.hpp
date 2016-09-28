@@ -323,6 +323,7 @@ namespace xor
         String rightJustify(int width, char filler = ' ') const;
         String center(int width, char filler = ' ') const;
         String replace(StringView old, StringView replacement, int maxReplace = -1) const;
+        String replace(int start, int end, StringView replacement) const;
         String repeat(uint count) const;
     };
 

@@ -2,6 +2,8 @@
 #include "Xor/XorDevice.hpp"
 #include "Xor/XorCommandList.hpp"
 
+#define XOR_LOG_SHADER_COMPILES
+
 namespace xor
 {
     static const char ShaderFileExtension[] = ".cso";
@@ -51,6 +53,13 @@ namespace xor
             d.NumElements        = static_cast<UINT>(m_elements.size());
             d.pInputElementDescs = m_elements.data();
             return d;
+        }
+
+        void InputLayoutInfo::hash(Hash & h) const
+        {
+            // FIXME: Hashes semantic names as pointers
+            for (auto &&e : m_elements)
+                h.pod(e);
         }
 
         TextureInfo::TextureInfo(const Image & image, Format fmt)
@@ -158,27 +167,38 @@ namespace xor
             Hash hash;
 
             hash.pod(desc());
-            hash.bytes(asBytes(m_vs));
-            hash.bytes(asBytes(m_ps));
-            // FIXME: This hashes semantics names by pointer, which is bad
+            m_vs.hash(hash);
+            m_ps.hash(hash);
+
             if (m_inputLayout)
-            {
-                for (auto &&il : *m_inputLayout)
-                    hash.pod(il);
-            }
+                m_inputLayout->hash(hash);
 
             return hash.done();
         }
 
-        GraphicsPipelineInfo &GraphicsPipelineInfo::vertexShader(const String & vsName)
+        GraphicsPipelineInfo &GraphicsPipelineInfo::vertexShader(const String & vsName, Span<const ShaderDefine> defines)
         {
-            m_vs = vsName;
+            m_vs.shader = vsName;
+            return vertexShader(SameShader {}, defines);
+        }
+
+        GraphicsPipelineInfo & GraphicsPipelineInfo::vertexShader(SameShader, Span<const ShaderDefine> defines)
+        {
+            m_vs.defines.clear();
+            m_vs.defines.insert(m_vs.defines.begin(), defines.begin(), defines.end());
             return *this;
         }
 
-        GraphicsPipelineInfo &GraphicsPipelineInfo::pixelShader(const String & psName)
+        GraphicsPipelineInfo &GraphicsPipelineInfo::pixelShader(const String & psName, Span<const ShaderDefine> defines)
         {
-            m_ps = psName;
+            m_ps.shader = psName;
+            return pixelShader(SameShader {}, defines);
+        }
+
+        GraphicsPipelineInfo & GraphicsPipelineInfo::pixelShader(SameShader, Span<const ShaderDefine> defines)
+        {
+            m_ps.defines.clear();
+            m_ps.defines.insert(m_ps.defines.begin(), defines.begin(), defines.end());
             return *this;
         }
 
@@ -311,25 +331,83 @@ namespace xor
             return *this;
         }
 
+        void ShaderDesc::hash(Hash & h) const
+        {
+            h.bytes(asBytes(shader));
+            for (auto &&d : defines)
+            {
+                h.bytes(asBytes(d.define));
+                h.bytes(asBytes(d.value));
+            }
+        }
+
+        String ShaderDesc::path() const
+        {
+            if (shader.empty())
+                return String();
+            else if (defines.empty())
+                return basePath();
+
+            Hash h;
+            hash(h);
+
+            return String::format("%s.%llx%s",
+                                  shader.cStr(),
+                                  static_cast<llu>(h.done()),
+                                  ShaderFileExtension);
+        }
+
+        String ShaderDesc::basePath() const
+        {
+            if (shader.empty())
+                return String();
+            else
+                return shader + ShaderFileExtension;
+        }
     }
 
     namespace backend
     {
-        static bool compileShader(const BuildInfo &shaderBuildInfo)
+        static bool compileShader(const BuildInfo &shaderBuildInfo,
+                                  const String &outputFile,
+                                  Span<const info::ShaderDefine> defines)
         {
-            log("Pipeline", "Compiling shader %s\n", shaderBuildInfo.target.cStr());
+            log("Pipeline", "Compiling shader %s\n", outputFile.cStr());
 
             String output;
             String errors;
 
+            // Find the part with the original output filename, and replace it
+            // with the actual one.
+            int outputLocation = shaderBuildInfo.buildArgs.lower().find(shaderBuildInfo.target.lower());
+            XOR_CHECK(outputLocation >= 0, "Could not detect output filename position in compilation arguments");
+
+            auto buildArgs = shaderBuildInfo.buildArgs.replace(outputLocation, outputLocation + shaderBuildInfo.target.length(),
+                                                               outputFile);
+            std::vector<String> extraDefines;
+            extraDefines.reserve(defines.size());
+            for (auto &d : defines)
+            {
+                if (d.value)
+                    extraDefines.emplace_back(String::format(" /D%s=\"%s\"", d.define.cStr(), d.value.cStr()));
+                else
+                    extraDefines.emplace_back(String::format(" /D%s", d.define.cStr()));
+            }
+
+            buildArgs = buildArgs + String::join(extraDefines, "");
+
+#if defined(XOR_LOG_SHADER_COMPILES)
+            log("Pipeline", "%s %s", shaderBuildInfo.buildExe.cStr(), buildArgs.cStr());
+#endif
+
             int returnCode = shellCommand(
                 shaderBuildInfo.buildExe,
-                shaderBuildInfo.buildArgs,
+                buildArgs,
                 &output,
                 &errors);
 
-            if (output) log(nullptr, "%s", output.cStr());
-            if (errors) log(nullptr, "%s", errors.cStr());
+            if (output) print("%s", output.cStr());
+            if (errors) print("%s", errors.cStr());
 
             return returnCode == 0;
         }
@@ -436,32 +514,32 @@ namespace xor
             }
         }
 
-        ShaderBinary PipelineState::loadShader(ShaderLoader & loader, StringView name)
+        ShaderBinary PipelineState::loadShader(ShaderLoader & loader, const ShaderDesc &shader)
         {
-            if (!name)
+            if (!shader)
                 return ShaderBinary();
 
-            String shaderPath = File::canonicalize(name + ShaderFileExtension, true);
+            String shaderPath = File::canonicalize(shader.path(), true);
+            String basePath   = File::canonicalize(shader.basePath(), true);
 
-            if (auto data = loader.shaderData[shaderPath])
+            auto data = loader.shaderData[basePath];
+            XOR_CHECK(!!data, "Could not find shader data for shader %s", shaderPath.cStr());
+
+            uint64_t timestamp       = File::lastWritten(shaderPath);
+            uint64_t sourceTimestamp = data->buildInfo->sourceTimestamp();
+            data->timestamp          = std::max(data->timestamp, timestamp);
+
+            if (timestamp < sourceTimestamp)
             {
-                if (data->timestamp == 0)
-                    data->timestamp = data->buildInfo->targetTimestamp();
-
-                uint64_t sourceTimestamp = data->buildInfo->sourceTimestamp();
-
-                if (data->timestamp < sourceTimestamp)
-                {
-                    compileShader(*data->buildInfo);
-                    data->timestamp = sourceTimestamp;
-                }
-                else
-                {
-                    log("Pipeline", "Shader has not been modified since last compile.\n");
-                }
-
-                data->users[this] = shared_from_this();
+                compileShader(*data->buildInfo, shaderPath, shader.defines);
+                data->timestamp = sourceTimestamp;
             }
+            else
+            {
+                log("Pipeline", "Shader has not been modified since last compile.\n");
+            }
+
+            data->users[this] = shared_from_this();
 
             log("Pipeline", "Loading shader %s\n", shaderPath.cStr());
             return ShaderBinary(shaderPath);

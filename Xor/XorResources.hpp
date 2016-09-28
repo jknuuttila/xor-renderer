@@ -12,6 +12,8 @@ namespace xor
 {
     namespace info
     {
+        struct SameShader {};
+
         enum class DepthMode
         {
             Disabled,
@@ -163,6 +165,7 @@ namespace xor
             D3D12_INPUT_ELEMENT_DESC operator[](size_t i) const { return m_elements[i]; }
             const D3D12_INPUT_ELEMENT_DESC *begin() const { return m_elements.data(); }
             const D3D12_INPUT_ELEMENT_DESC *end()   const { return m_elements.data() + m_elements.size(); }
+            void hash(Hash &h) const;
         };
 
         class InputLayoutInfoBuilder : public InputLayoutInfo
@@ -188,19 +191,43 @@ namespace xor
 
         using PipelineKey = uint64_t;
 
+        struct ShaderDefine
+        {
+            String define;
+            String value;
+
+            ShaderDefine(String define = {}, String value = {})
+                : define(std::move(define))
+                , value(std::move(value))
+            {}
+        };
+
+        struct ShaderDesc
+        {
+            String shader;
+            std::vector<ShaderDefine> defines;
+
+            explicit operator bool() const { return static_cast<bool>(shader); }
+            void hash(Hash &h) const;
+            String path() const;
+            String basePath() const;
+        };
+
         class GraphicsPipelineInfo : private D3D12_GRAPHICS_PIPELINE_STATE_DESC
         {
             friend class Device;
             friend class GraphicsPipeline;
             friend struct backend::PipelineState;
-            String                                 m_vs;
-            String                                 m_ps;
+            ShaderDesc                             m_vs;
+            ShaderDesc                             m_ps;
             std::shared_ptr<info::InputLayoutInfo> m_inputLayout;
         public:
             GraphicsPipelineInfo();
 
-            GraphicsPipelineInfo &vertexShader(const String &vsName);
-            GraphicsPipelineInfo &pixelShader(const String &psName);
+            GraphicsPipelineInfo &vertexShader(const String &vsName, Span<const ShaderDefine> defines = {});
+            GraphicsPipelineInfo &vertexShader(SameShader, Span<const ShaderDefine> defines = {});
+            GraphicsPipelineInfo &pixelShader(const String &psName, Span<const ShaderDefine> defines = {});
+            GraphicsPipelineInfo &pixelShader(SameShader, Span<const ShaderDefine> defines);
             GraphicsPipelineInfo &renderTargetFormats(Format format);
             GraphicsPipelineInfo &renderTargetFormats(DXGI_FORMAT format);
             GraphicsPipelineInfo &renderTargetFormats(Span<const Format> formats);
@@ -279,6 +306,7 @@ namespace xor
         };
 
         struct ShaderBinary;
+        using info::ShaderDesc;
 
         struct PipelineState
             : std::enable_shared_from_this<PipelineState>
@@ -288,7 +316,7 @@ namespace xor
             ComPtr<ID3D12PipelineState> pso;
             RootSignature rootSignature;
 
-            backend::ShaderBinary loadShader(ShaderLoader &loader, StringView name);
+            backend::ShaderBinary loadShader(ShaderLoader &loader, const ShaderDesc &shader);
 
             void reload();
             void releasePSO();
