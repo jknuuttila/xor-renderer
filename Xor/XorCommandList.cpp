@@ -550,4 +550,8 @@ namespace xor
 
         setRenderTargets();
     }
+    ProfilingEvent CommandList::profilingEvent(const char * name)
+    {
+        return ProfilingEvent();
+    }
 }

@@ -335,6 +335,146 @@ namespace xor
                 return block;
             }
         };
+
+        struct QueryHeap
+        {
+            ComPtr<ID3D12QueryHeap> timestamps;
+            ComPtr<ID3D12Resource>  readback;
+            struct Metadata
+            {
+                const char *name     = nullptr;
+                int64_t parent       = -1;
+                SeqNum cmdListNumber = -1;
+            };
+            std::vector<Metadata> metadata;
+            OffsetRing ringbuffer;
+            int64_t top = -1;
+
+            QueryHeap(ID3D12Device *device, size_t size)
+            {
+                size_t numTimestamps = 2 * size;
+
+                D3D12_HEAP_PROPERTIES heapDesc = {};
+                heapDesc.Type                 = D3D12_HEAP_TYPE_READBACK;
+                heapDesc.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+                heapDesc.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+                heapDesc.CreationNodeMask     = 0;
+                heapDesc.VisibleNodeMask      = 0;
+
+                D3D12_RESOURCE_DESC desc = {};
+                desc.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
+                desc.Alignment          = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+                desc.Width              = numTimestamps * sizeof(uint64_t);
+                desc.Height             = 1;
+                desc.DepthOrArraySize   = 1;
+                desc.MipLevels          = 1;
+                desc.Format             = DXGI_FORMAT_UNKNOWN;
+                desc.SampleDesc.Count   = 1;
+                desc.SampleDesc.Quality = 0;
+                desc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+                desc.Flags              = D3D12_RESOURCE_FLAG_NONE;
+
+                XOR_CHECK_HR(device->CreateCommittedResource(
+                    &heapDesc,
+                    D3D12_HEAP_FLAG_NONE,
+                    &desc,
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    nullptr,
+                    __uuidof(ID3D12Resource),
+                    &readback));
+                setName(readback, "QueryHeap readback");
+
+                metadata.resize(size);
+            }
+
+            void resolve(ID3D12GraphicsCommandList *cmdList, int64_t first, int64_t last)
+            {
+                XOR_CHECK(last >= first, "TODO: implement fully");
+
+                UINT start = static_cast<UINT>(first * 2);
+                UINT count = static_cast<UINT>((last - first + 1) * 2);
+
+                cmdList->ResolveQueryData(
+                    timestamps.Get(),
+                    D3D12_QUERY_TYPE_TIMESTAMP,
+                    start, count,
+                    readback.Get(),
+                    start * sizeof(uint64_t));
+            }
+
+            int64_t beginEvent(ID3D12GraphicsCommandList *cmdList, const char *name, SeqNum cmdListNumber)
+            {
+                int64_t offset = ringbuffer.allocate();
+                XOR_CHECK(offset >= 0, "Out of ringbuffer space");
+                auto &m         = metadata[offset];
+                m.name          = name;
+                m.cmdListNumber = cmdListNumber;
+                m.parent        = top;
+
+                cmdList->EndQuery(timestamps.Get(),
+                                  D3D12_QUERY_TYPE_TIMESTAMP,
+                                  static_cast<UINT>(offset * 2));
+
+                top = offset;
+            }
+
+            void endEvent(ID3D12GraphicsCommandList *cmdList, int64_t eventOffset)
+            {
+                XOR_CHECK(eventOffset >= 0, "Invalid event");
+                auto &m = metadata[eventOffset];
+
+                cmdList->EndQuery(timestamps.Get(),
+                                  D3D12_QUERY_TYPE_TIMESTAMP,
+                                  static_cast<UINT>(eventOffset * 2 + 1));
+
+                top = m.parent;
+            }
+
+            template <typename F>
+            void process(GPUProgressTracking &progress, F &&f)
+            {
+                int indent         = 0;
+                int64_t prevParent = -1;
+
+                int64_t i = ringbuffer.oldest();
+                void *mappedReadback = nullptr;
+                XOR_CHECK_HR(readback->Map(0, nullptr, &mappedReadback));
+                auto queryData = reinterpret_cast<const uint64_t *>(mappedReadback);
+
+                auto unmap = scopeGuard([&] {
+                    D3D12_RANGE empty;
+                    empty.Begin = 0;
+                    empty.End   = 0;
+                    readback->Unmap(0, &empty);
+                });
+
+                for (;;)
+                {
+                    if (i < 0)
+                        break;
+
+                    auto &m = metadata[i];
+
+                    if (!progress.hasCompleted(m.cmdListNumber))
+                        break;
+
+                    if (m.parent > prevParent)
+                        ++indent;
+                    else if (m.parent < prevParent)
+                        --indent;
+
+                    uint64_t begin = queryData[i * 2];
+                    uint64_t end   = queryData[i * 2 + 1];
+                    uint64_t time  = (end < begin) ? 0 : end - begin;
+
+                    f(m.name, time, indent);
+
+                    ringbuffer.release(i);
+                    i = ringbuffer.oldest();
+                }
+            }
+        };
+
         struct DeviceState : std::enable_shared_from_this<DeviceState>
         {
             Adapter                     adapter;

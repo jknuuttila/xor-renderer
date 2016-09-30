@@ -193,7 +193,7 @@ public:
     {
         camera.update(*this);
 
-        auto cmd        = device.graphicsCommandList();
+        auto cmd        = device.graphicsCommandList("Frame");
         auto backbuffer = swapChain.backbuffer();
 
         cmd.imguiBeginFrame(swapChain, deltaTime);
@@ -211,8 +211,11 @@ public:
             ImGui::End();
         }
 
-        cmd.clearRTV(backbuffer, float4(0, 0, 0, 1));
-        cmd.clearDSV(depthBuffer, 0);
+        {
+            auto p = cmd.profilingEvent("Clear");
+            cmd.clearRTV(backbuffer, float4(0, 0, 0, 1));
+            cmd.clearDSV(depthBuffer, 0);
+        }
 
         cmd.setRenderTargets(backbuffer, depthBuffer);
         cmd.bind(renderTerrain);
@@ -227,10 +230,14 @@ public:
 
         cmd.setConstants(constants);
         mesh.setForRendering(cmd);
-        cmd.drawIndexed(mesh.numIndices());
+        {
+            auto p = cmd.profilingEvent("Draw opaque");
+            cmd.drawIndexed(mesh.numIndices());
+        }
 
         if (wireframe)
         {
+            auto p = cmd.profilingEvent("Draw wireframe");
             cmd.bind(renderTerrain.variant()
                      .pixelShader(info::SameShader {}, { { "WIREFRAME" } })
                      .depthMode(info::DepthMode::ReadOnly)
@@ -244,6 +251,7 @@ public:
 
         if (blitArea)
         {
+            auto p = cmd.profilingEvent("Blit heightmap");
             float2 norm = normalizationMultiplyAdd(heightmap.minHeight, heightmap.maxHeight);
 
             blit.blit(cmd,

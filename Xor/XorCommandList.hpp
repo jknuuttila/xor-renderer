@@ -33,6 +33,16 @@ namespace xor
         };
     }
 
+    class ProfilingEvent
+    {
+        friend class Device;
+        friend class CommandList;
+        MovingPtr<CommandList *> m_cmd;
+        MovingValue<int64_t, -1> m_offset;
+    public:
+        ProfilingEvent() = default;
+    };
+
     class CommandList : private backend::SharedState<backend::CommandListState>
     {
         friend class Device;
@@ -127,6 +137,8 @@ namespace xor
 
         void imguiBeginFrame(SwapChain &swapChain, double deltaTime);
         void imguiEndFrame(SwapChain &swapChain);
+
+        ProfilingEvent profilingEvent(const char *name);
     };
 
     template<typename T>

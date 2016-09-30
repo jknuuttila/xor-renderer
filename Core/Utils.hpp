@@ -73,6 +73,37 @@ namespace xor
         const T *operator->() const { return get(); }
     };
 
+    // As MovingPtr, but for arbitrary POD values
+    template <typename T, T NullValue = T{}>
+    struct MovingValue
+    {
+        static_assert(std::is_pod<T>::value, "MovingValue only supports POD types");
+
+        T v = NullValue;
+
+        MovingValue(T value = NullValue) : v(value) {}
+
+        MovingValue(const MovingValue &) = delete;
+        MovingValue &operator=(const MovingValue &) = delete;
+
+        MovingValue(MovingValue &&mv)
+            : v(mv.value)
+        {
+            mv.value = NullValue;
+        }
+
+        MovingValue &operator=(MovingValue &&mv)
+        {
+            v        = mv.value;
+            mv.value = NullValue;
+            return *this;
+        }
+
+        explicit operator bool() const { return v != NullValue; }
+
+        operator T() const { return v; }
+    };
+
     template <typename T, typename Deleter>
     auto raiiPtr(T *t, Deleter &&deleter)
     {
@@ -629,5 +660,24 @@ namespace xor
     String toString(int i);
     String toString(float f);
     String toString(double d);
+
+    template <typename F>
+    class ScopeGuard
+    {
+        MovingPtr<F *> m_f;
+    public:
+        ScopeGuard(F &&f) : m_f(&f) {}
+        ~ScopeGuard()
+        {
+            if (m_f)
+                (*m_f)();
+        }
+
+        void cancel() { m_f = nullptr; }
+    };
+
+    template <typename F>
+    auto scopeGuard(F &&f) { return ScopeGuard<F>(std::forward<F>(f)); }
+
 }
 
