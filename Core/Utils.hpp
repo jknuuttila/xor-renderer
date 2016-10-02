@@ -69,8 +69,8 @@ namespace xor
         operator T() { return get(); }
         operator const T() const { return get(); }
 
-        T *operator->() { return get(); }
-        const T *operator->() const { return get(); }
+        T operator->() { return get(); }
+        const T operator->() const { return get(); }
     };
 
     // As MovingPtr, but for arbitrary POD values
@@ -87,15 +87,15 @@ namespace xor
         MovingValue &operator=(const MovingValue &) = delete;
 
         MovingValue(MovingValue &&mv)
-            : v(mv.value)
+            : v(mv.v)
         {
-            mv.value = NullValue;
+            mv.v = NullValue;
         }
 
         MovingValue &operator=(MovingValue &&mv)
         {
-            v        = mv.value;
-            mv.value = NullValue;
+            v    = mv.v;
+            mv.v = NullValue;
             return *this;
         }
 
@@ -672,6 +672,8 @@ namespace xor
             if (m_f)
                 (*m_f)();
         }
+		ScopeGuard(ScopeGuard &&) = default;
+		ScopeGuard &operator=(ScopeGuard &&) = default;
 
         void cancel() { m_f = nullptr; }
     };

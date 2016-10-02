@@ -10,6 +10,37 @@ namespace xor
 {
     namespace backend
     {
+		struct QueryHeap;
+	}
+
+	class ProfilingEvent
+	{
+		friend class Device;
+		friend class CommandList;
+		MovingPtr<backend::QueryHeap *>        m_queryHeap;
+		MovingPtr<ID3D12GraphicsCommandList *> m_cmd;
+		MovingValue<int64_t, -1>               m_offset;
+	public:
+		ProfilingEvent() = default;
+		~ProfilingEvent() { done(); }
+		ProfilingEvent(ProfilingEvent &&) = default;
+
+		ProfilingEvent &operator=(ProfilingEvent &&e)
+		{
+			done();
+			m_queryHeap = std::move(e.m_queryHeap);
+			m_cmd       = std::move(e.m_cmd);
+			m_offset    = std::move(e.m_offset);
+			return *this;
+		}
+
+		void done();
+	};
+
+    namespace backend
+    {
+		struct QueryHeap;
+
         struct CommandListState : DeviceChild
         {
             ComPtr<ID3D12CommandAllocator>    allocator;
@@ -29,23 +60,19 @@ namespace xor
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> uavs;
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> viewDescriptorSrcs;
 
+			std::shared_ptr<QueryHeap> queryHeap;
+			ProfilingEvent cmdListEvent;
+			int64_t firstProfilingEvent = -1;
+			int64_t lastProfilingEvent  = -1;
+
             CommandListState(Device &dev);
         };
     }
 
-    class ProfilingEvent
-    {
-        friend class Device;
-        friend class CommandList;
-        MovingPtr<CommandList *> m_cmd;
-        MovingValue<int64_t, -1> m_offset;
-    public:
-        ProfilingEvent() = default;
-    };
-
     class CommandList : private backend::SharedState<backend::CommandListState>
     {
         friend class Device;
+        friend class ProfilingEvent;
         friend struct backend::DeviceState;
         friend struct backend::GPUProgressTracking;
 

@@ -21,6 +21,11 @@ namespace xor
         Device createDevice();
     };
 
+	namespace backend
+	{
+		struct ProfilingEventData;
+	}
+
     class Device : private backend::SharedState<backend::DeviceState>
     {
         friend class Adapter;
@@ -51,6 +56,12 @@ namespace xor
 
         backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment);
 
+		void processProfilingEvents();
+		const backend::ProfilingEventData *processProfilingEvent(const backend::ProfilingEventData *data,
+																 const backend::ProfilingEventData *end,
+																 float ticksToMs,
+																 int indent = 0);
+
         Device(Adapter adapter,
                ComPtr<ID3D12Device> device,
                std::shared_ptr<backend::ShaderLoader> shaderLoader);
@@ -75,7 +86,7 @@ namespace xor
         TextureDSV createTextureDSV(Texture texture                 , const TextureDSV::Info &viewInfo = TextureDSV::Info());
         TextureDSV createTextureDSV(const Texture::Info &textureInfo, const TextureDSV::Info &viewInfo = TextureDSV::Info());
 
-        CommandList graphicsCommandList();
+        CommandList graphicsCommandList(const char *cmdListName = nullptr);
 
         void execute(CommandList &cmd);
         void present(SwapChain &swapChain, bool vsync = true);

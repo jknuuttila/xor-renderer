@@ -231,6 +231,7 @@ namespace xor
             .pixelShader("ImguiRenderer.ps")
             .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM)
             .winding(false)
+			.cull(D3D12_CULL_MODE_NONE)
             .blend(0, true)
             .inputLayout(info::InputLayoutInfoBuilder()
                          .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT)
@@ -407,6 +408,84 @@ namespace xor
             alignment);
         return block;
     }
+
+	const ProfilingEventData *Device::processProfilingEvent(const ProfilingEventData *data,
+															const ProfilingEventData *end,
+															float ticksToMs,
+															int indent)
+	{
+		for (;;)
+		{
+			if (data == end || data->indent < indent)
+				return data;
+
+			auto name        = StringView(data->name);
+			auto ms          = data->ticks * ticksToMs;
+			auto &nameBuffer = S().profilingDataHierarchicalName;
+
+			nameBuffer.insert(nameBuffer.end(), name.begin(), name.end());
+			uint64_t eventKey = Hash().bytes(asBytes(nameBuffer)).done();
+
+			int historyLength = std::max(1, S().profilingDataHistoryLength);
+			auto &history = S().profilingDataHistory[eventKey];
+			history.values.resize(historyLength);
+
+			if (history.next >= historyLength)
+				history.next = 0;
+			history.values[history.next] = ms;
+			++history.next;
+
+			double avgMs = 0;
+			for (double v : history.values)
+				avgMs += v;
+			avgMs /= historyLength;
+
+			if (ImGui::TreeNode(history.values.data(),
+								"%s: %.2f ms",
+								data->name,
+								avgMs))
+			{
+				ImGui::PlotLines(data->name, history.values.data(), static_cast<int>(history.values.size()));
+				data = processProfilingEvent(data + 1, end, ticksToMs, indent + 1);
+				ImGui::TreePop();
+			}
+			else
+			{
+				++data;
+				while (data != end && data->indent > indent)
+					++data;
+			}
+
+			nameBuffer.erase(nameBuffer.end() - name.length(), nameBuffer.end());
+		}
+	}
+
+	void Device::processProfilingEvents()
+	{
+		auto &data = S().profilingData;
+		data.clear();
+
+		if (ImGui::Begin("Profiling", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			ImGui::SetWindowPos(float2(600, 0));
+			ImGui::SliderInt("Rolling average length", &S().profilingDataHistoryLength, 1, 30);
+
+			uint64_t freq = 0;
+			XOR_CHECK_HR(S().graphicsQueue->GetTimestampFrequency(&freq));
+			auto dFreq = static_cast<double>(freq);
+			S().queryHeap->process(S().progress, [&](ProfilingEventData d) { data.emplace_back(d); });
+
+			if (!data.empty())
+			{
+				S().profilingDataHierarchicalName.clear();
+				processProfilingEvent(data.data(),
+									  data.data() + data.size(),
+									  static_cast<float>(1.0 / dFreq * 1000.0));
+			}
+
+			ImGui::End();
+		}
+	}
 
     ID3D12Device * Device::device()
     {
@@ -724,7 +803,7 @@ namespace xor
         return createTextureDSV(createTexture(textureInfo), viewInfo);
     }
 
-    CommandList Device::graphicsCommandList()
+    CommandList Device::graphicsCommandList(const char *cmdListName)
     {
         S().progress.retireCommandLists();
 
@@ -739,6 +818,9 @@ namespace xor
 
         ++cmd.S().timesStarted;
         cmd.S().seqNum = S().progress.startNewCommandList();
+
+		if (!StringView(cmdListName).empty())
+			cmd.S().cmdListEvent = cmd.profilingEvent(cmdListName);
 
         return cmd;
     }

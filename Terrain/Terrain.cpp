@@ -67,7 +67,11 @@ struct Heightmap
 
         if (vertexDistance <= 0)
         {
+#if defined(_DEBUG)
+            static const int DefaultVertexDim = 256;
+#else
             static const int DefaultVertexDim = 1024;
+#endif
             int vertexDim = (vertexDistance < 0) ? -vertexDistance : DefaultVertexDim;
             int minDim = std::min(sz.x, sz.y);
             vertexDistance = minDim / vertexDim;

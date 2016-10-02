@@ -91,9 +91,18 @@ namespace xor
         {}
 
         StringView(const char *str)
-            : m_begin(str)
-            , m_end(str + std::strlen(str))
-        {}
+        {
+			if (!str)
+			{
+				m_begin = nullptr;
+				m_end   = nullptr;
+			}
+			else
+			{
+				m_begin = str;
+				m_end   = str + std::strlen(str);
+			}
+		}
 
         StringView(const char *start, const char *end)
             : m_begin(start)

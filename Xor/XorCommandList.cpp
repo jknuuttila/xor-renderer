@@ -38,6 +38,8 @@ namespace xor
             completedEvent = CreateEventExA(nullptr, nullptr, 0,
                                             EVENT_ALL_ACCESS);
             XOR_CHECK(!!completedEvent, "Failed to create completion event.");
+
+			queryHeap = dev.S().queryHeap;
         }
     }
 
@@ -50,6 +52,11 @@ namespace xor
     {
         if (!S().closed)
         {
+			S().cmdListEvent.done();
+
+			if (S().firstProfilingEvent >= 0)
+				S().queryHeap->resolve(cmd(), S().firstProfilingEvent, S().lastProfilingEvent);
+
             XOR_CHECK_HR(cmd()->Close());
             S().closed             = true;
             S().activeRenderTarget = Texture();
@@ -63,6 +70,9 @@ namespace xor
             XOR_CHECK_HR(cmd()->Reset(S().allocator.Get(), nullptr));
             S().closed             = false;
             S().activeRenderTarget = Texture();
+
+			S().firstProfilingEvent = -1;
+			S().lastProfilingEvent  = -1;
         }
     }
 
@@ -501,6 +511,8 @@ namespace xor
             SetCursor(arrow);
 
         ImGui::NewFrame();
+
+		device().processProfilingEvents();
     }
 
     void CommandList::imguiEndFrame(SwapChain &swapChain)
@@ -535,14 +547,21 @@ namespace xor
             uint indexOffset  = 0;
             for (auto &d : list->CmdBuffer)
             {
-                int4 clipRect = int4(float4(d.ClipRect));
-                // TODO: swizzle
-                if (any(clipRect != prevClipRect))
-                    setScissor({ int2(clipRect.x, clipRect.y), int2(clipRect.z, clipRect.w) });
+				if (d.UserCallback)
+				{
+					d.UserCallback(list, &d);
+				}
+				else
+				{
+					int4 clipRect = int4(float4(d.ClipRect));
+					// TODO: swizzle
+					if (any(clipRect != prevClipRect))
+						setScissor({ int2(clipRect.x, clipRect.y), int2(clipRect.z, clipRect.w) });
 
-                setConstants(constants);
-                setShaderView(ImguiRenderer::tex, imgui.fontAtlas);
-                drawIndexed(d.ElemCount, indexOffset);
+					setConstants(constants);
+					setShaderView(ImguiRenderer::tex, imgui.fontAtlas);
+					drawIndexed(d.ElemCount, indexOffset);
+				}
 
                 indexOffset += d.ElemCount;
             }
@@ -550,8 +569,29 @@ namespace xor
 
         setRenderTargets();
     }
+
     ProfilingEvent CommandList::profilingEvent(const char * name)
     {
-        return ProfilingEvent();
+        ProfilingEvent e;
+		e.m_cmd       = cmd();
+		e.m_queryHeap = S().queryHeap.get();
+		e.m_offset    = e.m_queryHeap->beginEvent(e.m_cmd, name, number());
+
+		if (S().firstProfilingEvent < 0)
+			S().firstProfilingEvent = e.m_offset;
+
+		S().lastProfilingEvent = e.m_offset;
+
+		return e;
     }
+
+	void ProfilingEvent::done()
+	{
+		if (m_queryHeap)
+		{
+			XOR_ASSERT(static_cast<bool>(m_offset), "No valid event offset");
+			m_queryHeap->endEvent(m_cmd.get(), m_offset);
+			m_queryHeap = nullptr;
+		}
+	}
 }
