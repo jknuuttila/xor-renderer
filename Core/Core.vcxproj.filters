@@ -44,4 +44,7 @@
     <Natvis Include="Utils.natvis" />
     <Natvis Include="String.natvis" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="MakeVectorSwizzle.py" />
+  </ItemGroup>
 </Project>

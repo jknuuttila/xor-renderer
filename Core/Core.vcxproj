@@ -66,6 +66,9 @@
     <Natvis Include="String.natvis" />
     <Natvis Include="Utils.natvis" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="MakeVectorSwizzle.py" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{77A5EA23-CFC4-42B3-9F7C-B42DF7D76362}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
