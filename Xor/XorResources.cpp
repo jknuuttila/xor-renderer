@@ -397,7 +397,7 @@ namespace xor
             buildArgs = buildArgs + String::join(extraDefines, "");
 
 #if defined(XOR_LOG_SHADER_COMPILES)
-            log("Pipeline", "%s %s", shaderBuildInfo.buildExe.cStr(), buildArgs.cStr());
+			log("Pipeline", "%s %s\n", shaderBuildInfo.buildExe.cStr(), buildArgs.cStr());
 #endif
 
             int returnCode = shellCommand(

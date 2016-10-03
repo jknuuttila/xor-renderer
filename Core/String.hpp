@@ -447,8 +447,8 @@ namespace xor
             size_t length = 0;
             for (auto &s : strings) length += stringLength(s) + separator.length();
 
-            String result;
-            result.m_str.reserve(length + 1);
+            std::string result;
+            result.reserve(length + 1);
 
             using std::begin;
             using std::end;
@@ -456,13 +456,13 @@ namespace xor
             for (auto &s : strings)
             {
                 if (!first)
-                    result.m_str.append(separator.begin(), separator.end());
+                    result.append(separator.begin(), separator.end());
 
-                result.m_str.append(begin(s), end(s));
+                result.append(begin(s), end(s));
                 first = false;
             }
 
-            return result;
+            return String(std::move(result));
         }
     };
 
