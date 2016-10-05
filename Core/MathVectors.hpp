@@ -623,6 +623,7 @@ namespace xor
         static_assert(sizeof(float3) == sizeof(float) * 3, "Unexpected padding inside Vector.");
         static_assert(sizeof(float4) == sizeof(float) * 4, "Unexpected padding inside Vector.");
         static_assert(sizeof(Matrix) == sizeof(float4) * 4, "Unexpected padding inside Matrix.");
+#if !defined(XOR_INTELLISENSE)
         static_assert(std::is_trivially_copyable<int2>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<int3>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<int4>::value, "Unexpectedly non-POD.");
@@ -633,6 +634,7 @@ namespace xor
         static_assert(std::is_trivially_copyable<float3>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<float4>::value, "Unexpectedly non-POD.");
         static_assert(std::is_trivially_copyable<Matrix>::value, "Unexpectedly non-POD.");
+#endif
     }
 
     using xor::math::Pi;
