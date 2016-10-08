@@ -122,6 +122,14 @@ namespace xor
         }
 
         template <typename T>
+        const T &pixel(float2 uv) const
+        {
+			uint2 coords = uint2(uv * float2(size));
+			coords       = min(coords, size - 1);
+			return pixel<T>(coords);
+        }
+
+        template <typename T>
         Span<const T> scanline(uint y) const
         {
             uint offset = y * pitch;

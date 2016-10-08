@@ -9,6 +9,8 @@
 #include "RenderTerrain.sig.h"
 #include "VisualizeTriangulation.sig.h"
 
+#include <random>
+
 using namespace xor;
 
 static const float ArcSecond = 30.87f;
@@ -75,6 +77,44 @@ struct HeightmapTriangulation
 	float  maxErrorCoeff = .05f;
 	VisualizationMode mode = VisualizationMode::WireframeHeight;
 
+	struct Triangle
+	{
+		float2 maxErrorPos;
+		float  maxError = 0;
+		int3   verts    = -1;
+		int3   opposite = -1;
+
+		Triangle() = default;
+		Triangle(int3 vs)
+		{
+			verts = vs;
+			if (verts.x > verts.y) std::swap(verts.x, verts.y);
+			if (verts.x > verts.z) std::swap(verts.x, verts.z);
+			if (verts.y > verts.z) std::swap(verts.y, verts.z);
+		}
+		Triangle(int a, int b, int c)
+			: Triangle(int3(a, b, c))
+		{}
+
+		explicit operator bool() const
+		{
+			return verts.x >= 0;
+		}
+
+		void invalidate()
+		{
+			verts = -1;
+		}
+
+		int2 edge(int i) const
+		{
+			if (i == 2)
+				return int2(verts.x, verts.z);
+			else
+				return int2(verts[i], verts[i + 1]);
+		}
+	};
+
 	struct HeightmapMesh
 	{
 		std::vector<float2> normalizedPos;
@@ -82,6 +122,106 @@ struct HeightmapTriangulation
 		std::vector<float2> uv;
 
 		std::vector<uint>   indices;
+		std::vector<Triangle> triangles;
+
+		int insertVertex(float3 v)
+		{
+			int i = static_cast<int>(normalizedPos.size());
+			normalizedPos.emplace_back(v.s_xz);
+			height.emplace_back(v.y);
+			return i;
+		}
+
+		int insertTriangle(Triangle t)
+		{
+			int i = static_cast<int>(triangles.size());
+			triangles.emplace_back(t);
+			return i;
+		}
+
+		Triangle &operator[](int i)
+		{
+			return triangles[i];
+		}
+
+		int triangleIndex(const Triangle &t) const
+		{
+			return static_cast<int>(&t - triangles.data());
+		}
+
+		void linkTriangles(Triangle &t0, int t0Edge, Triangle &t1)
+		{
+			int2 e = t0.edge(t0Edge);
+			t0.opposite[t0Edge] = triangleIndex(t1);
+
+			for (int i = 0; i < 3; ++i)
+			{
+				if (all(e == t1.edge(i)))
+				{
+					t1.opposite[i] = triangleIndex(t0);
+					return;
+				}
+			}
+
+			XOR_CHECK(false, "Triangles not adjacent");
+		}
+
+		float3 vertex(int i) const
+		{
+			float3 v;
+			v.s_xz = normalizedPos[i];
+			v.y    = height[i];
+			return v;
+		}
+
+		void finalize(float heightMultiplier = 1)
+		{
+			if (heightMultiplier != 1)
+			{
+				for (auto &h : height)
+					h *= heightMultiplier;
+			}
+
+			uv.clear();
+			uv.reserve(normalizedPos.size());
+
+			for (auto &v : normalizedPos)
+				uv.emplace_back(v);
+
+			indices.clear();
+			indices.reserve(triangles.size() * 3);
+
+			for (auto &t : triangles)
+			{
+				if (!t)
+					continue;
+
+				float3 a = float3(normalizedPos[t.verts.x]);
+				float3 b = float3(normalizedPos[t.verts.y]);
+				float3 c = float3(normalizedPos[t.verts.z]);
+
+				float3 ab = b - a;
+				float3 ac = c - a;
+
+				float3 N  = cross(ab, ac);
+
+				// FIXME: This should be the other way around?
+				if (N.z < 0)
+				{
+					// CCW
+					indices.emplace_back(t.verts.x);
+					indices.emplace_back(t.verts.y);
+					indices.emplace_back(t.verts.z);
+				}
+				else
+				{
+					// CW, flip winding
+					indices.emplace_back(t.verts.x);
+					indices.emplace_back(t.verts.z);
+					indices.emplace_back(t.verts.y);
+				}
+			}
+		}
 	};
 
 	HeightmapTriangulation() = default;
@@ -188,6 +328,11 @@ struct HeightmapTriangulation
             mesh.indices.size(),
             t.milliseconds());
 
+		gpuMesh(mesh);
+    }
+
+	void gpuMesh(const HeightmapMesh &mesh)
+	{
 		VertexAttribute attrs[] =
 		{
 			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(mesh.normalizedPos) },
@@ -196,7 +341,98 @@ struct HeightmapTriangulation
 		};
 
 		this->mesh = Mesh::generate(device, attrs, mesh.indices);
-    }
+	}
+
+	void greedyInsertion(Rect area, uint vertices)
+	{
+		HeightmapMesh mesh;
+
+		auto heightData = heightmap->image.subresource(0);
+
+		float heightToUV = 1.f / heightmap->worldSize.x;
+
+		auto vertex = [&](float2 uv)
+		{
+			float h  = heightData.pixel<float>(uv) * heightToUV;
+			float3 v = uv.s_x0y;
+			v.y      = h;
+			return v;
+		};
+
+		{
+			auto v0 = vertex({0, 0});
+			auto v1 = vertex({1, 0});
+			auto v2 = vertex({0, 1});
+			auto v3 = vertex({1, 1});
+
+			float d03 = lengthSqr(v3 - v0);
+			float d12 = lengthSqr(v2 - v1);
+
+			mesh.insertVertex(v0);
+			mesh.insertVertex(v1);
+			mesh.insertVertex(v2);
+			mesh.insertVertex(v3);
+
+			if (d03 <= d12)
+			{
+				mesh.triangles.emplace_back(0, 1, 3);
+				mesh.triangles.emplace_back(0, 2, 3);
+				mesh.linkTriangles(mesh[0], 2, mesh[1]);
+			}
+			else
+			{
+				mesh.triangles.emplace_back(0, 1, 2);
+				mesh.triangles.emplace_back(1, 2, 3);
+				mesh.linkTriangles(mesh[0], 1, mesh[1]);
+			}
+		}
+
+		auto insertTriangulatedVertex = [&](Triangle &t_, float3 v)
+		{
+			Triangle t = t_;
+			t_.invalidate();
+
+			int i = mesh.insertVertex(v);
+
+			int t0 = mesh.insertTriangle(Triangle(t.verts.x, t.verts.y, i));
+			int t1 = mesh.insertTriangle(Triangle(t.verts.y, t.verts.z, i));
+			int t2 = mesh.insertTriangle(Triangle(t.verts.z, t.verts.x, i));
+
+			if (t.opposite.x >= 0) mesh.linkTriangles(mesh[t0], 0, mesh[t.opposite.x]);
+			if (t.opposite.y >= 0) mesh.linkTriangles(mesh[t1], 0, mesh[t.opposite.y]);
+			if (t.opposite.z >= 0) mesh.linkTriangles(mesh[t2], 0, mesh[t.opposite.z]);
+
+			mesh.linkTriangles(mesh[t0], 1, mesh[t1]);
+			mesh.linkTriangles(mesh[t0], 2, mesh[t2]);
+			mesh.linkTriangles(mesh[t1], 1, mesh[t2]);
+		};
+
+		std::mt19937 gen(12345);
+
+		while (mesh.triangles.size() < 100)
+		{
+			int i = std::uniform_int_distribution<int>(0, static_cast<int>(mesh.triangles.size() - 1))(gen);
+			auto &t = mesh[i];
+
+			if (!t)
+				continue;
+
+			float3 bary;
+			bary.x = std::uniform_real_distribution<float>()(gen);
+			bary.y = std::uniform_real_distribution<float>(0, 1 - bary.x)(gen);
+			bary.z = 1 - bary.x - bary.y;
+
+			float2 uv = mesh.normalizedPos[t.verts.x] * bary.x;
+			uv       += mesh.normalizedPos[t.verts.y] * bary.y;
+			uv       += mesh.normalizedPos[t.verts.z] * bary.z;
+
+			insertTriangulatedVertex(t, vertex(uv));
+		}
+
+		mesh.finalize(heightmap->worldSize.x);
+
+		gpuMesh(mesh);
+	}
 
 	void render(CommandList &cmd, const Matrix &viewProj, bool wireframe = false)
 	{
@@ -304,6 +540,7 @@ public:
 		triangulation = HeightmapTriangulation(device, heightmap);
 
         updateTerrain();
+		triangulation.greedyInsertion(Rect { 0 }, 0);
 
         camera.speed /= 10;
         camera.fastMultiplier *= 5;
