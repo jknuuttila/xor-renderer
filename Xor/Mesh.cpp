@@ -429,7 +429,7 @@ namespace xor
     }
 
     Mesh Mesh::generate(Device & device,
-                        Span<const std::tuple<const char *, Format, Span<const uint8_t>>> vertexAttributes,
+						Span<const VertexAttribute> vertexAttributes,
                         Span<const uint> indices)
     {
         Mesh m;
@@ -441,11 +441,11 @@ namespace xor
         using std::get;
         for (auto &&attr : vertexAttributes)
         {
-            Format format = get<1>(attr);
-            il.element(get<0>(attr), 0, format, static_cast<uint>(s.vertexBuffers.size()));
+            Format format = attr.format;
+            il.element(attr.semantic, attr.index, format, static_cast<uint>(s.vertexBuffers.size()));
             s.vertexBuffers.emplace_back();
             auto &vb = s.vertexBuffers.back();
-            vb.data   = get<2>(attr);
+            vb.data   = attr.data;
             vb.format = format;
             vb.view   = device.createBufferVBV(Buffer::Info::fromBytes(vb.data, vb.format));
         }

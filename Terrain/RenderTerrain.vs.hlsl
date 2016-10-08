@@ -1,15 +1,24 @@
 #include "RenderTerrain.sig.h"
 
+struct VSInput
+{
+    float2 normalizedPos : POSITION0;
+    float  height        : POSITION1;
+};
+
 struct VSOutput
 {
     float4 worldPos : POSITION0;
     float4 pos      : SV_Position;
 };
+
 [RootSignature(RENDERTERRAIN_ROOT_SIGNATURE)]
-VSOutput main(float3 pos : POSITION)
+VSOutput main(VSInput i)
 {
     VSOutput o;
-    o.worldPos = float4(pos, 1);
+	o.worldPos.xz = lerp(worldMin, worldMax, i.normalizedPos);
+    o.worldPos.y  = i.height;
+    o.worldPos.w  = 1;
 	o.pos =  mul(viewProj, o.worldPos);
     return o;
 }

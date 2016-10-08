@@ -11,7 +11,7 @@ float4 main(PSInput i) : SV_Target
 #ifdef WIREFRAME
 	return 1;
 #else
-	float height = heightMap.Sample(pointSampler, lerp(minUV, maxUV, i.uv.xy));
+	float height = heightMap.Sample(pointSampler,  i.uv.xy);
 	float v      = remap(minHeight, maxHeight, 0, 1, height);
 
 	float4 color = v;

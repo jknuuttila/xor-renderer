@@ -10,6 +10,7 @@ namespace xor
     struct ProcessingMesh
     {
         std::vector<float3> positions;
+        std::vector<float2> uvs;
         std::vector<uint>   indices;
 
         ProcessingMesh() = default;

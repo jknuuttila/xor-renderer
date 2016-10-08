@@ -53,18 +53,71 @@ struct Heightmap
 #endif
     }
 
-    ProcessingMesh uniformGrid(Rect area, int vertexDistance = 0)
+};
+
+enum class VisualizationMode
+{
+	Disabled,
+	WireframeHeight,
+	OnlyHeight,
+	WireframeError,
+	OnlyError,
+};
+struct HeightmapTriangulation
+{
+	Device device;
+    GraphicsPipeline renderTerrain;
+    GraphicsPipeline visualizeTriangulation;
+	Mesh mesh;
+	Heightmap *heightmap = nullptr;
+	float2 minWorld;
+	float2 maxWorld;
+	VisualizationMode mode = VisualizationMode::WireframeHeight;
+
+	struct HeightmapMesh
+	{
+		std::vector<float2> normalizedPos;
+		std::vector<float>  height;
+		std::vector<float2> uv;
+
+		std::vector<uint>   indices;
+	};
+
+	HeightmapTriangulation() = default;
+	HeightmapTriangulation(Device device, Heightmap &hmap)
+	{
+		this->device = device;
+		heightmap = &hmap;
+
+		uniformGrid(Rect::withSize(heightmap->size), -2);
+
+        renderTerrain  = device.createGraphicsPipeline(GraphicsPipeline::Info()
+                                                      .vertexShader("RenderTerrain.vs")
+                                                      .pixelShader("RenderTerrain.ps")
+                                                      .depthMode(info::DepthMode::Write)
+                                                      .depthFormat(DXGI_FORMAT_D32_FLOAT)
+                                                      .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+                                                      .inputLayout(mesh.inputLayout()));
+
+        visualizeTriangulation  = device.createGraphicsPipeline(GraphicsPipeline::Info()
+                                                      .vertexShader("VisualizeTriangulation.vs")
+                                                      .pixelShader("VisualizeTriangulation.ps")
+                                                      .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+                                                      .inputLayout(mesh.inputLayout()));
+	}
+
+    void uniformGrid(Rect area, int vertexDistance = 0)
     {
         Timer t;
 
-        area.rightBottom = min(area.rightBottom, size);
+        area.rightBottom = min(area.rightBottom, heightmap->size);
         if (all(area.size() < uint2(128)))
             area.leftTop = area.rightBottom - 128;
 
         int2 sz        = int2(area.size());
-        float2 szWorld = float2(sz) * texelSize;
+        float2 szWorld = float2(sz) * heightmap->texelSize;
 
-        ProcessingMesh mesh;
+        HeightmapMesh mesh;
 
         if (vertexDistance <= 0)
         {
@@ -81,29 +134,36 @@ struct Heightmap
         int2 verts = sz / vertexDistance;
         float2 fVerts = float2(verts);
         float2 fRes   = float2(sz);
-        float2 topLeft = -szWorld / 2.f;
+        minWorld = -szWorld / 2.f;
+		maxWorld = minWorld + szWorld;
 
-        auto heightData = image.subresource(0);
+        auto heightData = heightmap->image.subresource(0);
+		auto numVerts   = (verts.x + 1) * (verts.y + 1);
 
-        mesh.positions.reserve((verts.x + 1) * (verts.y + 1));
+        mesh.normalizedPos.reserve(numVerts);
+        mesh.uv.reserve(numVerts);
+        mesh.height.reserve(numVerts);
+        mesh.indices.reserve(verts.x * verts.y * (3 * 2));
+
+		float2 invSize = 1.f / float2(heightmap->size);
 
         for (int y = 0; y <= verts.y; ++y)
         {
             for (int x = 0; x <= verts.x; ++x)
             {
                 int2 vertexGridCoords = int2(x, y);
-                int2 texCoords = min(vertexGridCoords * vertexDistance + area.leftTop, size - 1);
+                int2 texCoords = min(vertexGridCoords * vertexDistance + area.leftTop, heightmap->size - 1);
                 float2 uv = float2(vertexGridCoords * vertexDistance) / fRes;
 
-                float3 pos;
-                pos.s_xz = uv * szWorld + topLeft;
-                pos.y = heightData.pixel<float>(uint2(texCoords));
-                mesh.positions.emplace_back(pos);
+                float height = heightData.pixel<float>(uint2(texCoords));
+
+				mesh.normalizedPos.emplace_back(uv);
+				mesh.height.emplace_back(height);
+                mesh.uv.emplace_back((float2(texCoords) + 0.5f) * invSize);
             }
         }
 
         int vertsPerRow = verts.y + 1;
-        mesh.indices.reserve(verts.x * verts.y * (3 * 2));
         for (int y = 0; y < verts.y; ++y)
         {
             for (int x = 0; x < verts.x; ++x)
@@ -123,49 +183,56 @@ struct Heightmap
         }
 
         log("Heightmap", "Generated uniform grid mesh with %zu vertices and %zu indices in %.2f ms\n",
-            mesh.positions.size(),
+            mesh.normalizedPos.size(),
             mesh.indices.size(),
             t.milliseconds());
 
-        return mesh;
+		VertexAttribute attrs[] =
+		{
+			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(mesh.normalizedPos) },
+			{ "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(mesh.height) },
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(mesh.uv) },
+		};
+
+		this->mesh = Mesh::generate(device, attrs, mesh.indices);
     }
-};
 
-struct HeightmapTriangulation
-{
-    GraphicsPipeline visualizeTriangulation;
-	Mesh mesh;
-	Heightmap *heightmap = nullptr;
-	float2 minUV;
-	float2 maxUV;
-	float2 minCorner;
-	float2 maxCorner;
-
-	HeightmapTriangulation() = default;
-	HeightmapTriangulation(Device &device)
+	void render(CommandList &cmd, const Matrix &viewProj, bool wireframe = false)
 	{
-		ProcessingMesh testMesh;
-		testMesh.positions.emplace_back(0.f, 0.f, 0.f);
-		testMesh.positions.emplace_back(0.f, 1.f, 0.f);
-		testMesh.positions.emplace_back(1.f, 0.f, 0.f);
-		testMesh.positions.emplace_back(1.f, 1.f, 0.f);
-		testMesh.indices.emplace_back(0);
-		testMesh.indices.emplace_back(1);
-		testMesh.indices.emplace_back(2);
-		testMesh.indices.emplace_back(2);
-		testMesh.indices.emplace_back(1);
-		testMesh.indices.emplace_back(3);
-		mesh = testMesh.mesh(device);
+        cmd.bind(renderTerrain);
 
-        visualizeTriangulation  = device.createGraphicsPipeline(GraphicsPipeline::Info()
-                                                      .vertexShader("VisualizeTriangulation.vs")
-                                                      .pixelShader("VisualizeTriangulation.ps")
-                                                      .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-                                                      .inputLayout(mesh.inputLayout()));
+		RenderTerrain::Constants constants;
+		constants.viewProj  = viewProj;
+		constants.worldMin  = minWorld;
+		constants.worldMax  = maxWorld;
+        constants.heightMin = heightmap->minHeight;
+        constants.heightMax = heightmap->maxHeight;
+
+        cmd.setConstants(constants);
+        mesh.setForRendering(cmd);
+        {
+            auto p = cmd.profilingEvent("Draw opaque");
+            cmd.drawIndexed(mesh.numIndices());
+        }
+
+        if (wireframe)
+        {
+            auto p = cmd.profilingEvent("Draw wireframe");
+            cmd.bind(renderTerrain.variant()
+                     .pixelShader(info::SameShader {}, { { "WIREFRAME" } })
+                     .depthMode(info::DepthMode::ReadOnly)
+                     .depthBias(10000)
+                     .fill(D3D12_FILL_MODE_WIREFRAME));
+            cmd.setConstants(constants);
+            cmd.drawIndexed(mesh.numIndices());
+        }
 	}
 
-	void visualize(CommandList &cmd, bool wireframe = true)
+	void visualize(CommandList &cmd, float2 minCorner, float2 maxCorner)
 	{
+		if (mode == VisualizationMode::Disabled)
+			return;
+
 		auto p = cmd.profilingEvent("Visualize triangulation");
 
 		VisualizeTriangulation::Constants vtConstants;
@@ -173,8 +240,6 @@ struct HeightmapTriangulation
 		vtConstants.maxHeight = heightmap->maxHeight;
 		vtConstants.minCorner = minCorner;
 		vtConstants.maxCorner = maxCorner;
-		vtConstants.minUV     = minUV;
-		vtConstants.maxUV     = maxUV;
 
 		mesh.setForRendering(cmd);
 
@@ -183,7 +248,7 @@ struct HeightmapTriangulation
 		cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->srv);
 		cmd.drawIndexed(mesh.numIndices());
 
-		if (wireframe)
+		if (mode == VisualizationMode::WireframeHeight || mode == VisualizationMode::WireframeError)
 		{
 			cmd.bind(visualizeTriangulation.variant()
 					 .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
@@ -208,10 +273,9 @@ class Terrain : public Window
     Timer time;
 
     Heightmap heightmap;
-    GraphicsPipeline renderTerrain;
-    Mesh mesh;
     int2 areaStart = { 2000, 0 };
     int areaSize  = 2048;
+	int triangulationDensity = 6;
     bool blitArea  = true;
     bool wireframe = false;
 
@@ -229,19 +293,10 @@ public:
 
         Timer loadingTime;
 
-        heightmap      = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
-
-		triangulation = HeightmapTriangulation(device);
-		triangulation.heightmap = &heightmap;
+        heightmap = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
+		triangulation = HeightmapTriangulation(device, heightmap);
 
         updateTerrain();
-        renderTerrain  = device.createGraphicsPipeline(GraphicsPipeline::Info()
-                                                      .vertexShader("RenderTerrain.vs")
-                                                      .pixelShader("RenderTerrain.ps")
-                                                      .depthMode(info::DepthMode::Write)
-                                                      .depthFormat(DXGI_FORMAT_D32_FLOAT)
-                                                      .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-                                                      .inputLayout(mesh.inputLayout()));
 
         camera.speed /= 10;
         camera.fastMultiplier *= 5;
@@ -260,11 +315,8 @@ public:
 
     void updateTerrain()
     {
-        mesh = heightmap.uniformGrid(Rect::withSize(areaStart, areaSize)).mesh(device);
+        triangulation.uniformGrid(Rect::withSize(areaStart, areaSize), -(1 << triangulationDensity));
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
-
-		triangulation.minUV = remap(float2(0), float2(heightmap.image.size()), float2(0), float2(1), float2(areaStart));
-		triangulation.maxUV = remap(float2(0), float2(heightmap.image.size()), float2(0), float2(1), float2(areaStart + areaSize));
     }
 
     void mainLoop(double deltaTime) override
@@ -280,8 +332,16 @@ public:
         {
             ImGui::SliderInt("Size", &areaSize, 0, heightmap.size.x);
             ImGui::SliderInt2("Start", areaStart.data(), 0, heightmap.size.x - areaSize);
+            ImGui::SliderInt("Density", &triangulationDensity, 1, 11);
             ImGui::Checkbox("Show area", &blitArea);
             ImGui::Checkbox("Wireframe", &wireframe);
+			ImGui::Combo("Visualize triangulation",
+						 reinterpret_cast<int *>(&triangulation.mode),
+						 "Disabled\0"
+						 "WireframeHeight\0"
+						 "OnlyHeight\0"
+						 "WireframeError\0"
+						 "OnlyError\0");
 
             if (ImGui::Button("Update"))
                 updateTerrain();
@@ -296,38 +356,16 @@ public:
         }
 
         cmd.setRenderTargets(backbuffer, depthBuffer);
-        cmd.bind(renderTerrain);
-        RenderTerrain::Constants constants;
-        constants.viewProj =
-            Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov,
-                                          1.f, heightmap.worldSize.x * 1.5f)
-            * camera.viewMatrix();
-        constants.heightMin = heightmap.minHeight;
-        constants.heightMax = heightmap.maxHeight;
-        constants.wireframe = 0;
 
-        cmd.setConstants(constants);
-        mesh.setForRendering(cmd);
-        {
-            auto p = cmd.profilingEvent("Draw opaque");
-            cmd.drawIndexed(mesh.numIndices());
-        }
+		triangulation.render(cmd, 
+							 Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov,
+														   1.f, heightmap.worldSize.x * 1.5f)
+							 * camera.viewMatrix(),
+							 wireframe);
 
-        if (wireframe)
-        {
-            auto p = cmd.profilingEvent("Draw wireframe");
-            cmd.bind(renderTerrain.variant()
-                     .pixelShader(info::SameShader {}, { { "WIREFRAME" } })
-                     .depthMode(info::DepthMode::ReadOnly)
-                     .depthBias(10000)
-                     .fill(D3D12_FILL_MODE_WIREFRAME));
-            cmd.setConstants(constants);
-            cmd.drawIndexed(mesh.numIndices());
-        }
-
-		triangulation.minCorner = remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1110, 410));
-		triangulation.maxCorner = remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1590, 890));
-		triangulation.visualize(cmd);
+		triangulation.visualize(cmd,
+								remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1110, 410)),
+							    remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1590, 890)));
 
         cmd.setRenderTargets();
 

@@ -2,7 +2,8 @@
 
 struct VSInput
 {
-	float3 pos : POSITION;
+	float2 normalizedPos : POSITION0;
+	float2 uv            : TEXCOORD;
 };
 
 struct VSOutput
@@ -15,7 +16,7 @@ struct VSOutput
 VSOutput main(VSInput i)
 {
     VSOutput o;
-	o.uv  = float4(i.pos.xy, 0, 0);
-	o.pos = float4(lerp(minCorner, maxCorner, o.uv.xy), 0, 1);
+	o.uv  = float4(i.uv, 0, 0);
+	o.pos = float4(lerp(minCorner, maxCorner, i.normalizedPos), 0, 1);
     return o;
 }

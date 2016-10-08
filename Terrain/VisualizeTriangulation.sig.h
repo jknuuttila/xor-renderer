@@ -9,8 +9,6 @@ XOR_CBUFFER(Constants, 0)
 {
 	float2 minCorner;
 	float2 maxCorner;
-	float2 minUV;
-	float2 maxUV;
 	float minHeight;
 	float maxHeight;
 };

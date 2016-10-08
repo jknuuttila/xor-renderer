@@ -9,9 +9,10 @@ XOR_BEGIN_SIGNATURE(RenderTerrain)
 XOR_CBUFFER(Constants, 0)
 {
     float4x4 viewProj;
+	float2 worldMin;
+	float2 worldMax;
     float heightMin;
     float heightMax;
-    uint wireframe;
 };
 
 XOR_END_SIGNATURE
