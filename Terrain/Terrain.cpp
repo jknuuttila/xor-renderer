@@ -7,6 +7,7 @@
 #include "Xor/ProcessingMesh.hpp"
 
 #include "RenderTerrain.sig.h"
+#include "VisualizeTriangulation.sig.h"
 
 using namespace xor;
 
@@ -130,6 +131,71 @@ struct Heightmap
     }
 };
 
+struct HeightmapTriangulation
+{
+    GraphicsPipeline visualizeTriangulation;
+	Mesh mesh;
+	Heightmap *heightmap = nullptr;
+	float2 minUV;
+	float2 maxUV;
+	float2 minCorner;
+	float2 maxCorner;
+
+	HeightmapTriangulation() = default;
+	HeightmapTriangulation(Device &device)
+	{
+		ProcessingMesh testMesh;
+		testMesh.positions.emplace_back(0.f, 0.f, 0.f);
+		testMesh.positions.emplace_back(0.f, 1.f, 0.f);
+		testMesh.positions.emplace_back(1.f, 0.f, 0.f);
+		testMesh.positions.emplace_back(1.f, 1.f, 0.f);
+		testMesh.indices.emplace_back(0);
+		testMesh.indices.emplace_back(1);
+		testMesh.indices.emplace_back(2);
+		testMesh.indices.emplace_back(2);
+		testMesh.indices.emplace_back(1);
+		testMesh.indices.emplace_back(3);
+		mesh = testMesh.mesh(device);
+
+        visualizeTriangulation  = device.createGraphicsPipeline(GraphicsPipeline::Info()
+                                                      .vertexShader("VisualizeTriangulation.vs")
+                                                      .pixelShader("VisualizeTriangulation.ps")
+                                                      .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+                                                      .inputLayout(mesh.inputLayout()));
+	}
+
+	void visualize(CommandList &cmd, bool wireframe = true)
+	{
+		auto p = cmd.profilingEvent("Visualize triangulation");
+
+		VisualizeTriangulation::Constants vtConstants;
+		vtConstants.minHeight = heightmap->minHeight;
+		vtConstants.maxHeight = heightmap->maxHeight;
+		vtConstants.minCorner = minCorner;
+		vtConstants.maxCorner = maxCorner;
+		vtConstants.minUV     = minUV;
+		vtConstants.maxUV     = maxUV;
+
+		mesh.setForRendering(cmd);
+
+		cmd.bind(visualizeTriangulation);
+		cmd.setConstants(vtConstants);
+		cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->srv);
+		cmd.drawIndexed(mesh.numIndices());
+
+		if (wireframe)
+		{
+			cmd.bind(visualizeTriangulation.variant()
+					 .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
+					 .fill(D3D12_FILL_MODE_WIREFRAME));
+			cmd.setConstants(vtConstants);
+			cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->srv);
+			cmd.drawIndexed(mesh.numIndices());
+		}
+	}
+
+};
+
 class Terrain : public Window
 {
     Xor xor;
@@ -149,6 +215,7 @@ class Terrain : public Window
     bool blitArea  = true;
     bool wireframe = false;
 
+	HeightmapTriangulation triangulation;
 public:
     Terrain()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
@@ -163,6 +230,10 @@ public:
         Timer loadingTime;
 
         heightmap      = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
+
+		triangulation = HeightmapTriangulation(device);
+		triangulation.heightmap = &heightmap;
+
         updateTerrain();
         renderTerrain  = device.createGraphicsPipeline(GraphicsPipeline::Info()
                                                       .vertexShader("RenderTerrain.vs")
@@ -191,6 +262,9 @@ public:
     {
         mesh = heightmap.uniformGrid(Rect::withSize(areaStart, areaSize)).mesh(device);
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
+
+		triangulation.minUV = remap(float2(0), float2(heightmap.image.size()), float2(0), float2(1), float2(areaStart));
+		triangulation.maxUV = remap(float2(0), float2(heightmap.image.size()), float2(0), float2(1), float2(areaStart + areaSize));
     }
 
     void mainLoop(double deltaTime) override
@@ -250,6 +324,10 @@ public:
             cmd.setConstants(constants);
             cmd.drawIndexed(mesh.numIndices());
         }
+
+		triangulation.minCorner = remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1110, 410));
+		triangulation.maxCorner = remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1590, 890));
+		triangulation.visualize(cmd);
 
         cmd.setRenderTargets();
 

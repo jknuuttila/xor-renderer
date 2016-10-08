@@ -6,8 +6,11 @@
   <ItemGroup>
     <FxCompile Include="RenderTerrain.vs.hlsl" />
     <FxCompile Include="RenderTerrain.ps.hlsl" />
+    <FxCompile Include="VisualizeTriangulation.vs.hlsl" />
+    <FxCompile Include="VisualizeTriangulation.ps.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="RenderTerrain.sig.h" />
+    <ClInclude Include="VisualizeTriangulation.sig.h" />
   </ItemGroup>
 </Project>

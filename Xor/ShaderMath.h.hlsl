@@ -9,6 +9,33 @@ float nonNegative(float x)
     return max(0, x);
 }
 
+float remap(float a, float b, float c, float d, float x)
+{
+	float alpha = (x - a) / (b - a);
+	return lerp(c, d, alpha);
+}
+float2 remap(float2 a, float2 b, float2 c, float2 d, float2 x)
+{
+	return float2(
+		remap(a.x, b.x, c.x, d.x, x.x),
+		remap(a.y, b.y, c.y, d.y, x.y));
+}
+float3 remap(float3 a, float3 b, float3 c, float3 d, float3 x)
+{
+	return float3(
+		remap(a.x, b.x, c.x, d.x, x.x),
+		remap(a.y, b.y, c.y, d.y, x.y),
+		remap(a.z, b.z, c.z, d.z, x.z));
+}
+float4 remap(float4 a, float4 b, float4 c, float4 d, float4 x)
+{
+	return float4(
+		remap(a.x, b.x, c.x, d.x, x.x),
+		remap(a.y, b.y, c.y, d.y, x.y),
+		remap(a.z, b.z, c.z, d.z, x.z),
+		remap(a.w, b.w, c.w, d.w, x.w));
+}
+
 // Optimized GGX specular implementation from
 // http://www.filmicworlds.com/2014/04/21/optimizing-ggx-shaders-with-dotlh/
 
