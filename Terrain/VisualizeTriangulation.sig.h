@@ -11,6 +11,7 @@ XOR_CBUFFER(Constants, 0)
 	float2 maxCorner;
 	float minHeight;
 	float maxHeight;
+	float maxError;
 };
 
 XOR_SRV(Texture2D<float>, heightMap, 0)

@@ -36,6 +36,15 @@ float4 remap(float4 a, float4 b, float4 c, float4 d, float4 x)
 		remap(a.w, b.w, c.w, d.w, x.w));
 }
 
+float3 signedColor(float value, float max)
+{
+	float V = abs(value) / max;
+	if (V >= 0)
+		return float3(V, 0, 0);
+	else
+		return float3(0, 0, V);
+}
+
 // Optimized GGX specular implementation from
 // http://www.filmicworlds.com/2014/04/21/optimizing-ggx-shaders-with-dotlh/
 

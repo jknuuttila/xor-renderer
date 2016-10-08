@@ -72,6 +72,7 @@ struct HeightmapTriangulation
 	Heightmap *heightmap = nullptr;
 	float2 minWorld;
 	float2 maxWorld;
+	float  maxErrorCoeff = .05f;
 	VisualizationMode mode = VisualizationMode::WireframeHeight;
 
 	struct HeightmapMesh
@@ -240,10 +241,16 @@ struct HeightmapTriangulation
 		vtConstants.maxHeight = heightmap->maxHeight;
 		vtConstants.minCorner = minCorner;
 		vtConstants.maxCorner = maxCorner;
+		vtConstants.maxError  = maxErrorCoeff * (vtConstants.maxHeight - vtConstants.minHeight);
 
 		mesh.setForRendering(cmd);
 
-		cmd.bind(visualizeTriangulation);
+		if (mode == VisualizationMode::OnlyError || mode == VisualizationMode::WireframeError)
+			cmd.bind(visualizeTriangulation.variant()
+					 .pixelShader(info::SameShader {}, { { "SHOW_ERROR" } }));
+		else
+			cmd.bind(visualizeTriangulation);
+
 		cmd.setConstants(vtConstants);
 		cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->srv);
 		cmd.drawIndexed(mesh.numIndices());
@@ -342,6 +349,7 @@ public:
 						 "OnlyHeight\0"
 						 "WireframeError\0"
 						 "OnlyError\0");
+            ImGui::SliderFloat("Error magnitude", &triangulation.maxErrorCoeff, 0, .25f);
 
             if (ImGui::Button("Update"))
                 updateTerrain();
