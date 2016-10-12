@@ -1,7 +1,9 @@
 #pragma once
 
 #include "MathVectors.hpp"
+
 #include <cmath>
+#include <random>
 
 namespace xor
 {
@@ -87,4 +89,25 @@ namespace xor
 			remap(a.w, b.w, c.w, d.w, x.w));
 	}
 
+	inline float orient2D(float2 a, float2 b, float2 c)
+	{
+		return (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+	}
+
+	inline bool isTriangleCCW(float2 a, float2 b, float2 c)
+	{
+		return orient2D(a, b, c) > 0;
+	}
+
+	template <typename RandomGen>
+	float3 uniformBarycentric(RandomGen &gen)
+	{
+		std::uniform_real_distribution<float> U;
+
+		float r1  = U(gen);
+		float r2  = U(gen);
+		float sr1 = sqrt(r1);
+
+		return float3(1 - sr1, sr1 * (1 - r2), r2 * sr1);
+	}
 }

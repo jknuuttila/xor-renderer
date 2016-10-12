@@ -65,7 +65,167 @@ enum class VisualizationMode
 	WireframeError,
 	OnlyError,
 };
-struct HeightmapTriangulation
+
+struct HeightmapMesh
+{
+	struct Edge
+	{
+		// Smaller vertex index is always x
+		int2 verts;
+
+		Edge() = default;
+		Edge(int2 vs) : verts(vs)
+		{
+			XOR_ASSERT(verts.x < verts.y, "Edges must be canonical");
+		}
+		Edge(int a, int b) : Edge(int2(a, b)) {}
+
+		bool operator==(const Edge &e) const { return all(verts == e.verts); }
+	};
+
+	struct Triangle
+	{
+		float2 maxErrorPos;
+		float  maxError = 0;
+		int index = -1;
+		// Indices of the 3 vertices
+		int3 verts = -1;
+		// For each edge of the triangle, the pointer to the opposite
+		// triangle or null if none.
+		std::array<int, 3> opposite;
+
+		Triangle(int3 verts, int index)
+			: index(index)
+			, verts(verts)
+		{
+			XOR_ASSERT(verts.x < verts.y, "Vertices must be in ascending index order");
+			XOR_ASSERT(verts.y < verts.z, "Vertices must be in ascending index order");
+
+			opposite.fill(-1);
+		}
+
+		bool valid() const { return verts.x >= 0; }
+		void invalidate() { verts = -1; }
+
+		Edge edge(int i) const
+		{
+			if (i == 2)
+				return Edge(verts.x, verts.z);
+			else
+				return Edge(verts[i], verts[i + 1]);
+		}
+
+		void linkWith(int t, int edge)
+		{
+			opposite[edge] = t;
+
+			if (t < 0)
+				return;
+
+			auto e = this->edge(edge);
+			auto tri = other(t);
+			for (int i = 0; i < 3; ++i)
+			{
+				if (e == tri->edge(i))
+				{
+					tri->opposite[i] = index;
+					return;
+				}
+			}
+
+			XOR_CHECK(false, "Triangles are not adjacent");
+		}
+
+		Triangle *other(int triangle)
+		{
+			if (triangle < 0)
+				return nullptr;
+
+			int diff = triangle - index;
+			return this + diff;
+		}
+
+		Triangle *opp(int i)
+		{
+			return other(opposite[i]);
+		}
+	};
+
+	int insertVertex(float3 v)
+	{
+		int i = static_cast<int>(vertices.size());
+		vertices.emplace_back(v);
+		return i;
+	}
+
+	int insertTriangle(int3 verts)
+	{
+		int i = static_cast<int>(triangles.size());
+		triangles.emplace_back(verts, i);
+		return i;
+	}
+
+	float3 V(int i) const
+	{
+		return vertices[i];
+	}
+
+	Triangle &T(int i)
+	{
+		return triangles[i];
+	}
+
+	void initWithCorners()
+	{
+		vertices.clear();
+		triangles.clear();
+
+		vertices.emplace_back(0.f, 0.f, 0.f);
+		vertices.emplace_back(1.f, 0.f, 0.f);
+		vertices.emplace_back(0.f, 0.f, 1.f);
+		vertices.emplace_back(1.f, 0.f, 1.f);
+
+		int t0 = insertTriangle({0, 1, 2});
+		int t1 = insertTriangle({1, 2, 3});
+
+		T(t0).linkWith(t1, 1);
+	}
+
+	void triangulate(int containingTriangle, float3 newVertex)
+	{
+		int n = insertVertex(newVertex);
+
+		int3 v0 = T(containingTriangle).verts;
+		int3 v1 = v0.s_yz0;
+		int3 v2 = v0.s_xz0;
+
+		v0.z = n;
+		v1.z = n;
+		v2.z = n;
+
+		int t0 = insertTriangle(v0);
+		int t1 = insertTriangle(v1);
+		int t2 = insertTriangle(v2);
+
+		T(t0).linkWith(t1, 1);
+		T(t0).linkWith(t2, 2);
+		T(t1).linkWith(t2, 1);
+
+		auto &c = T(containingTriangle);
+		T(t0).linkWith(c.opposite[0], 0);
+		T(t1).linkWith(c.opposite[1], 0);
+		T(t2).linkWith(c.opposite[2], 0);
+
+		c.invalidate();
+
+		// TODO: Edge flips
+	}
+
+	std::vector<float3> vertices;
+	std::vector<Triangle> triangles;
+};
+
+struct HeightmapRenderer
 {
 	Device device;
     GraphicsPipeline renderTerrain;
@@ -77,176 +237,34 @@ struct HeightmapTriangulation
 	float  maxErrorCoeff = .05f;
 	VisualizationMode mode = VisualizationMode::WireframeHeight;
 
-	struct Triangle
-	{
-		float2 maxErrorPos;
-		float  maxError = 0;
-		int3   verts    = -1;
-		int3   opposite = -1;
-
-		Triangle() = default;
-		Triangle(int3 vs)
-		{
-			verts = vs;
-			if (verts.x > verts.y) std::swap(verts.x, verts.y);
-			if (verts.x > verts.z) std::swap(verts.x, verts.z);
-			if (verts.y > verts.z) std::swap(verts.y, verts.z);
-		}
-		Triangle(int a, int b, int c)
-			: Triangle(int3(a, b, c))
-		{}
-
-		explicit operator bool() const
-		{
-			return verts.x >= 0;
-		}
-
-		void invalidate()
-		{
-			verts = -1;
-		}
-
-		int2 edge(int i) const
-		{
-			if (i == 2)
-				return int2(verts.x, verts.z);
-			else
-				return int2(verts[i], verts[i + 1]);
-		}
-	};
-
-	struct HeightmapMesh
-	{
-		std::vector<float2> normalizedPos;
-		std::vector<float>  height;
-		std::vector<float2> uv;
-
-		std::vector<uint>   indices;
-		std::vector<Triangle> triangles;
-
-		int insertVertex(float3 v)
-		{
-			int i = static_cast<int>(normalizedPos.size());
-			normalizedPos.emplace_back(v.s_xz);
-			height.emplace_back(v.y);
-			return i;
-		}
-
-		int insertTriangle(Triangle t)
-		{
-			int i = static_cast<int>(triangles.size());
-			triangles.emplace_back(t);
-			return i;
-		}
-
-		Triangle &operator[](int i)
-		{
-			return triangles[i];
-		}
-
-		int triangleIndex(const Triangle &t) const
-		{
-			return static_cast<int>(&t - triangles.data());
-		}
-
-		void linkTriangles(Triangle &t0, int t0Edge, Triangle &t1)
-		{
-			int2 e = t0.edge(t0Edge);
-			t0.opposite[t0Edge] = triangleIndex(t1);
-
-			for (int i = 0; i < 3; ++i)
-			{
-				if (all(e == t1.edge(i)))
-				{
-					t1.opposite[i] = triangleIndex(t0);
-					return;
-				}
-			}
-
-			XOR_CHECK(false, "Triangles not adjacent");
-		}
-
-		float3 vertex(int i) const
-		{
-			float3 v;
-			v.s_xz = normalizedPos[i];
-			v.y    = height[i];
-			return v;
-		}
-
-		void finalize(float heightMultiplier = 1)
-		{
-			if (heightMultiplier != 1)
-			{
-				for (auto &h : height)
-					h *= heightMultiplier;
-			}
-
-			uv.clear();
-			uv.reserve(normalizedPos.size());
-
-			for (auto &v : normalizedPos)
-				uv.emplace_back(v);
-
-			indices.clear();
-			indices.reserve(triangles.size() * 3);
-
-			for (auto &t : triangles)
-			{
-				if (!t)
-					continue;
-
-				float3 a = float3(normalizedPos[t.verts.x]);
-				float3 b = float3(normalizedPos[t.verts.y]);
-				float3 c = float3(normalizedPos[t.verts.z]);
-
-				float3 ab = b - a;
-				float3 ac = c - a;
-
-				float3 N  = cross(ab, ac);
-
-				// FIXME: This should be the other way around?
-				if (N.z < 0)
-				{
-					// CCW
-					indices.emplace_back(t.verts.x);
-					indices.emplace_back(t.verts.y);
-					indices.emplace_back(t.verts.z);
-				}
-				else
-				{
-					// CW, flip winding
-					indices.emplace_back(t.verts.x);
-					indices.emplace_back(t.verts.z);
-					indices.emplace_back(t.verts.y);
-				}
-			}
-		}
-	};
-
-	HeightmapTriangulation() = default;
-	HeightmapTriangulation(Device device, Heightmap &hmap)
+	HeightmapRenderer() = default;
+	HeightmapRenderer(Device device, Heightmap &hmap)
 	{
 		this->device = device;
 		heightmap = &hmap;
 
-		uniformGrid(Rect::withSize(heightmap->size), -2);
+		// uniformGrid(Rect::withSize(heightmap->size), -2);
+		randomTriangulation(Rect::withSize(heightmap->size), 300);
 
-        renderTerrain  = device.createGraphicsPipeline(GraphicsPipeline::Info()
-                                                      .vertexShader("RenderTerrain.vs")
-                                                      .pixelShader("RenderTerrain.ps")
-                                                      .depthMode(info::DepthMode::Write)
-                                                      .depthFormat(DXGI_FORMAT_D32_FLOAT)
-                                                      .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-                                                      .inputLayout(mesh.inputLayout()));
+        renderTerrain  = device.createGraphicsPipeline(
+			GraphicsPipeline::Info()
+			.vertexShader("RenderTerrain.vs")
+			.pixelShader("RenderTerrain.ps")
+			.cull(D3D12_CULL_MODE_NONE)
+			.depthMode(info::DepthMode::Write)
+			.depthFormat(DXGI_FORMAT_D32_FLOAT)
+			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+			.inputLayout(mesh.inputLayout()));
 
-        visualizeTriangulation  = device.createGraphicsPipeline(GraphicsPipeline::Info()
-                                                      .vertexShader("VisualizeTriangulation.vs")
-                                                      .pixelShader("VisualizeTriangulation.ps")
-                                                      .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-                                                      .inputLayout(mesh.inputLayout()));
+        visualizeTriangulation  = device.createGraphicsPipeline(
+			GraphicsPipeline::Info()
+			.vertexShader("VisualizeTriangulation.vs")
+			.pixelShader("VisualizeTriangulation.ps")
+			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+			.inputLayout(mesh.inputLayout()));
 	}
 
+#if 0
     void uniformGrid(Rect area, int vertexDistance = 0)
     {
         Timer t;
@@ -330,106 +348,88 @@ struct HeightmapTriangulation
 
 		gpuMesh(mesh);
     }
+#endif
 
 	void gpuMesh(const HeightmapMesh &mesh)
 	{
-		VertexAttribute attrs[] =
+		auto numVerts = mesh.vertices.size();
+		std::vector<float2> normalizedPos(numVerts);
+		std::vector<float>  height(numVerts);
+		std::vector<float2> uv(numVerts);
+
+		for (uint i = 0; i < numVerts; ++i)
 		{
-			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(mesh.normalizedPos) },
-			{ "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(mesh.height) },
-			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(mesh.uv) },
-		};
+			auto v           = mesh.vertices[i];
+			normalizedPos[i] = v.s_xz;
+			height[i]        = v.y;
+			uv[i]            = normalizedPos[i];
+		}
 
-		this->mesh = Mesh::generate(device, attrs, mesh.indices);
-	}
-
-	void greedyInsertion(Rect area, uint vertices)
-	{
-		HeightmapMesh mesh;
-
-		auto heightData = heightmap->image.subresource(0);
-
-		float heightToUV = 1.f / heightmap->worldSize.x;
-
-		auto vertex = [&](float2 uv)
+		std::vector<uint> indices;
+		indices.reserve(mesh.triangles.size() * 3);
+		for (auto &t : mesh.triangles)
 		{
-			float h  = heightData.pixel<float>(uv) * heightToUV;
-			float3 v = uv.s_x0y;
-			v.y      = h;
-			return v;
-		};
+			if (!t.valid())
+				continue;
 
-		{
-			auto v0 = vertex({0, 0});
-			auto v1 = vertex({1, 0});
-			auto v2 = vertex({0, 1});
-			auto v3 = vertex({1, 1});
+			// Negate CCW test because the positions are in UV coordinates,
+			// which is left handed because +Y goes down
+			bool ccw = !isTriangleCCW(float2(mesh.V(t.verts.x).s_xz),
+									  float2(mesh.V(t.verts.y).s_xz),
+									  float2(mesh.V(t.verts.z).s_xz));
 
-			float d03 = lengthSqr(v3 - v0);
-			float d12 = lengthSqr(v2 - v1);
-
-			mesh.insertVertex(v0);
-			mesh.insertVertex(v1);
-			mesh.insertVertex(v2);
-			mesh.insertVertex(v3);
-
-			if (d03 <= d12)
+			if (ccw)
 			{
-				mesh.triangles.emplace_back(0, 1, 3);
-				mesh.triangles.emplace_back(0, 2, 3);
-				mesh.linkTriangles(mesh[0], 2, mesh[1]);
+				indices.emplace_back(t.verts.x);
+				indices.emplace_back(t.verts.y);
+				indices.emplace_back(t.verts.z);
 			}
 			else
 			{
-				mesh.triangles.emplace_back(0, 1, 2);
-				mesh.triangles.emplace_back(1, 2, 3);
-				mesh.linkTriangles(mesh[0], 1, mesh[1]);
+				indices.emplace_back(t.verts.x);
+				indices.emplace_back(t.verts.z);
+				indices.emplace_back(t.verts.y);
 			}
 		}
 
-		auto insertTriangulatedVertex = [&](Triangle &t_, float3 v)
+		VertexAttribute attrs[] =
 		{
-			Triangle t = t_;
-			t_.invalidate();
-
-			int i = mesh.insertVertex(v);
-
-			int t0 = mesh.insertTriangle(Triangle(t.verts.x, t.verts.y, i));
-			int t1 = mesh.insertTriangle(Triangle(t.verts.y, t.verts.z, i));
-			int t2 = mesh.insertTriangle(Triangle(t.verts.z, t.verts.x, i));
-
-			if (t.opposite.x >= 0) mesh.linkTriangles(mesh[t0], 0, mesh[t.opposite.x]);
-			if (t.opposite.y >= 0) mesh.linkTriangles(mesh[t1], 0, mesh[t.opposite.y]);
-			if (t.opposite.z >= 0) mesh.linkTriangles(mesh[t2], 0, mesh[t.opposite.z]);
-
-			mesh.linkTriangles(mesh[t0], 1, mesh[t1]);
-			mesh.linkTriangles(mesh[t0], 2, mesh[t2]);
-			mesh.linkTriangles(mesh[t1], 1, mesh[t2]);
+			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
+			{ "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(height) },
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
 		};
+
+		this->mesh = Mesh::generate(device, attrs, indices);
+	}
+
+	void randomTriangulation(Rect area, uint vertices)
+	{
+		Timer timer;
+
+		HeightmapMesh mesh;
+		mesh.initWithCorners();
 
 		std::mt19937 gen(12345);
 
-		while (mesh.triangles.size() < 100)
+		uint t = 0;
+
+		while (mesh.vertices.size() < vertices)
 		{
-			int i = std::uniform_int_distribution<int>(0, static_cast<int>(mesh.triangles.size() - 1))(gen);
-			auto &t = mesh[i];
+			auto &tri   = mesh.T(t);
+			float3 bary = uniformBarycentric(gen);
+			float3 v    = bary.x * mesh.V(tri.verts.x)
+				        + bary.y * mesh.V(tri.verts.y)
+				        + bary.z * mesh.V(tri.verts.z);
+			mesh.triangulate(t, v);
+			++t;
 
-			if (!t)
-				continue;
-
-			float3 bary;
-			bary.x = std::uniform_real_distribution<float>()(gen);
-			bary.y = std::uniform_real_distribution<float>(0, 1 - bary.x)(gen);
-			bary.z = 1 - bary.x - bary.y;
-
-			float2 uv = mesh.normalizedPos[t.verts.x] * bary.x;
-			uv       += mesh.normalizedPos[t.verts.y] * bary.y;
-			uv       += mesh.normalizedPos[t.verts.z] * bary.z;
-
-			insertTriangulatedVertex(t, vertex(uv));
+			XOR_ASSERT(t < mesh.triangles.size(), "Invalid triangle offset");
 		}
 
-		mesh.finalize(heightmap->worldSize.x);
+        log("Heightmap", "Generated random triangulation with %zu vertices and %zu triangles in %.2f ms\n",
+            mesh.vertices.size(),
+            mesh.triangles.size(),
+            timer.milliseconds());
 
 		gpuMesh(mesh);
 	}
@@ -522,7 +522,7 @@ class Terrain : public Window
     bool blitArea  = true;
     bool wireframe = false;
 
-	HeightmapTriangulation triangulation;
+	HeightmapRenderer heightmapRenderer;
 public:
     Terrain()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
@@ -537,10 +537,9 @@ public:
         Timer loadingTime;
 
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
-		triangulation = HeightmapTriangulation(device, heightmap);
+		heightmapRenderer = HeightmapRenderer(device, heightmap);
 
         updateTerrain();
-		triangulation.greedyInsertion(Rect { 0 }, 0);
 
         camera.speed /= 10;
         camera.fastMultiplier *= 5;
@@ -559,7 +558,7 @@ public:
 
     void updateTerrain()
     {
-        triangulation.uniformGrid(Rect::withSize(areaStart, areaSize), -(1 << triangulationDensity));
+        //heightmapRenderer.uniformGrid(Rect::withSize(areaStart, areaSize), -(1 << triangulationDensity));
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
     }
 
@@ -580,13 +579,13 @@ public:
             ImGui::Checkbox("Show area", &blitArea);
             ImGui::Checkbox("Wireframe", &wireframe);
 			ImGui::Combo("Visualize triangulation",
-						 reinterpret_cast<int *>(&triangulation.mode),
+						 reinterpret_cast<int *>(&heightmapRenderer.mode),
 						 "Disabled\0"
 						 "WireframeHeight\0"
 						 "OnlyHeight\0"
 						 "WireframeError\0"
 						 "OnlyError\0");
-            ImGui::SliderFloat("Error magnitude", &triangulation.maxErrorCoeff, 0, .25f);
+            ImGui::SliderFloat("Error magnitude", &heightmapRenderer.maxErrorCoeff, 0, .25f);
 
             if (ImGui::Button("Update"))
                 updateTerrain();
@@ -602,13 +601,13 @@ public:
 
         cmd.setRenderTargets(backbuffer, depthBuffer);
 
-		triangulation.render(cmd, 
+		heightmapRenderer.render(cmd, 
 							 Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov,
 														   1.f, heightmap.worldSize.x * 1.5f)
 							 * camera.viewMatrix(),
 							 wireframe);
 
-		triangulation.visualize(cmd,
+		heightmapRenderer.visualize(cmd,
 								remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1110, 410)),
 							    remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1590, 890)));
 
