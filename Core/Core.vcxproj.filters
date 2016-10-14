@@ -38,6 +38,7 @@
     <ClInclude Include="Serialization.hpp" />
     <ClInclude Include="CorePCH.hpp" />
     <ClInclude Include="MathVectorSwizzle.hpp" />
+    <ClInclude Include="Sorting.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="MathVectors.natvis" />

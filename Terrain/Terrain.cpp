@@ -92,16 +92,16 @@ struct HeightmapMesh
 		int3 verts = -1;
 		// For each edge of the triangle, the pointer to the opposite
 		// triangle or null if none.
-		std::array<int, 3> opposite;
+		int3 opposite;
 
-		Triangle(int3 verts, int index)
+		Triangle(int3 sortedVerts, int index)
 			: index(index)
-			, verts(verts)
+			, verts(sortedVerts)
 		{
 			XOR_ASSERT(verts.x < verts.y, "Vertices must be in ascending index order");
 			XOR_ASSERT(verts.y < verts.z, "Vertices must be in ascending index order");
 
-			opposite.fill(-1);
+			opposite = -1;
 		}
 
 		bool valid() const { return verts.x >= 0; }
@@ -136,6 +136,36 @@ struct HeightmapMesh
 			XOR_CHECK(false, "Triangles are not adjacent");
 		}
 
+		void replaceWith(int3 unsortedVerts, int3 oppositeTriangles)
+		{
+			verts = unsortedVerts;
+
+            // FIXME: oppositeTriangles is not sorted correctly here,
+            // its correct order depends on pairs of vertices and not just individual values.
+			if (verts.y < verts.x)
+			{
+				std::swap(verts.x,             verts.y);
+				std::swap(oppositeTriangles.x, oppositeTriangles.y);
+			}
+			if (verts.z < verts.x)
+			{
+				std::swap(verts.x,             verts.z);
+				std::swap(oppositeTriangles.x, oppositeTriangles.z);
+			}
+			if (verts.z < verts.y)
+			{
+				std::swap(verts.y,             verts.z);
+				std::swap(oppositeTriangles.y, oppositeTriangles.z);
+			}
+
+            // TODO: Remove links from previous opposites
+
+            linkWith(oppositeTriangles.x, 0);
+            linkWith(oppositeTriangles.y, 1);
+            linkWith(oppositeTriangles.z, 2);
+		}
+
+
 		Triangle *other(int triangle)
 		{
 			if (triangle < 0)
@@ -147,8 +177,18 @@ struct HeightmapMesh
 
 		Triangle *opp(int i)
 		{
-			return other(opposite[i]);
+			return other(O(i));
 		}
+
+        int V(int i) const
+        {
+            return verts[i % 3];
+        }
+
+        int O(int i) const
+        {
+            return opposite[i % 3];
+        }
 	};
 
 	int insertVertex(float3 v)
@@ -218,11 +258,97 @@ struct HeightmapMesh
 
 		c.invalidate();
 
-		// TODO: Edge flips
+		{
+			int ts[] = { t0, t1, t2 };
+			for (int i = 0; i < 3; ++i)
+			{
+				if (std::uniform_int_distribution<int>(0, 1)(gen))
+				{
+					flipEdge(2, ts[i]);
+				}
+			}
+		}
+	}
+
+	void flipEdge(int vAIndex, int tABC)
+	{
+        int eBC = vAIndex + 1;
+
+		auto abc = &T(tABC);
+		auto bcd = abc->opp(eBC);
+
+		if (!bcd)
+			return;
+
+        int vA = abc->V(vAIndex);
+		int vB = abc->V(vAIndex + 1);
+		int vC = abc->V(vAIndex + 2);
+
+        int oAB = abc->O(vAIndex);
+        int oAC = abc->O(vAIndex + 2);
+
+		int vD = -1;
+        int oBD = -1;
+        int oCD = -1;
+
+        if (bcd->verts.x == vB)
+        {
+            if (bcd->verts.y == vC)
+            {
+                vD  = bcd->verts.z;
+                oBD = bcd->opposite.z;
+                oCD = bcd->opposite.y;
+            }
+            else
+            {
+                vD  = bcd->verts.y;
+                oBD = bcd->opposite.x;
+                oCD = bcd->opposite.y;
+            }
+        }
+        else if (bcd->verts.x == vC)
+        {
+            if (bcd->verts.y == vB)
+            {
+                vD  = bcd->verts.z;
+                oBD = bcd->opposite.y;
+                oCD = bcd->opposite.z;
+            }
+            else
+            {
+                vD  = bcd->verts.y;
+                oBD = bcd->opposite.y;
+                oCD = bcd->opposite.x;
+            }
+        }
+        else
+        {
+            if (bcd->verts.y == vB)
+            {
+                vD  = bcd->verts.x;
+                oBD = bcd->opposite.x;
+                oCD = bcd->opposite.z;
+            }
+            else
+            {
+                vD  = bcd->verts.x;
+                oBD = bcd->opposite.z;
+                oCD = bcd->opposite.x;
+            }
+        }
+
+        XOR_ASSERT(vD >= 0, "Triangle BCD broke assumptions");
+
+		// ABC becomes ABD
+		// BCD becomes ACD
+
+		abc->replaceWith(int3(vA, vB, vD), int3(oAB, oBD, bcd->index));
+		bcd->replaceWith(int3(vA, vC, vD), int3(oAC, oCD, abc->index));
 	}
 
 	std::vector<float3> vertices;
 	std::vector<Triangle> triangles;
+	std::mt19937 gen;
 };
 
 struct HeightmapRenderer
@@ -250,7 +376,6 @@ struct HeightmapRenderer
 			GraphicsPipeline::Info()
 			.vertexShader("RenderTerrain.vs")
 			.pixelShader("RenderTerrain.ps")
-			.cull(D3D12_CULL_MODE_NONE)
 			.depthMode(info::DepthMode::Write)
 			.depthFormat(DXGI_FORMAT_D32_FLOAT)
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
