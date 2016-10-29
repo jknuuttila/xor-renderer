@@ -10,6 +10,7 @@
 #include "VisualizeTriangulation.sig.h"
 
 #include <random>
+#include <unordered_set>
 
 using namespace xor;
 
@@ -76,7 +77,8 @@ struct HeightmapMesh
 		Edge() = default;
 		Edge(int2 vs) : verts(vs)
 		{
-			XOR_ASSERT(verts.x < verts.y, "Edges must be canonical");
+            if (verts.y < verts.x)
+                std::swap(verts.x, verts.y);
 		}
 		Edge(int a, int b) : Edge(int2(a, b)) {}
 
@@ -94,13 +96,10 @@ struct HeightmapMesh
 		// triangle or null if none.
 		int3 opposite;
 
-		Triangle(int3 sortedVerts, int index)
+		Triangle(int3 verts, int index)
 			: index(index)
-			, verts(sortedVerts)
+			, verts(verts)
 		{
-			XOR_ASSERT(verts.x < verts.y, "Vertices must be in ascending index order");
-			XOR_ASSERT(verts.y < verts.z, "Vertices must be in ascending index order");
-
 			opposite = -1;
 		}
 
@@ -115,6 +114,25 @@ struct HeightmapMesh
 				return Edge(verts[i], verts[i + 1]);
 		}
 
+        int findEdge(Edge e) const
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                if (e == edge(i))
+                    return i;
+            }
+
+            return -1;
+        }
+
+		void linkWith(Triangle *t, int edge)
+        {
+            if (t)
+                linkWith(t->index, edge);
+            else
+                linkWith(-1, edge);
+        }
+
 		void linkWith(int t, int edge)
 		{
 			opposite[edge] = t;
@@ -124,47 +142,33 @@ struct HeightmapMesh
 
 			auto e = this->edge(edge);
 			auto tri = other(t);
-			for (int i = 0; i < 3; ++i)
-			{
-				if (e == tri->edge(i))
-				{
-					tri->opposite[i] = index;
-					return;
-				}
-			}
 
-			XOR_CHECK(false, "Triangles are not adjacent");
+            int o = tri->findEdge(e);
+            if (o >= 0)
+                tri->opposite[o] = index;
+            else
+                XOR_CHECK(false, "Triangles are not adjacent");
+
+            XOR_ASSERT(!all(sortVector(verts) == sortVector(tri->verts)), "Identical triangles");
 		}
 
-		void replaceWith(int3 unsortedVerts, int3 oppositeTriangles)
-		{
-			verts = unsortedVerts;
+        void severLink(int edge)
+        {
+            auto tri = opp(edge);
+            if (!tri)
+                return;
 
-            // FIXME: oppositeTriangles is not sorted correctly here,
-            // its correct order depends on pairs of vertices and not just individual values.
-			if (verts.y < verts.x)
-			{
-				std::swap(verts.x,             verts.y);
-				std::swap(oppositeTriangles.x, oppositeTriangles.y);
-			}
-			if (verts.z < verts.x)
-			{
-				std::swap(verts.x,             verts.z);
-				std::swap(oppositeTriangles.x, oppositeTriangles.z);
-			}
-			if (verts.z < verts.y)
-			{
-				std::swap(verts.y,             verts.z);
-				std::swap(oppositeTriangles.y, oppositeTriangles.z);
-			}
+            int o = tri->findEdge(this->edge(edge));
+            if (o >= 0)
+                tri->opposite[o] = -1;
+        }
 
-            // TODO: Remove links from previous opposites
-
-            linkWith(oppositeTriangles.x, 0);
-            linkWith(oppositeTriangles.y, 1);
-            linkWith(oppositeTriangles.z, 2);
-		}
-
+        void remove()
+        {
+            severLink(0);
+            severLink(1);
+            severLink(2);
+        }
 
 		Triangle *other(int triangle)
 		{
@@ -179,6 +183,15 @@ struct HeightmapMesh
 		{
 			return other(O(i));
 		}
+
+		Triangle *opp(Edge e)
+        {
+            int i = findEdge(e);
+            if (i < 0)
+                return nullptr;
+            else
+                return opp(i);
+        }
 
         int V(int i) const
         {
@@ -201,6 +214,7 @@ struct HeightmapMesh
 	int insertTriangle(int3 verts)
 	{
 		int i = static_cast<int>(triangles.size());
+        triangles.reserve(10000);
 		triangles.emplace_back(verts, i);
 		return i;
 	}
@@ -259,96 +273,137 @@ struct HeightmapMesh
 		c.invalidate();
 
 		{
+            flippedTriangles.clear();
+
 			int ts[] = { t0, t1, t2 };
 			for (int i = 0; i < 3; ++i)
 			{
-				if (std::uniform_int_distribution<int>(0, 1)(gen))
-				{
+                static const float PFlip = .5f;
+				if (std::uniform_real_distribution<float>()(gen) < PFlip)
 					flipEdge(2, ts[i]);
-				}
 			}
 		}
 	}
 
 	void flipEdge(int vAIndex, int tABC)
 	{
-        int eBC = vAIndex + 1;
+        if (flippedTriangles.count(tABC))
+            return;
 
 		auto abc = &T(tABC);
-		auto bcd = abc->opp(eBC);
-
-		if (!bcd)
-			return;
-
         int vA = abc->V(vAIndex);
 		int vB = abc->V(vAIndex + 1);
 		int vC = abc->V(vAIndex + 2);
 
-        int oAB = abc->O(vAIndex);
-        int oAC = abc->O(vAIndex + 2);
+        auto bcd = abc->opp({vB, vC});
+
+		if (!bcd || flippedTriangles.count(bcd->index))
+			return;
+
+        auto tAB = abc->opp({vA, vB});
+        auto tAC = abc->opp({vA, vC});
 
 		int vD = -1;
-        int oBD = -1;
-        int oCD = -1;
-
         if (bcd->verts.x == vB)
         {
             if (bcd->verts.y == vC)
-            {
                 vD  = bcd->verts.z;
-                oBD = bcd->opposite.z;
-                oCD = bcd->opposite.y;
-            }
             else
-            {
                 vD  = bcd->verts.y;
-                oBD = bcd->opposite.x;
-                oCD = bcd->opposite.y;
-            }
         }
         else if (bcd->verts.x == vC)
         {
             if (bcd->verts.y == vB)
-            {
                 vD  = bcd->verts.z;
-                oBD = bcd->opposite.y;
-                oCD = bcd->opposite.z;
-            }
             else
-            {
                 vD  = bcd->verts.y;
-                oBD = bcd->opposite.y;
-                oCD = bcd->opposite.x;
-            }
         }
         else
         {
             if (bcd->verts.y == vB)
-            {
                 vD  = bcd->verts.x;
-                oBD = bcd->opposite.x;
-                oCD = bcd->opposite.z;
-            }
             else
-            {
                 vD  = bcd->verts.x;
-                oBD = bcd->opposite.z;
-                oCD = bcd->opposite.x;
-            }
         }
+
+        // Test that the quad ABCD is convex, or it can't be flipped
+        {
+            float2 pA = V(vA).s_xz;
+            float2 pB = V(vB).s_xz;
+            float2 pC = V(vC).s_xz;
+            float2 pD = V(vD).s_xz;
+
+            // It is convex iff the vertex D lies on different sides
+            // of the directed edges AB and AC
+            float ABD = orient2D(pA, pB, pD);
+            float ACD = orient2D(pA, pC, pD);
+
+            // It is on different sides if the sign of the product is negative
+            if (ABD * ACD >= 0)
+                return;
+        }
+
+#if 0
+        XOR_ASSERT(vA != vB, "Halp");
+        XOR_ASSERT(vA != vC, "Halp");
+        XOR_ASSERT(vA != vD, "Halp");
+        XOR_ASSERT(vB != vC, "Halp");
+        XOR_ASSERT(vB != vD, "Halp");
+        XOR_ASSERT(vC != vD, "Halp");
+#endif
 
         XOR_ASSERT(vD >= 0, "Triangle BCD broke assumptions");
 
 		// ABC becomes ABD
 		// BCD becomes ACD
 
-		abc->replaceWith(int3(vA, vB, vD), int3(oAB, oBD, bcd->index));
-		bcd->replaceWith(int3(vA, vC, vD), int3(oAC, oCD, abc->index));
+        auto tBD = bcd->opp({vB, vD});
+        auto tCD = bcd->opp({vC, vD});
+
+#if 0
+        auto tAB = oAB < 0 ? nullptr : &T(oAB);
+        auto tBD = oBD < 0 ? nullptr : &T(oBD);
+        auto tAC = oAC < 0 ? nullptr : &T(oAC);
+        auto tCD = oCD < 0 ? nullptr : &T(oCD);
+#endif
+
+#if 0
+        XOR_ASSERT(oAB < 0 || oAB != oAC, "Halp");
+        XOR_ASSERT(oAB < 0 || oAB != oBD, "Halp");
+        XOR_ASSERT(oAB < 0 || oAB != oCD, "Halp");
+        XOR_ASSERT(oAC < 0 || oAC != oBD, "Halp");
+        XOR_ASSERT(oAC < 0 || oAC != oCD, "Halp");
+        XOR_ASSERT(oBD < 0 || oBD != oCD, "Halp");
+#endif
+
+#if 0
+        XOR_CHECK(toAB.findEdge({vA, vB}) >= 0, "AB");
+        XOR_CHECK(toBD.findEdge({vB, vD}) >= 0, "BD");
+        XOR_CHECK(toAC.findEdge({vA, vC}) >= 0, "AC");
+        XOR_CHECK(toCD.findEdge({vC, vD}) >= 0, "CD");
+#endif
+
+        abc->remove();
+        bcd->remove();
+
+        abc->verts = int3(vA, vB, vD);
+        bcd->verts = int3(vA, vC, vD);
+
+        abc->linkWith(tAB,        0);
+        abc->linkWith(tBD,        1);
+        abc->linkWith(bcd->index, 2);
+        bcd->linkWith(tAC,        0);
+        bcd->linkWith(tCD,        1);
+        bcd->linkWith(abc->index, 2);
+
+        flippedTriangles.insert(abc->index);
+        flippedTriangles.insert(bcd->index);
 	}
 
 	std::vector<float3> vertices;
 	std::vector<Triangle> triangles;
 	std::mt19937 gen;
+    std::unordered_set<uint> flippedTriangles;
 };
 
 struct HeightmapRenderer
