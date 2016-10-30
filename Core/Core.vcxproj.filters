@@ -39,6 +39,7 @@
     <ClInclude Include="CorePCH.hpp" />
     <ClInclude Include="MathVectorSwizzle.hpp" />
     <ClInclude Include="Sorting.hpp" />
+    <ClInclude Include="MathGeom.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="MathVectors.natvis" />

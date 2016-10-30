@@ -611,7 +611,159 @@ namespace xor
             return (*this) * v;
         }
 
+        // Matrix of arbitrary dimensions. Less functionality, more generality.
+        // Amount of rows comes first to conform with M-by-N notation.
+        template <uint M, uint N>
+        class Mat
+        {
+            float v[M][N];
+        public:
+            Mat()
+            {
+                zero(v);
+            }
+
+            template <typename... Ts>
+            Mat(float v0, float v1, const Ts &... values)
+            {
+                // Put two fixed float parameters in the constructor so it doesn't mess up overloads for
+                // one-argument constructors.
+                static_assert(sizeof...(Ts) == N * M - 2, "Must give all elements of the matrix in row-major order.");
+                float fs[N * M] = { v0, v1, values... };
+                static_assert(sizeof(v) == sizeof(fs), "Unexpected size mismatch");
+                memcpy(v, fs, sizeof(v));
+            }
+
+            Mat(Span<const float> values)
+            {
+                XOR_ASSERT(values.size() == N * M, "Must give all elements of the matrix in row-major order");
+                memcpy(v, values.data(), sizeof(v));
+            }
+
+            Mat(const float (&values)[M][N])
+            {
+                static_assert(sizeof(v) == sizeof(values), "Unexpected size mismatch");
+                memcpy(v, values, sizeof(v));
+            }
+
+            Mat(const float (&values)[M * N])
+            {
+                static_assert(sizeof(v) == sizeof(values), "Unexpected size mismatch");
+                memcpy(v, values, sizeof(v));
+            }
+
+            float &m(uint y, uint x) { return v[y][x]; }
+            float m(uint y, uint x) const { return v[y][x]; }
+            float &operator()(uint y, uint x) { return v[y][x]; }
+            float operator()(uint y, uint x) const { return v[y][x]; }
+
+            Mat<N, M> transpose() const
+            {
+                float fs[N][M];
+
+                for (uint x = 0; x < N; ++x)
+                {
+                    for (uint y = 0; y < M; ++y)
+                    {
+                        fs[x][y] = m(x, y);
+                    }
+                }
+
+                return fs;
+            }
+
+            float determinant() const
+            {
+                XOR_ASSERT(N == M, "Determinant is only defined for square matrices");
+
+                if (N == 2)
+                {
+                    return m(0, 0) * m(1, 1) - m(0, 1) * m(1, 0);
+                }
+                else if (N == 3)
+                {
+                    return
+                        m(0, 0) * m(1, 1) * m(2, 2) +
+                        m(0, 1) * m(1, 2) * m(2, 0) +
+                        m(0, 2) * m(1, 0) * m(2, 1) -
+                        m(0, 2) * m(1, 1) * m(2, 0) -
+                        m(0, 1) * m(1, 0) * m(2, 2) -
+                        m(0, 0) * m(1, 2) * m(2, 1);
+                }
+                else if (N == 4)
+                {
+                    return
+                        m(0, 3)*m(1, 2)*m(2, 1)*m(3, 0) - m(0, 2)*m(1, 3)*m(2, 1)*m(3, 0) - m(0, 3)*m(1, 1)*m(2, 2)*m(3, 0) + m(0, 1)*m(1, 3)*m(2, 2)*m(3, 0) +
+                        m(0, 2)*m(1, 1)*m(2, 3)*m(3, 0) - m(0, 1)*m(1, 2)*m(2, 3)*m(3, 0) - m(0, 3)*m(1, 2)*m(2, 0)*m(3, 1) + m(0, 2)*m(1, 3)*m(2, 0)*m(3, 1) +
+                        m(0, 3)*m(1, 0)*m(2, 2)*m(3, 1) - m(0, 0)*m(1, 3)*m(2, 2)*m(3, 1) - m(0, 2)*m(1, 0)*m(2, 3)*m(3, 1) + m(0, 0)*m(1, 2)*m(2, 3)*m(3, 1) +
+                        m(0, 3)*m(1, 1)*m(2, 0)*m(3, 2) - m(0, 1)*m(1, 3)*m(2, 0)*m(3, 2) - m(0, 3)*m(1, 0)*m(2, 1)*m(3, 2) + m(0, 0)*m(1, 3)*m(2, 1)*m(3, 2) +
+                        m(0, 1)*m(1, 0)*m(2, 3)*m(3, 2) - m(0, 0)*m(1, 1)*m(2, 3)*m(3, 2) - m(0, 2)*m(1, 1)*m(2, 0)*m(3, 3) + m(0, 1)*m(1, 2)*m(2, 0)*m(3, 3) +
+                        m(0, 2)*m(1, 0)*m(2, 1)*m(3, 3) - m(0, 0)*m(1, 2)*m(2, 1)*m(3, 3) - m(0, 1)*m(1, 0)*m(2, 2)*m(3, 3) + m(0, 0)*m(1, 1)*m(2, 2)*m(3, 3);
+                }
+                else
+                {
+                    XOR_CHECK(false, "Determinant not implemented for N >= 5");
+                    __assume(0);
+                }
+            }
+
+            template <uint N, uint M, uint K>
+            friend inline Mat<M, K> operator*(const Mat<M, N> &a, const Mat<N, K> &b)
+            {
+                float m[M][K] = { 0 };
+
+                for (uint y = 0; y < M; ++y)
+                {
+                    for (uint x = 0; x < K; ++x)
+                    {
+                        for (uint i = 0; i < N; ++i)
+                            m[y][x] += a(y, i) * b(i, x);
+                    }
+                }
+
+                return m;
+            }
+
+            friend inline Mat operator+(const Mat &a, const Mat &b)
+            {
+                float m[M][N];
+
+                for (uint y = 0; y < M; ++y)
+                {
+                    for (uint x = 0; x < N; ++x)
+                    {
+                        m[y][x] = a(y, x) + b(y, x);
+                    }
+                }
+
+                return m;
+            }
+
+            Mat &operator*=(float k)
+            {
+                for (uint y = 0; y < M; ++y)
+                {
+                    for (uint x = 0; x < N; ++x)
+                        m(y, x) *= k;
+                }
+                return *this;
+            }
+
+            friend inline Mat operator*(const Mat &a, float k)
+            {
+                Mat m = a;
+                m *= k;
+                return m;
+            }
+
+            friend inline Mat operator*(float k, const Mat &a)
+            {
+                return a * k;
+            }
+        };
+
         using float4x4 = Matrix;
+        using float3x3 = Mat<3, 3>;
 
         static_assert(sizeof(int2) == sizeof(int) * 2, "Unexpected padding inside Vector.");
         static_assert(sizeof(int3) == sizeof(int) * 3, "Unexpected padding inside Vector.");
@@ -641,6 +793,7 @@ namespace xor
     using xor::math::Vector;
     using xor::math::Angle;
     using xor::math::Matrix;
+    using xor::math::Mat;
 
     template <typename T, uint N> String toString(Vector<T, N> v)
     {
@@ -716,3 +869,4 @@ using xor::math::float2;
 using xor::math::float3;
 using xor::math::float4;
 using xor::math::float4x4;
+using xor::math::float3x3;

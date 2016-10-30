@@ -42,6 +42,7 @@
     <ClInclude Include="Log.hpp" />
     <ClInclude Include="Math.hpp" />
     <ClInclude Include="MathFloat.hpp" />
+    <ClInclude Include="MathGeom.hpp" />
     <ClInclude Include="MathInteger.hpp" />
     <ClInclude Include="MathVectors.hpp" />
     <ClInclude Include="MathVectorSwizzle.hpp" />
