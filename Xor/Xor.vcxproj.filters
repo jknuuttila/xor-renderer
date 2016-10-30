@@ -19,6 +19,7 @@
     <ClInclude Include="Blit.hpp" />
     <ClInclude Include="Blit.sig.h" />
     <ClInclude Include="ProcessingMesh.hpp" />
+    <ClInclude Include="DirectedEdge.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />

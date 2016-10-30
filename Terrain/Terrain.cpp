@@ -5,6 +5,7 @@
 #include "Xor/Blit.hpp"
 #include "Xor/Mesh.hpp"
 #include "Xor/ProcessingMesh.hpp"
+#include "Xor/DirectedEdge.hpp"
 
 #include "RenderTerrain.sig.h"
 #include "VisualizeTriangulation.sig.h"
@@ -12,7 +13,18 @@
 #include <random>
 #include <unordered_set>
 
+
 using namespace xor;
+
+void test()
+{
+    DirectedEdge<Empty, Empty, Empty, EdgeSmall> de;
+    DirectedEdge<Empty, Empty, Empty, EdgeMedium> dm;
+    DirectedEdge<Empty, Empty, Empty, EdgeFull> df;
+    auto i = de.triangleIndices();
+    i = dm.triangleIndices();
+    i = df.triangleIndices();
+}
 
 static const float ArcSecond = 30.87f;
 

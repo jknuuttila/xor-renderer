@@ -25,6 +25,10 @@ namespace xor
             std::is_trivially_destructible<T>::value;
     };
 
+    // A canonical empty struct for things like empty base optimizations.
+    struct Empty {};
+    static_assert(std::is_empty<Empty>::value, "Empty is not empty");
+
     // Pointer wrapper that becomes nullptr when moved from.
     // Helpful for concisely implementing Movable types.
     template <typename T, T NullValue = nullptr>

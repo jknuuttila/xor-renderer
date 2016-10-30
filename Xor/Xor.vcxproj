@@ -13,6 +13,7 @@
   <ItemGroup>
     <ClInclude Include="Blit.hpp" />
     <ClInclude Include="Blit.sig.h" />
+    <ClInclude Include="DirectedEdge.hpp" />
     <ClInclude Include="Format.hpp" />
     <ClInclude Include="FPSCamera.hpp" />
     <ClInclude Include="Image.hpp" />

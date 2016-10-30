@@ -17,6 +17,19 @@ namespace xor
 		return orient2D(a, b, c) > 0;
 	}
 
+    // Test if the quadrilateral ABCD is convex. Vertices B and C should
+    // be adjacent to both A and D.
+    inline bool isQuadConvex(float2 a, float2 b, float2 c, float2 d)
+    {
+        // It is convex iff the vertex D lies on different sides
+        // of the directed edges AB and AC
+        float ABD = orient2D(a, b, d);
+        float ACD = orient2D(a, c, d);
+
+        // It is on different sides if the sign of the product is negative
+        return (ABD * ACD < 0);
+    }
+
     // From http://mathworld.wolfram.com/Circumcircle.html
     inline float2 circumcircleCenter(float2 p1, float2 p2, float2 p3)
     {
