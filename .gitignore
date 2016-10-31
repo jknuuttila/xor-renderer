@@ -28,6 +28,7 @@
 *.vspx
 *.db
 *.opendb
+*.user
 **/bin/**
 **/build/**
 **/Debug/**

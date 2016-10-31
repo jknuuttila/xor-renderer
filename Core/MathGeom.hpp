@@ -17,6 +17,41 @@ namespace xor
 		return orient2D(a, b, c) > 0;
 	}
 
+    inline float edgeFunction(float2 v0, float2 v1, float2 p)
+    {
+        return (v0.y - v1.y) * p.x + (v1.x - v0.x) * p.y + (v0.x * v1.y - v0.y * v1.x);
+    }
+    inline float edgeFunction01(float2 a, float2 b, float2 c, float2 p) { return edgeFunction(a, b, p); }
+    inline float edgeFunction12(float2 a, float2 b, float2 c, float2 p) { return edgeFunction(b, c, p); }
+    inline float edgeFunction20(float2 a, float2 b, float2 c, float2 p) { return edgeFunction(c, a, p); }
+
+    inline bool isPointInsideTriangle(float2 a, float2 b, float2 c, float2 p)
+    {
+        return
+            edgeFunction01(a, b, c, p) > 0 &&
+            edgeFunction12(a, b, c, p) > 0 &&
+            edgeFunction20(a, b, c, p) > 0;
+    }
+
+    inline float triangleDoubleSignedArea(float2 a, float2 b, float2 c)
+    {
+        return orient2D(a, b, c);
+    }
+    inline float triangleSignedArea(float2 a, float2 b, float2 c)
+    {
+        return triangleDoubleSignedArea(a, b, c) / 2;
+    }
+    inline float3 barycentric(float2 a, float2 b, float2 c, float2 p, float doubleSignedArea)
+    {
+        return float3(edgeFunction01(a, b, c, p),
+                      edgeFunction12(a, b, c, p),
+                      edgeFunction20(a, b, c, p)) / doubleSignedArea;
+    }
+    inline float3 barycentric(float2 a, float2 b, float2 c, float2 p)
+    {
+        return barycentric(a, b, c, triangleDoubleSignedArea(a, b, c));
+    }
+
     // Test if the quadrilateral ABCD is convex. Vertices B and C should
     // be adjacent to both A and D.
     inline bool isQuadConvex(float2 a, float2 b, float2 c, float2 d)
