@@ -120,9 +120,16 @@ namespace xor
         {
             return E(e).neighbor;
         }
+        int edgePrev(int e) const
+        {
+            return edgePrev(e, E(e));
+        }
+        int edgeNext(int e) const
+        {
+        }
         int edgeTriangle(int e) const
         {
-            return e / 3;
+            return static_cast<uint>(e) / 3u;
         }
         bool edgeIsBoundary(int e) const
         {
@@ -181,6 +188,12 @@ namespace xor
             e2 = Edge(v2, v0);
             edgeUpdateNextPrev(e0, e1, e2);
             return e;
+        }
+
+        // Add a new unconnected triangle with new vertices
+        int addTriangle(float3 p0, float3 p1, float3 p2)
+        {
+            return addTriangle(addVertex(p0), addVertex(p1), addVertex(p2));
         }
 
         // Add a new triangle by extending from a boundary edge
@@ -244,6 +257,67 @@ namespace xor
                                      newVertexBary.z * p2);
         }
 
+        // Given an edge BC that is a diagonal of the convex quadrilateral ABDC formed
+        // by the triangles ABC and DCB, flip the edge, replacing ABC with ABD and DCB
+        // with DCA. Return the edge that is the new diagonal DA belonging to ABD.
+        int edgeFlip(int e)
+        {
+            // First, dig up all the related edges and vertices.
+            int eBC = e;
+            int eAB = edgePrev(eBC);
+            int eCA = edgePrev(eAB);
+
+            int eCB = edgeNeighbor(eBC);
+            XOR_ASSERT(eCB >= 0, "Flipped edge has no neighbor, meaning it's not in a quadrilateral");
+            int eDC = edgePrev(eCB);
+            int eBD = edgePrev(eDC);
+
+            int vA = edgeTarget(eCA);
+            int vB = edgeTarget(eCB);
+            int vC = edgeTarget(eBC);
+            int vD = edgeTarget(eBD);
+
+            int nAB = edgeNeighbor(eAB);
+            int nCA = edgeNeighbor(eCA);
+            int nDC = edgeNeighbor(eDC);
+            int nBD = edgeNeighbor(eBD);
+
+            // DA and AD are completely new edges, and prev edges
+            // with respect to the intact edges (AB and DC) in the
+            // triangles. Use the previous prev edges of the intact edges
+            // for them.
+            int eDA = eCA;
+            int eAD = eBD;
+
+            // CA and BD both already exist, but will transfer from one
+            // triangle to another. Use the edges from the flipped edge
+            // for them, which are also the next edges of the intact edges.
+            eCA = eCB;
+            eBD = eBC;
+
+            // Now we have established locations and proper names for
+            // the new edges. Now fix up the data.
+            E(eBD) = Edge(vB, vD);
+            E(eCA) = Edge(vC, vA);
+            E(eDA) = Edge(vD, vA);
+            E(eAD) = Edge(vA, vD);
+
+            // Update edge connectivity to match the new triangles.
+            edgeUpdateNextPrev(eAB, eBD, eDA);
+            edgeUpdateNextPrev(eDC, eCA, eAD);
+
+            // Connect the new triangles to external neighbors
+            edgeUpdateNeighbor(eAB, nAB);
+            edgeUpdateNeighbor(eCA, nCA);
+            edgeUpdateNeighbor(eDC, nDC);
+            edgeUpdateNeighbor(eBD, nBD);
+
+            // And finally, to each other
+            edgeUpdateNeighbor(eDA, eAD);
+
+            return eDA;
+        }
+
     private:
         std::vector<int>      m_freeVertices;
         std::vector<int>      m_freeTriangles;
@@ -277,7 +351,7 @@ namespace xor
             f.next = next;
         }
 
-        void edgeUpdateNextPrev(EdgeMedium &m, int, int prev)
+        void edgeUpdateNextPrev(EdgeMedium &m, int next, int prev)
         {
             f.prev = prev;
         }
@@ -287,6 +361,10 @@ namespace xor
 
         void edgeUpdateNextPrev(int e0, int e1, int e2)
         {
+            XOR_ASSERT(e0 + 1 == e1 || e0 - 2 == e1, "Edge connectivity must match to edge numbers");
+            XOR_ASSERT(e1 + 1 == e2 || e1 - 2 == e2, "Edge connectivity must match to edge numbers");
+            XOR_ASSERT(e2 + 1 == e0 || e2 - 2 == e0, "Edge connectivity must match to edge numbers");
+
             edgeUpdateNextPrev(E(e0), e1, e2);
             edgeUpdateNextPrev(E(e1), e2, e0);
             edgeUpdateNextPrev(E(e2), e0, e1);
@@ -305,7 +383,17 @@ namespace xor
 
         int edgePrev(int e, const EdgeSmall &) const
         {
-            return (e % 3 == 0) ? e + 2 : e - 1;
+            return (static_cast<uint>(e) % 3u == 0u) ? e + 2 : e - 1;
+        }
+
+        int edgeNext(int e, const EdgeSmall &) const
+        {
+            return (static_cast<uint>(e) % 3u == 2u) ? e - 2 : e + 1;
+        }
+
+        int edgeNext(int e, const EdgeFull &f) const
+        {
+            return f.next;
         }
 
         int edgeStart(int e, const EdgeFull &f) const
