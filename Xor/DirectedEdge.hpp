@@ -205,7 +205,9 @@ namespace xor
             int v0 = edgeStart(boundaryEdge);
             int v1 = edgeTarget(boundaryEdge);
 
-            int t = addTriangle(v0, v1, v2);
+            // The new triangle is on the other side of the boundary edge, so
+            // its corresponding edge must go in the other direction, from 1 to 0.
+            int t = addTriangle(v1, v0, v2);
             // Connect the triangle to the mesh via the formerly
             // boundary edge.
             edgeUpdateNeighbor(boundaryEdge, triangleEdge(t));
@@ -215,16 +217,15 @@ namespace xor
         // inside the triangle.
         int3 triangleSubdivide(int t, float3 newVertexPos)
         {
-            int3 v = triangleVertices(t);
-            int v3 = addVertex(newVertexPos);
+            int v = addVertex(newVertexPos);
 
             int3 outerEdges = triangleAllEdges(t);
 
             // Add three new triangles such that the main edge
             // of each is the neighbor to the outer edge
-            int t0 = addTriangle(v.x, v.y, v3);
-            int t1 = addTriangle(v.y, v.z, v3);
-            int t2 = addTriangle(v.z, v.x, v3);
+            int t0 = addTriangle(edgeTarget(outerEdges.x), edgeStart(outerEdges.x), v);
+            int t1 = addTriangle(edgeTarget(outerEdges.y), edgeStart(outerEdges.y), v);
+            int t2 = addTriangle(edgeTarget(outerEdges.z), edgeStart(outerEdges.z), v);
 
             int3 e0 = triangleAllEdges(t0);
             int3 e1 = triangleAllEdges(t1);
@@ -372,6 +373,9 @@ namespace xor
 
         void edgeUpdateNeighbor(int e0, int e1)
         {
+            XOR_ASSERT(edgeTarget(e0) == edgeStart(e1), "Neighboring edges must have the same vertices in opposite order");
+            XOR_ASSERT(edgeTarget(e1) == edgeStart(e0), "Neighboring edges must have the same vertices in opposite order");
+
             E(e0).neighbor = e1;
             E(e1).neighbor = e0;
         }
