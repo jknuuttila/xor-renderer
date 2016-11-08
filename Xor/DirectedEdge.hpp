@@ -42,6 +42,10 @@ namespace xor
         {}
     };
 
+#define XOR_DE_DEBUG_EDGE(e)     debugEdge(__FILE__, __LINE__, #e, e)
+#define XOR_DE_DEBUG_VERTEX(v)   debugVertex(__FILE__, __LINE__, #v, v)
+#define XOR_DE_DEBUG_TRIANGLE(t) debugTriangle(__FILE__, __LINE__, #t, t)
+
     template <
         typename TriangleData = Empty,
         typename VertexData   = Empty,
@@ -108,25 +112,40 @@ namespace xor
             return { edgeTarget(edges.z), edgeTarget(edges.x), edgeTarget(edges.y) };
         }
 
+        // Return true if the given triangle is a valid triangle in the mesh.
+        bool triangleIsValid(int t) const
+        {
+            if (t < 0 || t >= numTriangles())
+                return false;
+            else
+                return edgeTarget(triangleEdge(t)) >= 0;
+        }
+
         int edgeStart(int e) const
         {
             return edgeStart(e, E(e));
         }
+
         int edgeTarget(int e) const
         {
             return E(e).target;
         }
+
         int edgeNeighbor(int e) const
         {
             return E(e).neighbor;
         }
+
         int edgePrev(int e) const
         {
             return edgePrev(e, E(e));
         }
+
         int edgeNext(int e) const
         {
+            return edgeNext(e, E(e));
         }
+
         int edgeTriangle(int e) const
         {
             return static_cast<uint>(e) / 3u;
@@ -158,6 +177,9 @@ namespace xor
 
             for (int t = 0; t < ts; ++t)
             {
+                if (!triangleIsValid(t))
+                    continue;
+
                 int3 verts = triangleVertices(t);
                 indices.emplace_back(verts.x);
                 indices.emplace_back(verts.y);
@@ -179,21 +201,64 @@ namespace xor
         int addTriangle(int v0, int v1, int v2)
         {
             int t = addData(m_freeTriangles, m_triangles);
+            resizeEdges(t);
+
             int e = triangleEdge(t);
-            auto &e0 = E(e);
-            auto &e1 = E(e + 1);
-            auto &e2 = E(e + 2);
-            e0 = Edge(v0, v1);
-            e1 = Edge(v1, v2);
-            e2 = Edge(v2, v0);
-            edgeUpdateNextPrev(e0, e1, e2);
-            return e;
+            addEdge(e,     v0, v1);
+            addEdge(e + 1, v1, v2);
+            addEdge(e + 2, v2, v0);
+            edgeUpdateNextPrev(e, e + 1, e + 2);
+            return t;
         }
 
         // Add a new unconnected triangle with new vertices
         int addTriangle(float3 p0, float3 p1, float3 p2)
         {
             return addTriangle(addVertex(p0), addVertex(p1), addVertex(p2));
+        }
+
+        // Disconnect the given triangle from the mesh
+        void disconnectTriangle(int t)
+        {
+            int3 es = triangleAllEdges(t);
+            disconnectEdge(es.x);
+            disconnectEdge(es.y);
+            disconnectEdge(es.z);
+        }
+
+        // Disconnects an edge from its neighbor and start vertex.
+        // Does not affect other edges in the triangle, because
+        // their connectivity is fixed.
+        void disconnectEdge(int e)
+        {
+            auto &v = V(edgeStart(e));
+            auto &n = E(edgeNeighbor(e));
+
+            if (v.edge == e)
+                v.edge = -1;
+
+            if (n.neighbor == e)
+                n.neighbor = -1;
+        }
+
+        // Remove the triangle from the mesh and free its storage.
+        // Does not disconnect the triangle, so that must be done separately,
+        // either as part of some other algorithm or using disconnectTriangle().
+        void removeTriangle(int t)
+        {
+            int3 es = triangleAllEdges(t);
+
+            XOR_ASSERT(edgeNeighbor(es.x) < 0 || E(edgeNeighbor(es.x)).neighbor != es.x, "Triangle must be disconnected to be removed");
+            XOR_ASSERT(edgeNeighbor(es.y) < 0 || E(edgeNeighbor(es.y)).neighbor != es.y, "Triangle must be disconnected to be removed");
+            XOR_ASSERT(edgeNeighbor(es.z) < 0 || E(edgeNeighbor(es.z)).neighbor != es.z, "Triangle must be disconnected to be removed");
+            XOR_ASSERT(V(edgeStart(es.x)).edge != es.x, "Triangle must be disconnected to be removed");
+            XOR_ASSERT(V(edgeStart(es.y)).edge != es.y, "Triangle must be disconnected to be removed");
+            XOR_ASSERT(V(edgeStart(es.z)).edge != es.z, "Triangle must be disconnected to be removed");
+
+            E(es.x) = Edge();
+            E(es.y) = Edge();
+            E(es.z) = Edge();
+            removeData(t, m_freeTriangles, m_triangles);
         }
 
         // Add a new triangle by extending from a boundary edge
@@ -211,6 +276,8 @@ namespace xor
             // Connect the triangle to the mesh via the formerly
             // boundary edge.
             edgeUpdateNeighbor(boundaryEdge, triangleEdge(t));
+
+            return t;
         }
 
         // Subdivide an existing triangle to three triangles by adding a new vertex
@@ -223,23 +290,26 @@ namespace xor
 
             // Add three new triangles such that the main edge
             // of each is the neighbor to the outer edge
-            int t0 = addTriangle(edgeTarget(outerEdges.x), edgeStart(outerEdges.x), v);
-            int t1 = addTriangle(edgeTarget(outerEdges.y), edgeStart(outerEdges.y), v);
-            int t2 = addTriangle(edgeTarget(outerEdges.z), edgeStart(outerEdges.z), v);
+            int t0 = addTriangle(edgeStart(outerEdges.x), edgeTarget(outerEdges.x), v);
+            int t1 = addTriangle(edgeStart(outerEdges.y), edgeTarget(outerEdges.y), v);
+            int t2 = addTriangle(edgeStart(outerEdges.z), edgeTarget(outerEdges.z), v);
 
             int3 e0 = triangleAllEdges(t0);
             int3 e1 = triangleAllEdges(t1);
             int3 e2 = triangleAllEdges(t2);
 
             // Connect the outer edges to the mesh
-            edgeUpdateNeighbor(e0.x, outerEdges.x);
-            edgeUpdateNeighbor(e1.x, outerEdges.y);
-            edgeUpdateNeighbor(e2.x, outerEdges.z);
+            edgeUpdateNeighbor(e0.x, edgeNeighbor(outerEdges.x));
+            edgeUpdateNeighbor(e1.x, edgeNeighbor(outerEdges.y));
+            edgeUpdateNeighbor(e2.x, edgeNeighbor(outerEdges.z));
 
             // Connect the inside edges to each other.
             edgeUpdateNeighbor(e0.y, e1.z);
             edgeUpdateNeighbor(e0.z, e2.y);
             edgeUpdateNeighbor(e1.y, e2.z);
+
+            // Remove the old triangle
+            removeTriangle(t);
 
             return { t0, t1, t2 };
         }
@@ -256,6 +326,26 @@ namespace xor
                                      newVertexBary.x * p0 +
                                      newVertexBary.y * p1 +
                                      newVertexBary.z * p2);
+        }
+
+        // Return true if the edge can be flipped using edgeFlip, when the triangles are
+        // interpreted as 2D triangles using their XY coordinates.
+        bool edgeIsFlippable(int e) const
+        {
+            int n = edgeNeighbor(e);
+            if (n < 0)
+                return false;
+
+            int A = edgeTarget(edgeNext(e));
+            int B = edgeTarget(n);
+            int C = edgeTarget(e);
+            int D = edgeTarget(edgeNext(n));
+
+            return isQuadConvex(
+                float2(V(A).pos),
+                float2(V(B).pos),
+                float2(V(C).pos),
+                float2(V(D).pos));
         }
 
         // Given an edge BC that is a diagonal of the convex quadrilateral ABDC formed
@@ -298,10 +388,10 @@ namespace xor
 
             // Now we have established locations and proper names for
             // the new edges. Now fix up the data.
-            E(eBD) = Edge(vB, vD);
-            E(eCA) = Edge(vC, vA);
-            E(eDA) = Edge(vD, vA);
-            E(eAD) = Edge(vA, vD);
+            addEdge(eBD, vB, vD);
+            addEdge(eCA, vC, vA);
+            addEdge(eDA, vD, vA);
+            addEdge(eAD, vA, vD);
 
             // Update edge connectivity to match the new triangles.
             edgeUpdateNextPrev(eAB, eBD, eDA);
@@ -334,7 +424,7 @@ namespace xor
 
             if (free.empty())
             {
-                i = static_cast<int>(free.size());
+                i = static_cast<int>(data.size());
                 data.emplace_back();
             }
             else
@@ -346,6 +436,28 @@ namespace xor
             return i;
         }
 
+        void resizeEdges(int t)
+        {
+            size_t minEdges = (t + 1) * 3;
+            if (m_edges.size() < minEdges)
+                m_edges.resize(minEdges);
+        }
+
+        template <typename T>
+        void removeData(int i, std::vector<int> &free, std::vector<T> &data)
+        {
+            data[i] = T();
+            free.emplace_back(i);
+        }
+
+        Edge &addEdge(int e, int start, int target)
+        {
+            auto &edge = E(e);
+            edge = Edge(start, target);
+            V(start).edge = e;
+            return edge;
+        }
+
         void edgeUpdateNextPrev(EdgeFull &f, int next, int prev)
         {
             f.prev = prev;
@@ -354,7 +466,7 @@ namespace xor
 
         void edgeUpdateNextPrev(EdgeMedium &m, int next, int prev)
         {
-            f.prev = prev;
+            m.prev = prev;
         }
 
         void edgeUpdateNextPrev(EdgeSmall &, int, int)
@@ -373,16 +485,16 @@ namespace xor
 
         void edgeUpdateNeighbor(int e0, int e1)
         {
-            XOR_ASSERT(edgeTarget(e0) == edgeStart(e1), "Neighboring edges must have the same vertices in opposite order");
-            XOR_ASSERT(edgeTarget(e1) == edgeStart(e0), "Neighboring edges must have the same vertices in opposite order");
+            XOR_ASSERT((e0 < 0 || e1 < 0) || edgeTarget(e0) == edgeStart(e1), "Neighboring edges must have the same vertices in opposite order");
+            XOR_ASSERT((e0 < 0 || e1 < 0) || edgeTarget(e1) == edgeStart(e0), "Neighboring edges must have the same vertices in opposite order");
 
-            E(e0).neighbor = e1;
-            E(e1).neighbor = e0;
+            if (e0 >= 0) E(e0).neighbor = e1;
+            if (e1 >= 0) E(e1).neighbor = e0;
         }
 
         int edgePrev(int e, const EdgeMedium &m) const
         {
-            return f.prev;
+            return m.prev;
         }
 
         int edgePrev(int e, const EdgeSmall &) const
@@ -409,6 +521,33 @@ namespace xor
         int edgeStart(int e, const NotFull &nf) const
         {
             return edgeTarget(edgePrev(e, nf));
+        }
+
+        void debugEdge(const char *file, int line, const char *name, int e) const
+        {
+            if (e >= 0)
+                print("%s(%d): Edge \"%s\" (%d): (%d -> %d) neighbor: %d\n",
+                      file, line, name, e, edgeStart(e), edgeTarget(e), edgeNeighbor(e));
+            else
+                print("%s(%d): Edge \"%s\" (%d)\n", file, line, name, e);
+        }
+
+        void debugVertex(const char *file, int line, const char *name, int v) const
+        {
+            print("%s(%d): Vertex \"%s\" (%d): (%.3f %.3f %.3f) edge: %d\n",
+                  file, line,
+                  name, v,
+                  V(v).pos.x,
+                  V(v).pos.y,
+                  V(v).pos.z,
+                  V(v).edge);
+        }
+
+        void debugTriangle(const char *file, int line, const char *name, int t) const
+        {
+            auto vs = triangleVertices(t);
+            print("%s(%d): Triangle \"%s\" (%d): (%d %d %d)\n",
+                  file, line, name, t, vs.x, vs.y, vs.z);
         }
     };
 }

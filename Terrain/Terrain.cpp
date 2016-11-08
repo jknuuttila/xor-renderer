@@ -16,16 +16,6 @@
 
 using namespace xor;
 
-void test()
-{
-    DirectedEdge<Empty, Empty, Empty, EdgeSmall> de;
-    DirectedEdge<Empty, Empty, Empty, EdgeMedium> dm;
-    DirectedEdge<Empty, Empty, Empty, EdgeFull> df;
-    auto i = de.triangleIndices();
-    i = dm.triangleIndices();
-    i = df.triangleIndices();
-}
-
 static const float ArcSecond = 30.87f;
 
 static const float NearPlane = 1.f;
@@ -79,347 +69,10 @@ enum class VisualizationMode
 	OnlyError,
 };
 
-struct HeightmapMesh
-{
-	struct Edge
-	{
-		// Smaller vertex index is always x
-		int2 verts;
-
-		Edge() = default;
-		Edge(int2 vs) : verts(vs)
-		{
-            if (verts.y < verts.x)
-                std::swap(verts.x, verts.y);
-		}
-		Edge(int a, int b) : Edge(int2(a, b)) {}
-
-		bool operator==(const Edge &e) const { return all(verts == e.verts); }
-	};
-
-	struct Triangle
-	{
-		float2 maxErrorPos;
-		float  maxError = 0;
-		int index = -1;
-		// Indices of the 3 vertices
-		int3 verts = -1;
-		// For each edge of the triangle, the pointer to the opposite
-		// triangle or null if none.
-		int3 opposite;
-
-		Triangle(int3 verts, int index)
-			: index(index)
-			, verts(verts)
-		{
-			opposite = -1;
-		}
-
-		bool valid() const { return verts.x >= 0; }
-		void invalidate() { verts = -1; }
-
-		Edge edge(int i) const
-		{
-			if (i == 2)
-				return Edge(verts.x, verts.z);
-			else
-				return Edge(verts[i], verts[i + 1]);
-		}
-
-        int findEdge(Edge e) const
-        {
-            for (int i = 0; i < 3; ++i)
-            {
-                if (e == edge(i))
-                    return i;
-            }
-
-            return -1;
-        }
-
-		void linkWith(Triangle *t, int edge)
-        {
-            if (t)
-                linkWith(t->index, edge);
-            else
-                linkWith(-1, edge);
-        }
-
-		void linkWith(int t, int edge)
-		{
-			opposite[edge] = t;
-
-			if (t < 0)
-				return;
-
-			auto e = this->edge(edge);
-			auto tri = other(t);
-
-            int o = tri->findEdge(e);
-            if (o >= 0)
-                tri->opposite[o] = index;
-            else
-                XOR_CHECK(false, "Triangles are not adjacent");
-
-            XOR_ASSERT(!all(sortVector(verts) == sortVector(tri->verts)), "Identical triangles");
-		}
-
-        void severLink(int edge)
-        {
-            auto tri = opp(edge);
-            if (!tri)
-                return;
-
-            int o = tri->findEdge(this->edge(edge));
-            if (o >= 0)
-                tri->opposite[o] = -1;
-        }
-
-        void remove()
-        {
-            severLink(0);
-            severLink(1);
-            severLink(2);
-        }
-
-		Triangle *other(int triangle)
-		{
-			if (triangle < 0)
-				return nullptr;
-
-			int diff = triangle - index;
-			return this + diff;
-		}
-
-		Triangle *opp(int i)
-		{
-			return other(O(i));
-		}
-
-		Triangle *opp(Edge e)
-        {
-            int i = findEdge(e);
-            if (i < 0)
-                return nullptr;
-            else
-                return opp(i);
-        }
-
-        int V(int i) const
-        {
-            return verts[i % 3];
-        }
-
-        int O(int i) const
-        {
-            return opposite[i % 3];
-        }
-	};
-
-	int insertVertex(float3 v)
-	{
-		int i = static_cast<int>(vertices.size());
-		vertices.emplace_back(v);
-		return i;
-	}
-
-	int insertTriangle(int3 verts)
-	{
-		int i = static_cast<int>(triangles.size());
-        triangles.reserve(10000);
-		triangles.emplace_back(verts, i);
-		return i;
-	}
-
-	float3 V(int i) const
-	{
-		return vertices[i];
-	}
-
-	Triangle &T(int i)
-	{
-		return triangles[i];
-	}
-
-	void initWithCorners()
-	{
-		vertices.clear();
-		triangles.clear();
-
-		vertices.emplace_back(0.f, 0.f, 0.f);
-		vertices.emplace_back(1.f, 0.f, 0.f);
-		vertices.emplace_back(0.f, 0.f, 1.f);
-		vertices.emplace_back(1.f, 0.f, 1.f);
-
-		int t0 = insertTriangle({0, 1, 2});
-		int t1 = insertTriangle({1, 2, 3});
-
-		T(t0).linkWith(t1, 1);
-	}
-
-	void triangulate(int containingTriangle, float3 newVertex)
-	{
-		int n = insertVertex(newVertex);
-
-		int3 v0 = T(containingTriangle).verts;
-		int3 v1 = v0.s_yz0;
-		int3 v2 = v0.s_xz0;
-
-		v0.z = n;
-		v1.z = n;
-		v2.z = n;
-
-		int t0 = insertTriangle(v0);
-		int t1 = insertTriangle(v1);
-		int t2 = insertTriangle(v2);
-
-		T(t0).linkWith(t1, 1);
-		T(t0).linkWith(t2, 2);
-		T(t1).linkWith(t2, 1);
-
-		auto &c = T(containingTriangle);
-		T(t0).linkWith(c.opposite[0], 0);
-		T(t1).linkWith(c.opposite[1], 0);
-		T(t2).linkWith(c.opposite[2], 0);
-
-		c.invalidate();
-
-		{
-            flippedTriangles.clear();
-
-			int ts[] = { t0, t1, t2 };
-			for (int i = 0; i < 3; ++i)
-			{
-                static const float PFlip = .5f;
-				if (std::uniform_real_distribution<float>()(gen) < PFlip)
-					flipEdge(2, ts[i]);
-			}
-		}
-	}
-
-	void flipEdge(int vAIndex, int tABC)
-	{
-        if (flippedTriangles.count(tABC))
-            return;
-
-		auto abc = &T(tABC);
-        int vA = abc->V(vAIndex);
-		int vB = abc->V(vAIndex + 1);
-		int vC = abc->V(vAIndex + 2);
-
-        auto bcd = abc->opp({vB, vC});
-
-		if (!bcd || flippedTriangles.count(bcd->index))
-			return;
-
-        auto tAB = abc->opp({vA, vB});
-        auto tAC = abc->opp({vA, vC});
-
-		int vD = -1;
-        if (bcd->verts.x == vB)
-        {
-            if (bcd->verts.y == vC)
-                vD  = bcd->verts.z;
-            else
-                vD  = bcd->verts.y;
-        }
-        else if (bcd->verts.x == vC)
-        {
-            if (bcd->verts.y == vB)
-                vD  = bcd->verts.z;
-            else
-                vD  = bcd->verts.y;
-        }
-        else
-        {
-            if (bcd->verts.y == vB)
-                vD  = bcd->verts.x;
-            else
-                vD  = bcd->verts.x;
-        }
-
-        // Test that the quad ABCD is convex, or it can't be flipped
-        {
-            float2 pA = V(vA).s_xz;
-            float2 pB = V(vB).s_xz;
-            float2 pC = V(vC).s_xz;
-            float2 pD = V(vD).s_xz;
-
-            // It is convex iff the vertex D lies on different sides
-            // of the directed edges AB and AC
-            float ABD = orient2D(pA, pB, pD);
-            float ACD = orient2D(pA, pC, pD);
-
-            // It is on different sides if the sign of the product is negative
-            if (ABD * ACD >= 0)
-                return;
-        }
-
-#if 0
-        XOR_ASSERT(vA != vB, "Halp");
-        XOR_ASSERT(vA != vC, "Halp");
-        XOR_ASSERT(vA != vD, "Halp");
-        XOR_ASSERT(vB != vC, "Halp");
-        XOR_ASSERT(vB != vD, "Halp");
-        XOR_ASSERT(vC != vD, "Halp");
-#endif
-
-        XOR_ASSERT(vD >= 0, "Triangle BCD broke assumptions");
-
-		// ABC becomes ABD
-		// BCD becomes ACD
-
-        auto tBD = bcd->opp({vB, vD});
-        auto tCD = bcd->opp({vC, vD});
-
-#if 0
-        auto tAB = oAB < 0 ? nullptr : &T(oAB);
-        auto tBD = oBD < 0 ? nullptr : &T(oBD);
-        auto tAC = oAC < 0 ? nullptr : &T(oAC);
-        auto tCD = oCD < 0 ? nullptr : &T(oCD);
-#endif
-
-#if 0
-        XOR_ASSERT(oAB < 0 || oAB != oAC, "Halp");
-        XOR_ASSERT(oAB < 0 || oAB != oBD, "Halp");
-        XOR_ASSERT(oAB < 0 || oAB != oCD, "Halp");
-        XOR_ASSERT(oAC < 0 || oAC != oBD, "Halp");
-        XOR_ASSERT(oAC < 0 || oAC != oCD, "Halp");
-        XOR_ASSERT(oBD < 0 || oBD != oCD, "Halp");
-#endif
-
-#if 0
-        XOR_CHECK(toAB.findEdge({vA, vB}) >= 0, "AB");
-        XOR_CHECK(toBD.findEdge({vB, vD}) >= 0, "BD");
-        XOR_CHECK(toAC.findEdge({vA, vC}) >= 0, "AC");
-        XOR_CHECK(toCD.findEdge({vC, vD}) >= 0, "CD");
-#endif
-
-        abc->remove();
-        bcd->remove();
-
-        abc->verts = int3(vA, vB, vD);
-        bcd->verts = int3(vA, vC, vD);
-
-        abc->linkWith(tAB,        0);
-        abc->linkWith(tBD,        1);
-        abc->linkWith(bcd->index, 2);
-        bcd->linkWith(tAC,        0);
-        bcd->linkWith(tCD,        1);
-        bcd->linkWith(abc->index, 2);
-
-        flippedTriangles.insert(abc->index);
-        flippedTriangles.insert(bcd->index);
-	}
-
-	std::vector<float3> vertices;
-	std::vector<Triangle> triangles;
-	std::mt19937 gen;
-    std::unordered_set<uint> flippedTriangles;
-};
-
 struct HeightmapRenderer
 {
+    using DE = DirectedEdge<>;
+
 	Device device;
     GraphicsPipeline renderTerrain;
     GraphicsPipeline visualizeTriangulation;
@@ -542,45 +195,47 @@ struct HeightmapRenderer
     }
 #endif
 
-	void gpuMesh(const HeightmapMesh &mesh)
+	void gpuMesh(const DE &mesh)
 	{
-		auto numVerts = mesh.vertices.size();
+        auto verts    = mesh.vertices();
+		auto numVerts = verts.size();
 		std::vector<float2> normalizedPos(numVerts);
 		std::vector<float>  height(numVerts);
 		std::vector<float2> uv(numVerts);
 
 		for (uint i = 0; i < numVerts; ++i)
 		{
-			auto v           = mesh.vertices[i];
-			normalizedPos[i] = v.s_xz;
-			height[i]        = v.y;
+			auto &v          = verts[i];
+			normalizedPos[i] = float2(v.pos);
+			height[i]        = v.pos.z;
 			uv[i]            = normalizedPos[i];
 		}
 
 		std::vector<uint> indices;
-		indices.reserve(mesh.triangles.size() * 3);
-		for (auto &t : mesh.triangles)
+        auto deIndices = mesh.triangleIndices();
+		indices.reserve(deIndices.size());
+        XOR_ASSERT(deIndices.size() % 3 == 0, "Unexpected amount of indices");
+		for (size_t i = 0; i < deIndices.size(); i += 3)
 		{
-			if (!t.valid())
-				continue;
+            uint a = deIndices[i];
+            uint b = deIndices[i + 1];
+            uint c = deIndices[i + 2];
 
 			// Negate CCW test because the positions are in UV coordinates,
 			// which is left handed because +Y goes down
-			bool ccw = !isTriangleCCW(float2(mesh.V(t.verts.x).s_xz),
-									  float2(mesh.V(t.verts.y).s_xz),
-									  float2(mesh.V(t.verts.z).s_xz));
+			bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
 
 			if (ccw)
 			{
-				indices.emplace_back(t.verts.x);
-				indices.emplace_back(t.verts.y);
-				indices.emplace_back(t.verts.z);
+				indices.emplace_back(a);
+				indices.emplace_back(b);
+				indices.emplace_back(c);
 			}
 			else
 			{
-				indices.emplace_back(t.verts.x);
-				indices.emplace_back(t.verts.z);
-				indices.emplace_back(t.verts.y);
+				indices.emplace_back(a);
+				indices.emplace_back(c);
+				indices.emplace_back(b);
 			}
 		}
 
@@ -598,29 +253,38 @@ struct HeightmapRenderer
 	{
 		Timer timer;
 
-		HeightmapMesh mesh;
-		mesh.initWithCorners();
+		DE mesh;
+        int first  = mesh.addTriangle({1, 0, 0}, {0, 1, 0}, {0, 0, 0});
+        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), {1, 1, 0});
 
 		std::mt19937 gen(12345);
 
-		uint t = 0;
+        std::vector<int> tris { first, second };
 
-		while (mesh.vertices.size() < vertices)
+		while (!tris.empty() && mesh.numVertices() < static_cast<int>(vertices))
 		{
-			auto &tri   = mesh.T(t);
-			float3 bary = uniformBarycentric(gen);
-			float3 v    = bary.x * mesh.V(tri.verts.x)
-				        + bary.y * mesh.V(tri.verts.y)
-				        + bary.z * mesh.V(tri.verts.z);
-			mesh.triangulate(t, v);
-			++t;
+            size_t i = std::uniform_int_distribution<size_t>(0u, tris.size() - 1)(gen);
+            std::swap(tris[i], tris.back());
+            int t = tris.back();
+            tris.pop_back();
 
-			XOR_ASSERT(t < mesh.triangles.size(), "Invalid triangle offset");
+            XOR_ASSERT(mesh.triangleIsValid(t), "Invalid triangle");
+
+            int3 es = mesh.triangleAllEdges(t);
+            int e = es[std::uniform_int_distribution<int>(0, 2)(gen)];
+            if (mesh.edgeIsFlippable(e) && std::uniform_real_distribution<float>()(gen) < .5f)
+                mesh.edgeFlip(e);
+
+			float3 bary = uniformBarycentric(gen);
+            int3 ts = mesh.triangleSubdivideBarycentric(t, bary);
+            tris.emplace_back(ts.x);
+            tris.emplace_back(ts.y);
+            tris.emplace_back(ts.z);
 		}
 
-        log("Heightmap", "Generated random triangulation with %zu vertices and %zu triangles in %.2f ms\n",
-            mesh.vertices.size(),
-            mesh.triangles.size(),
+        log("Heightmap", "Generated random triangulation with %d vertices and %d triangles in %.2f ms\n",
+            mesh.numVertices(),
+            mesh.numTriangles(),
             timer.milliseconds());
 
 		gpuMesh(mesh);
