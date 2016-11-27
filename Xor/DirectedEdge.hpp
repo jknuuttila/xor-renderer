@@ -232,13 +232,16 @@ namespace xor
         void disconnectEdge(int e)
         {
             auto &v = V(edgeStart(e));
-            auto &n = E(edgeNeighbor(e));
+            int n = edgeNeighbor(e);
 
             if (v.edge == e)
                 v.edge = -1;
 
-            if (n.neighbor == e)
-                n.neighbor = -1;
+            if (n >= 0)
+            {
+                if (E(n).neighbor == e)
+                    E(n).neighbor = -1;
+            }
         }
 
         // Remove the triangle from the mesh and free its storage.
@@ -409,6 +412,52 @@ namespace xor
             return eDA;
         }
 
+        void edgeUpdateNextPrev(int e0, int e1, int e2)
+        {
+            XOR_ASSERT(e0 + 1 == e1 || e0 - 2 == e1, "Edge connectivity must match to edge numbers");
+            XOR_ASSERT(e1 + 1 == e2 || e1 - 2 == e2, "Edge connectivity must match to edge numbers");
+            XOR_ASSERT(e2 + 1 == e0 || e2 - 2 == e0, "Edge connectivity must match to edge numbers");
+
+            edgeUpdateNextPrev(E(e0), e1, e2);
+            edgeUpdateNextPrev(E(e1), e2, e0);
+            edgeUpdateNextPrev(E(e2), e0, e1);
+        }
+
+        void edgeUpdateNeighbor(int e0, int e1)
+        {
+            XOR_ASSERT((e0 < 0 || e1 < 0) || edgeTarget(e0) == edgeStart(e1), "Neighboring edges must have the same vertices in opposite order");
+            XOR_ASSERT((e0 < 0 || e1 < 0) || edgeTarget(e1) == edgeStart(e0), "Neighboring edges must have the same vertices in opposite order");
+
+            if (e0 >= 0) E(e0).neighbor = e1;
+            if (e1 >= 0) E(e1).neighbor = e0;
+        }
+
+        void debugEdge(const char *file, int line, const char *name, int e) const
+        {
+            if (e >= 0)
+                print("%s(%d): Edge \"%s\" (%d): (%d -> %d) neighbor: %d\n",
+                      file, line, name, e, edgeStart(e), edgeTarget(e), edgeNeighbor(e));
+            else
+                print("%s(%d): Edge \"%s\" (%d)\n", file, line, name, e);
+        }
+
+        void debugVertex(const char *file, int line, const char *name, int v) const
+        {
+            print("%s(%d): Vertex \"%s\" (%d): (%.3f %.3f %.3f) edge: %d\n",
+                  file, line,
+                  name, v,
+                  V(v).pos.x,
+                  V(v).pos.y,
+                  V(v).pos.z,
+                  V(v).edge);
+        }
+
+        void debugTriangle(const char *file, int line, const char *name, int t) const
+        {
+            auto vs = triangleVertices(t);
+            print("%s(%d): Triangle \"%s\" (%d): (%d %d %d)\n",
+                  file, line, name, t, vs.x, vs.y, vs.z);
+        }
     private:
         std::vector<int>      m_freeVertices;
         std::vector<int>      m_freeTriangles;
@@ -472,26 +521,6 @@ namespace xor
         void edgeUpdateNextPrev(EdgeSmall &, int, int)
         {}
 
-        void edgeUpdateNextPrev(int e0, int e1, int e2)
-        {
-            XOR_ASSERT(e0 + 1 == e1 || e0 - 2 == e1, "Edge connectivity must match to edge numbers");
-            XOR_ASSERT(e1 + 1 == e2 || e1 - 2 == e2, "Edge connectivity must match to edge numbers");
-            XOR_ASSERT(e2 + 1 == e0 || e2 - 2 == e0, "Edge connectivity must match to edge numbers");
-
-            edgeUpdateNextPrev(E(e0), e1, e2);
-            edgeUpdateNextPrev(E(e1), e2, e0);
-            edgeUpdateNextPrev(E(e2), e0, e1);
-        }
-
-        void edgeUpdateNeighbor(int e0, int e1)
-        {
-            XOR_ASSERT((e0 < 0 || e1 < 0) || edgeTarget(e0) == edgeStart(e1), "Neighboring edges must have the same vertices in opposite order");
-            XOR_ASSERT((e0 < 0 || e1 < 0) || edgeTarget(e1) == edgeStart(e0), "Neighboring edges must have the same vertices in opposite order");
-
-            if (e0 >= 0) E(e0).neighbor = e1;
-            if (e1 >= 0) E(e1).neighbor = e0;
-        }
-
         int edgePrev(int e, const EdgeMedium &m) const
         {
             return m.prev;
@@ -523,31 +552,5 @@ namespace xor
             return edgeTarget(edgePrev(e, nf));
         }
 
-        void debugEdge(const char *file, int line, const char *name, int e) const
-        {
-            if (e >= 0)
-                print("%s(%d): Edge \"%s\" (%d): (%d -> %d) neighbor: %d\n",
-                      file, line, name, e, edgeStart(e), edgeTarget(e), edgeNeighbor(e));
-            else
-                print("%s(%d): Edge \"%s\" (%d)\n", file, line, name, e);
-        }
-
-        void debugVertex(const char *file, int line, const char *name, int v) const
-        {
-            print("%s(%d): Vertex \"%s\" (%d): (%.3f %.3f %.3f) edge: %d\n",
-                  file, line,
-                  name, v,
-                  V(v).pos.x,
-                  V(v).pos.y,
-                  V(v).pos.z,
-                  V(v).edge);
-        }
-
-        void debugTriangle(const char *file, int line, const char *name, int t) const
-        {
-            auto vs = triangleVertices(t);
-            print("%s(%d): Triangle \"%s\" (%d): (%d %d %d)\n",
-                  file, line, name, t, vs.x, vs.y, vs.z);
-        }
     };
 }

@@ -305,6 +305,16 @@ namespace xor
             {
                 return Swizzle<const Vector, SX, SY, SZ, SW>(*this);
             }
+
+            float lengthSqr() const
+            {
+                return dot(*this, *this);
+            }
+
+            float length() const
+            {
+                return std::sqrt(lengthSqr());
+            }
         };
 
 #include "MathVectorSwizzle.hpp"

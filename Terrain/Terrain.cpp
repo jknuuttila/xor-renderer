@@ -260,6 +260,12 @@ struct HeightmapRenderer
 		std::mt19937 gen(12345);
 
         std::vector<int> tris { first, second };
+        std::unordered_set<int> trisExplored;
+        std::unordered_set<int> trisToExplore;
+        std::unordered_set<int> removedEdges;
+        std::unordered_set<int> removedTriangles;
+        std::vector<int3> removedBoundary;
+        std::unordered_map<int, int> vertexNeighbors;
 
 		while (!tris.empty() && mesh.numVertices() < static_cast<int>(vertices))
 		{
@@ -268,18 +274,115 @@ struct HeightmapRenderer
             int t = tris.back();
             tris.pop_back();
 
-            XOR_ASSERT(mesh.triangleIsValid(t), "Invalid triangle");
-
-            int3 es = mesh.triangleAllEdges(t);
-            int e = es[std::uniform_int_distribution<int>(0, 2)(gen)];
-            if (mesh.edgeIsFlippable(e) && std::uniform_real_distribution<float>()(gen) < .5f)
-                mesh.edgeFlip(e);
+            if (!mesh.triangleIsValid(t))
+                continue;
 
 			float3 bary = uniformBarycentric(gen);
+#if 0
             int3 ts = mesh.triangleSubdivideBarycentric(t, bary);
             tris.emplace_back(ts.x);
             tris.emplace_back(ts.y);
             tris.emplace_back(ts.z);
+#else
+            int3 vs = mesh.triangleVertices(t);
+            float3 pos =
+                mesh.V(vs.x).pos * bary.x +
+                mesh.V(vs.y).pos * bary.y +
+                mesh.V(vs.z).pos * bary.z;
+            removedTriangles.clear();
+            removedEdges.clear();
+            trisToExplore.clear();
+            trisExplored.clear();
+            trisToExplore.insert(t);
+
+            while (!trisToExplore.empty())
+            {
+                int tri = *trisToExplore.begin();
+                trisToExplore.erase(tri);
+                trisExplored.insert(tri);
+
+                int3 verts = mesh.triangleVertices(tri);
+                float2 circumcenter = circumcircleCenter(float2(mesh.V(verts.x).pos),
+                                                         float2(mesh.V(verts.y).pos),
+                                                         float2(mesh.V(verts.z).pos));
+                float circumradius = (float2(mesh.V(verts.x).pos) - circumcenter).lengthSqr();
+                float circumradius2 = (float2(mesh.V(verts.y).pos) - circumcenter).lengthSqr();
+                float circumradius3 = (float2(mesh.V(verts.z).pos) - circumcenter).lengthSqr();
+                float d2 = (float2(pos) - circumcenter).lengthSqr();
+
+                if (d2 < circumradius)
+                {
+                    removedTriangles.insert(tri);
+                    int3 edges = mesh.triangleAllEdges(tri);
+                    for (int e : edges.span())
+                    {
+                        removedEdges.insert(e);
+                        int n = mesh.edgeNeighbor(e);
+                        if (n >= 0)
+                        {
+                            int tn = mesh.edgeTriangle(n);
+                            if (!trisExplored.count(tn))
+                                trisToExplore.insert(tn);
+                        }
+                    }
+                }
+            }
+
+            int newVertex = mesh.addVertex(pos);
+            vertexNeighbors.clear();
+            removedBoundary.clear();
+
+            for (int e : removedEdges)
+            {
+                int n = mesh.edgeNeighbor(e);
+                if (n < 0 || !removedEdges.count(n))
+                    removedBoundary.emplace_back(mesh.edgeStart(e),
+                                                 mesh.edgeTarget(e),
+                                                 mesh.edgeNeighbor(e));
+            }
+
+            XOR_ASSERT(!removedBoundary.empty(), "Each new vertex should delete at least one triangle");
+
+            for (auto stn : removedBoundary)
+            {
+                int3 vs;
+                vs.x = stn.x;
+                vs.y = stn.y;
+                vs.z = newVertex;
+
+                int newTriangle = mesh.addTriangle(vs.x, vs.y, vs.z);
+                int3 es = mesh.triangleAllEdges(newTriangle);
+
+                int n = stn.z;
+                mesh.edgeUpdateNeighbor(es.x, n);
+
+                auto updateVertexNeighbors = [&] (int vert, int edge)
+                {
+                    auto it = vertexNeighbors.find(vert);
+                    if (it == vertexNeighbors.end())
+                    {
+                        vertexNeighbors.insert(it, { vert, edge });
+                    }
+                    else
+                    {
+                        mesh.XOR_DE_DEBUG_EDGE(edge);
+                        mesh.XOR_DE_DEBUG_EDGE(it->second);
+                        mesh.edgeUpdateNeighbor(edge, it->second);
+                    }
+                };
+
+                updateVertexNeighbors(vs.y, es.y);
+                updateVertexNeighbors(vs.x, es.z);
+
+                tris.emplace_back(newTriangle);
+            }
+
+            for (int tri : removedTriangles)
+            {
+                mesh.disconnectTriangle(tri);
+                mesh.removeTriangle(tri);
+            }
+#endif
 		}
 
         log("Heightmap", "Generated random triangulation with %d vertices and %d triangles in %.2f ms\n",
