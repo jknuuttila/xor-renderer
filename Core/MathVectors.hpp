@@ -460,6 +460,32 @@ namespace xor
                     m_rows[i] = rows[i];
             }
 
+            Matrix(Span<const float> values)
+            {
+                XOR_ASSERT(values.size() == 16, "Must give all elements of the matrix in row-major order");
+                memcpy(m_rows, values.data(), sizeof(m_rows));
+            }
+
+            Matrix(const float (&values)[4][4])
+            {
+                memcpy(m_rows, values, sizeof(m_rows));
+            }
+
+            Matrix(const float (&values)[16])
+            {
+                memcpy(m_rows, values, sizeof(m_rows));
+            }
+
+            Matrix(float m11, float m12, float m13, float m14,
+                   float m21, float m22, float m23, float m24,
+                   float m31, float m32, float m33, float m34,
+                   float m41, float m42, float m43, float m44)
+                : Matrix({m11, m12, m13, m14, 
+                          m21, m22, m23, m24,
+                          m31, m32, m33, m34,
+                          m41, m42, m43, m44, })
+            {}
+
             static Matrix zero()
             {
                 return Matrix(ZeroMatrix());
@@ -633,8 +659,7 @@ namespace xor
                 zero(v);
             }
 
-            template <typename... Ts>
-            Mat(float v0, float v1, const Ts &... values)
+            template <typename... Ts> Mat(float v0, float v1, const Ts &... values)
             {
                 // Put two fixed float parameters in the constructor so it doesn't mess up overloads for
                 // one-argument constructors.

@@ -289,6 +289,14 @@ struct HeightmapRenderer
                 mesh.V(vs.x).pos * bary.x +
                 mesh.V(vs.y).pos * bary.y +
                 mesh.V(vs.z).pos * bary.z;
+
+#if 0
+            XOR_ASSERT(isPointInsideTriangle(float2(mesh.V(vs.x).pos),
+                                             float2(mesh.V(vs.y).pos),
+                                             float2(mesh.V(vs.z).pos), 
+                                             float2(pos)), "Point must be inside triangle");
+#endif
+
             removedTriangles.clear();
             removedEdges.clear();
             trisToExplore.clear();
@@ -298,19 +306,35 @@ struct HeightmapRenderer
             while (!trisToExplore.empty())
             {
                 int tri = *trisToExplore.begin();
+
+                bool removeTriangle = trisExplored.empty();
+
                 trisToExplore.erase(tri);
                 trisExplored.insert(tri);
 
-                int3 verts = mesh.triangleVertices(tri);
-                float2 circumcenter = circumcircleCenter(float2(mesh.V(verts.x).pos),
-                                                         float2(mesh.V(verts.y).pos),
-                                                         float2(mesh.V(verts.z).pos));
-                float circumradius = (float2(mesh.V(verts.x).pos) - circumcenter).lengthSqr();
-                float circumradius2 = (float2(mesh.V(verts.y).pos) - circumcenter).lengthSqr();
-                float circumradius3 = (float2(mesh.V(verts.z).pos) - circumcenter).lengthSqr();
-                float d2 = (float2(pos) - circumcenter).lengthSqr();
+                // The first triangle is the triangle we placed the vertex in,
+                // which will be removed by definition. We thus don't check the
+                // circumcircle to avoid numerical errors.
+                if (!removeTriangle)
+                {
+                    int3 verts = mesh.triangleVertices(tri);
+                    float2 v0 = float2(mesh.V(verts.x).pos);
+                    float2 v1 = float2(mesh.V(verts.y).pos);
+                    float2 v2 = float2(mesh.V(verts.z).pos);
 
-                if (d2 < circumradius)
+                    // The average of the vertices is always inside the triangle
+                    // and thus its circumcircle.
+                    float2 inside = (v0 + v1 + v2) / 3.f;
+
+                    float insideSign = pointsOnCircle(v0, v1, v2, inside);
+                    float posSign    = pointsOnCircle(v0, v1, v2, float2(pos));
+
+                    // If the signs are the same, the product will be non-negative.
+                    // This means that pos is inside the circumcircle.
+                    removeTriangle = insideSign * posSign >= 0;
+                }
+
+                if (removeTriangle)
                 {
                     removedTriangles.insert(tri);
                     int3 edges = mesh.triangleAllEdges(tri);
@@ -343,6 +367,8 @@ struct HeightmapRenderer
 
             XOR_ASSERT(!removedBoundary.empty(), "Each new vertex should delete at least one triangle");
 
+            print("\n----\n\n");
+
             for (auto stn : removedBoundary)
             {
                 int3 vs;
@@ -358,9 +384,12 @@ struct HeightmapRenderer
 
                 auto updateVertexNeighbors = [&] (int vert, int edge)
                 {
+                    print("updateVertexNeighbors(%d, %d)\n", vert, edge);
                     auto it = vertexNeighbors.find(vert);
                     if (it == vertexNeighbors.end())
                     {
+                        int insertedEdge = edge;
+                        mesh.XOR_DE_DEBUG_EDGE(insertedEdge);
                         vertexNeighbors.insert(it, { vert, edge });
                     }
                     else

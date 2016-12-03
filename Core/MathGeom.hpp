@@ -65,37 +65,49 @@ namespace xor
         return (ABD * ACD < 0);
     }
 
-    // From http://mathworld.wolfram.com/Circumcircle.html
-    inline float2 circumcircleCenter(float2 p1, float2 p2, float2 p3)
+    // From https://en.wikipedia.org/wiki/Circumscribed_circle
+    inline float2 circumcircleCenter(float2 A, float2 B, float2 C)
     {
-        float3x3 A(
-            p1.x, p1.y, 1.f,
-            p2.x, p2.y, 1.f,
-            p3.x, p3.y, 1.f);
-        float a = A.determinant();
+        float A2 = A.lengthSqr();
+        float B2 = B.lengthSqr();
+        float C2 = C.lengthSqr();
 
-        float2 p12 = p1 * p1;
-        float2 p22 = p2 * p2;
-        float2 p32 = p3 * p3;
+        float2 S;
+        S.x = 0.5f * float3x3(A2, A.y, 1.f,
+                              B2, B.y, 1.f,
+                              C2, C.y, 1.f).determinant();
 
-        float3x3 Bx(
-            p12.x + p12.y, p1.y, 1.f,
-            p22.x + p22.y, p2.y, 1.f,
-            p32.x + p32.y, p3.y, 1.f);
-        float bx = -Bx.determinant();
+        S.y = 0.5f * float3x3(A.x, A2, 1.f,
+                              B.x, B2, 1.f,
+                              C.x, C2, 1.f).determinant();
 
-        float3x3 By(
-            p12.x + p12.y, p1.x, 1.f,
-            p22.x + p22.y, p2.x, 1.f,
-            p32.x + p32.y, p3.x, 1.f);
-        float by = By.determinant();
+        float a = float3x3(A.x, A.y, 1.f,
+                           B.x, B.y, 1.f,
+                           C.x, C.y, 1.f).determinant();
+        float b = float3x3(A.x, A.y, A2,
+                           B.x, B.y, B2,
+                           C.x, C.y, C2).determinant();
 
-        float a2 = 2 * a;
+        return S / a;
+    }
 
-        float x0 = -bx / a2;
-        float y0 = -by / a2;
+    // Return a number that is zero if all the points are on the same circle.
+    // If points p1, p2 and p3 define a circle but p4 is not on the circle,
+    // the sign of the determinant is different whether p4 is inside or outside
+    // the circle. However, the sign which is inside the circle is undefined,
+    // and must be checked separately by e.g. testing with a point that is
+    // definitely inside or outside the circle.
+    inline float pointsOnCircle(float2 p1, float2 p2, float2 p3, float2 p4)
+    {
+        float N1 = p1.lengthSqr();
+        float N2 = p2.lengthSqr();
+        float N3 = p3.lengthSqr();
+        float N4 = p4.lengthSqr();
 
-        return { x0, y0 };
+        return float4x4(N1, p1.x, p1.y, 1.f,
+                        N2, p2.x, p2.y, 1.f,
+                        N3, p3.x, p3.y, 1.f,
+                        N4, p4.x, p4.y, 1.f).determinant();
     }
 
 	template <typename RandomGen>
