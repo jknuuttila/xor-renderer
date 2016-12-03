@@ -98,6 +98,17 @@ void testBasicOperations()
 
         XOR_CHECK_EQ(A.inverse(), correct);
     }
+
+    {
+        float3x3 M {
+            1.f, 2.f, -3.f,
+            4.f, 5.f,  6.f,
+            7.f, 8.f,  9.f
+        };
+
+
+        XOR_CHECK_EQ(M.determinant(), 18.f);
+    }
 }
 
 void testTransformMatrices()
@@ -138,10 +149,27 @@ void testProjectionMatrices()
     }
 }
 
+void testGeometry()
+{
+    {
+        float2 p1 { 1, 0 };
+        float2 p2 { 0, 1 };
+        float2 p3 { 0, 0 };
+        auto circumcenter = circumcircleCenter(p1, p2, p3);
+        float circumradius1 = (p1 - circumcenter).length();
+        float circumradius2 = (p2 - circumcenter).length();
+        float circumradius3 = (p3 - circumcenter).length();
+
+        XOR_CHECK_EQ(circumradius1, circumradius2);
+        XOR_CHECK_EQ(circumradius1, circumradius3);
+    }
+}
+
 int main(int argc, char **argv)
 {
     testBasicOperations();
     testTransformMatrices();
     testProjectionMatrices();
+    testGeometry();
     return 0;
 }

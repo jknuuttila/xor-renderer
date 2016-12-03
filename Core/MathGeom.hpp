@@ -82,7 +82,7 @@ namespace xor
             p12.x + p12.y, p1.y, 1.f,
             p22.x + p22.y, p2.y, 1.f,
             p32.x + p32.y, p3.y, 1.f);
-        float bx = Bx.determinant();
+        float bx = -Bx.determinant();
 
         float3x3 By(
             p12.x + p12.y, p1.x, 1.f,
