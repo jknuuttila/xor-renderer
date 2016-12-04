@@ -69,6 +69,197 @@ enum class VisualizationMode
 	OnlyError,
 };
 
+template <typename DE>
+class BowyerWatson
+{
+    // Mesh that this algorithm operates on
+    DE &mesh;
+    // Triangles that have already been checked for circumcircle violations
+    // during the current insertion.
+    std::unordered_set<int> trisExplored;
+    // Triangles that will be checked for circumcircle violations.
+    std::unordered_set<int> trisToExplore;
+    std::unordered_set<int> removedEdges;
+    std::unordered_set<int> removedTriangles;
+    std::vector<int3> removedBoundary;
+    std::unordered_map<int, int> vertexNeighbors;
+public:
+    BowyerWatson(DE &mesh) : mesh(mesh) {}
+
+    void insertVertex(int containingTriangle, float3 newVertexPos)
+    {
+        removedTriangles.clear();
+        removedEdges.clear();
+        trisToExplore.clear();
+        trisExplored.clear();
+        trisToExplore.insert(containingTriangle);
+
+        print("\nRemoving triangles\n");
+        while (!trisToExplore.empty())
+        {
+            int tri = *trisToExplore.begin();
+
+            bool removeTriangle = trisExplored.empty();
+
+            trisToExplore.erase(tri);
+            trisExplored.insert(tri);
+            mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Checking");
+
+            // The first triangle is the triangle we placed the vertex in,
+            // which will be removed by definition. We thus don't check the
+            // circumcircle to avoid numerical errors.
+            if (!removeTriangle)
+            {
+                int3 verts = mesh.triangleVertices(tri);
+
+                float2 v0 = float2(mesh.V(verts.x).pos);
+                float2 v1 = float2(mesh.V(verts.y).pos);
+                float2 v2 = float2(mesh.V(verts.z).pos);
+
+                float2 inside = (v0 + v1 + v2) / 3.f;
+
+                float insideSign = pointsOnCircle(v0, v1, v2, inside);
+                float posSign    = pointsOnCircle(v0, v1, v2, float2(newVertexPos));
+                print("Circumcircle test (inside): %g vs %g\n", insideSign, posSign);
+
+                // If the signs are the same, the product will be non-negative.
+                // This means that pos is inside the circumcircle.
+                removeTriangle = insideSign * posSign > 0;
+
+                // Do not remove triangles for which the vertex is extremely close
+                // to being on the circumcircle. This usually happens because of
+                // small triangles and numerical instability, and leads to problems
+                // with the removed area not being well-behaved anymore.
+                constexpr float Epsilon = 1e-5f;
+                if (abs(posSign) < Epsilon)
+                    removeTriangle = false;
+            }
+
+            if (removeTriangle)
+            {
+                int3 edges = mesh.triangleAllEdges(tri);
+
+                mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Removing");
+                removedTriangles.insert(tri);
+                for (int e : edges.span())
+                {
+                    mesh.XOR_DE_DEBUG_EDGE(e);
+                    removedEdges.insert(e);
+                    int n = mesh.edgeNeighbor(e);
+                    if (n >= 0)
+                    {
+                        int tn = mesh.edgeTriangle(n);
+                        if (!trisExplored.count(tn))
+                            trisToExplore.insert(tn);
+                    }
+                }
+            }
+        }
+
+        int newVertex = mesh.addVertex(newVertexPos);
+        vertexNeighbors.clear();
+        removedBoundary.clear();
+
+        XOR_ASSERT(!removedEdges.empty(), "Each new vertex should delete at least one triangle");
+
+        print("\nDetermining boundary\n");
+        for (int e : removedEdges)
+        {
+            int n = mesh.edgeNeighbor(e);
+            if (n < 0 || !removedEdges.count(n))
+            {
+                print("Boundary ");
+                mesh.XOR_DE_DEBUG_EDGE(e);
+                removedBoundary.emplace_back(mesh.edgeStart(e),
+                                             mesh.edgeTarget(e),
+                                             mesh.edgeNeighbor(e));
+            }
+            else
+            {
+                print("Inside ");
+                mesh.XOR_DE_DEBUG_EDGE(e);
+            }
+        }
+
+        print("\nChecking boundary validity\n");
+        {
+            std::unordered_map<int, int> startVerts;
+            std::unordered_map<int, int> targetVerts;
+
+            std::unordered_map<int, int> vertPath;
+            for (int3 stn : removedBoundary)
+            {
+                ++startVerts[stn.x];
+                ++targetVerts[stn.y];
+                vertPath[stn.x] = stn.y;
+            }
+
+            for (auto &kv : startVerts)
+                XOR_ASSERT(kv.second == 1, "Vertices must form a closed loop");
+            for (auto &kv : targetVerts)
+                XOR_ASSERT(kv.second == 1, "Vertices must form a closed loop");
+
+            size_t count = 0;
+            int first = vertPath.begin()->first;
+            int v = first;
+            for (;;)
+            {
+                print("%d -> ", v);
+                auto it = vertPath.find(v);
+                XOR_ASSERT(it != vertPath.end(), "Vertices must form a closed loop");
+                ++count;
+                v = it->second;
+
+                if (v == first)
+                    break;
+            }
+            print("\n");
+
+            XOR_ASSERT(count == vertPath.size(), "Vertices must form a closed loop");
+        }
+
+        print("\nRetriangulating\n");
+
+        for (auto stn : removedBoundary)
+        {
+            int3 vs;
+            vs.x = stn.x;
+            vs.y = stn.y;
+            vs.z = newVertex;
+
+            int newTriangle = mesh.addTriangle(vs.x, vs.y, vs.z);
+            int3 es = mesh.triangleAllEdges(newTriangle);
+
+            int n = stn.z;
+            mesh.edgeUpdateNeighbor(es.x, n);
+
+            auto updateVertexNeighbors = [&](int vert, int edge)
+            {
+                auto it = vertexNeighbors.find(vert);
+                if (it == vertexNeighbors.end())
+                {
+                    vertexNeighbors.insert(it, { vert, edge });
+                }
+                else
+                {
+                    mesh.edgeUpdateNeighbor(edge, it->second);
+                }
+            };
+
+            updateVertexNeighbors(vs.y, es.y);
+            updateVertexNeighbors(vs.x, es.z);
+
+            mesh.XOR_DE_DEBUG_TRIANGLE(newTriangle, "Creating");
+        }
+
+        for (int tri : removedTriangles)
+        {
+            mesh.disconnectTriangle(tri);
+            mesh.removeTriangle(tri);
+        }
+    }
+};
+
 struct HeightmapRenderer
 {
     using DE = DirectedEdge<>;
@@ -90,12 +281,14 @@ struct HeightmapRenderer
 		heightmap = &hmap;
 
 		// uniformGrid(Rect::withSize(heightmap->size), -2);
-		// randomTriangulation(Rect::withSize(heightmap->size), 300);
+		randomTriangulation(Rect::withSize(heightmap->size), 300);
 
+#if 0
         auto il = info::InputLayoutInfoBuilder()
             .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT)
             .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT)
             .element("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT);
+#endif
 
         renderTerrain  = device.createGraphicsPipeline(
 			GraphicsPipeline::Info()
@@ -104,102 +297,15 @@ struct HeightmapRenderer
 			.depthMode(info::DepthMode::Write)
 			.depthFormat(DXGI_FORMAT_D32_FLOAT)
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-            .inputLayout(il));
-			//.inputLayout(mesh.inputLayout()));
+			.inputLayout(mesh.inputLayout()));
 
         visualizeTriangulation  = device.createGraphicsPipeline(
 			GraphicsPipeline::Info()
 			.vertexShader("VisualizeTriangulation.vs")
 			.pixelShader("VisualizeTriangulation.ps")
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-            .inputLayout(il));
+			.inputLayout(mesh.inputLayout()));
     }
-
-#if 0
-    void uniformGrid(Rect area, int vertexDistance = 0)
-    {
-        Timer t;
-
-        area.rightBottom = min(area.rightBottom, heightmap->size);
-        if (all(area.size() < uint2(128)))
-            area.leftTop = area.rightBottom - 128;
-
-        int2 sz        = int2(area.size());
-        float2 szWorld = float2(sz) * heightmap->texelSize;
-
-        HeightmapMesh mesh;
-
-        if (vertexDistance <= 0)
-        {
-#if defined(_DEBUG)
-            static const int DefaultVertexDim = 256;
-#else
-            static const int DefaultVertexDim = 1024;
-#endif
-            int vertexDim = (vertexDistance < 0) ? -vertexDistance : DefaultVertexDim;
-            int minDim = std::min(sz.x, sz.y);
-            vertexDistance = minDim / vertexDim;
-        }
-
-        int2 verts = sz / vertexDistance;
-        float2 fVerts = float2(verts);
-        float2 fRes   = float2(sz);
-        minWorld = -szWorld / 2.f;
-		maxWorld = minWorld + szWorld;
-
-        auto heightData = heightmap->image.subresource(0);
-		auto numVerts   = (verts.x + 1) * (verts.y + 1);
-
-        mesh.normalizedPos.reserve(numVerts);
-        mesh.uv.reserve(numVerts);
-        mesh.height.reserve(numVerts);
-        mesh.indices.reserve(verts.x * verts.y * (3 * 2));
-
-		float2 invSize = 1.f / float2(heightmap->size);
-
-        for (int y = 0; y <= verts.y; ++y)
-        {
-            for (int x = 0; x <= verts.x; ++x)
-            {
-                int2 vertexGridCoords = int2(x, y);
-                int2 texCoords = min(vertexGridCoords * vertexDistance + area.leftTop, heightmap->size - 1);
-                float2 uv = float2(vertexGridCoords * vertexDistance) / fRes;
-
-                float height = heightData.pixel<float>(uint2(texCoords));
-
-				mesh.normalizedPos.emplace_back(uv);
-				mesh.height.emplace_back(height);
-                mesh.uv.emplace_back((float2(texCoords) + 0.5f) * invSize);
-            }
-        }
-
-        int vertsPerRow = verts.y + 1;
-        for (int y = 0; y < verts.y; ++y)
-        {
-            for (int x = 0; x < verts.x; ++x)
-            {
-                uint ul = y * vertsPerRow + x;
-                uint ur = ul + 1;
-                uint dl = ul + vertsPerRow;
-                uint dr = dl + 1;
-
-                mesh.indices.emplace_back(ul);
-                mesh.indices.emplace_back(dl);
-                mesh.indices.emplace_back(ur);
-                mesh.indices.emplace_back(dl);
-                mesh.indices.emplace_back(dr);
-                mesh.indices.emplace_back(ur);
-            }
-        }
-
-        log("Heightmap", "Generated uniform grid mesh with %zu vertices and %zu indices in %.2f ms\n",
-            mesh.normalizedPos.size(),
-            mesh.indices.size(),
-            t.milliseconds());
-
-		gpuMesh(mesh);
-    }
-#endif
 
 	void gpuMesh(const DE &mesh)
 	{
@@ -255,7 +361,7 @@ struct HeightmapRenderer
 		this->mesh = Mesh::generate(device, attrs, indices);
 	}
 
-	void randomTriangulation(Rect area, uint vertices, Device &device, SwapChain &swapChain, Window &wnd)
+	void randomTriangulation(Rect area, uint vertices)
 	{
 		Timer timer;
 
@@ -265,58 +371,16 @@ struct HeightmapRenderer
 
 		std::mt19937 gen(12345);
 
-        std::vector<int> tris { first, second };
-        std::unordered_set<int> trisExplored;
-        std::unordered_set<int> trisToExplore;
-        std::unordered_set<int> removedEdges;
-        std::unordered_set<int> removedTriangles;
-        std::unordered_set<int> removedEdgeStarts;
-        std::unordered_set<int> removedEdgeTargets;
-        std::vector<int3> removedBoundary;
-        std::unordered_map<int, int> vertexNeighbors;
+        BowyerWatson<DE> delaunay(mesh);
 
-		while (!tris.empty() && mesh.numVertices() < static_cast<int>(vertices))
+		while (mesh.numVertices() < static_cast<int>(vertices))
 		{
-            auto cmd = device.graphicsCommandList();
-            auto backbuffer = swapChain.backbuffer();
-            cmd.clearRTV(backbuffer);
-            gpuMesh(mesh);
-            cmd.setRenderTargets(backbuffer);
-            visualize(cmd, 
-                      remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(0, 0)),
-                      remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(900, 900)));
-            cmd.setRenderTargets();
-            device.execute(cmd);
-            device.present(swapChain, false);
-#if 0
-            for (;;)
-            {
-                wnd.pumpMessages();
-                if (wnd.isKeyHeld(VK_SPACE))
-                    break;
-                else
-                    Sleep(1);
-            }
-#endif
-#if 0
-            for (;;)
-            {
-                wnd.pumpMessages();
-                if (!wnd.isKeyHeld(VK_SPACE))
-                    break;
-                else
-                    Sleep(1);
-            }
-#endif
-            // Sleep(10);
-
-            size_t i;
+            int triangle;
             float largestArea = 0;
 
             for (int j = 0; j < 10; ++j)
             {
-                size_t idx = std::uniform_int_distribution<size_t>(0u, tris.size() - 1)(gen);
-                int t = tris[idx];
+                int t = std::uniform_int_distribution<int>(0u, mesh.numTriangles() - 1)(gen);
                 if (!mesh.triangleIsValid(t))
                     continue;
                 int3 verts = mesh.triangleVertices(t);
@@ -325,210 +389,22 @@ struct HeightmapRenderer
                                                           float2(mesh.V(verts.z).pos)));
                 if (area > largestArea)
                 {
-                    i = idx;
+                    triangle    = t;
                     largestArea = area;
                 }
             }
 
-            std::swap(tris[i], tris.back());
-            int t = tris.back();
-            tris.pop_back();
-
-            if (!mesh.triangleIsValid(t))
+            if (!mesh.triangleIsValid(triangle))
                 continue;
 
 			float3 bary = uniformBarycentric(gen);
-#if 0
-            int3 ts = mesh.triangleSubdivideBarycentric(t, bary);
-            tris.emplace_back(ts.x);
-            tris.emplace_back(ts.y);
-            tris.emplace_back(ts.z);
-#else
-            int3 vs = mesh.triangleVertices(t);
+            int3 vs = mesh.triangleVertices(triangle);
             float3 pos =
                 mesh.V(vs.x).pos * bary.x +
                 mesh.V(vs.y).pos * bary.y +
                 mesh.V(vs.z).pos * bary.z;
 
-#if 0
-            XOR_ASSERT(isPointInsideTriangle(float2(mesh.V(vs.x).pos),
-                                             float2(mesh.V(vs.y).pos),
-                                             float2(mesh.V(vs.z).pos), 
-                                             float2(pos)), "Point must be inside triangle");
-#endif
-
-            removedTriangles.clear();
-            removedEdges.clear();
-            removedEdgeStarts.clear();
-            removedEdgeTargets.clear();
-            trisToExplore.clear();
-            trisExplored.clear();
-            trisToExplore.insert(t);
-
-            print("\nRemoving triangles\n");
-            while (!trisToExplore.empty())
-            {
-                int tri = *trisToExplore.begin();
-
-                bool removeTriangle = trisExplored.empty();
-
-                trisToExplore.erase(tri);
-                trisExplored.insert(tri);
-                mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Checking");
-
-                // The first triangle is the triangle we placed the vertex in,
-                // which will be removed by definition. We thus don't check the
-                // circumcircle to avoid numerical errors.
-                if (!removeTriangle)
-                {
-                    int3 verts = mesh.triangleVertices(tri);
-
-                    float2 v0 = float2(mesh.V(verts.x).pos);
-                    float2 v1 = float2(mesh.V(verts.y).pos);
-                    float2 v2 = float2(mesh.V(verts.z).pos);
-
-                    float2 inside = (v0 + v1 + v2) / 3.f;
-
-                    float insideSign = pointsOnCircle(v0, v1, v2, inside);
-                    float posSign     = pointsOnCircle(v0, v1, v2, float2(pos));
-                    print("Circumcircle test (inside): %g vs %g\n", insideSign, posSign);
-
-                    // If the signs are the same, the product will be non-negative.
-                    // This means that pos is inside the circumcircle.
-                    removeTriangle = insideSign * posSign >= 0;
-
-                    constexpr float Threshold = 1e-5f;
-                    if (abs(posSign) < Threshold)
-                        removeTriangle = false;
-                }
-
-                if (removeTriangle)
-                {
-                    int3 edges = mesh.triangleAllEdges(tri);
-
-                    mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Removing");
-                    removedTriangles.insert(tri);
-                    for (int e : edges.span())
-                    {
-                        mesh.XOR_DE_DEBUG_EDGE(e);
-                        removedEdgeStarts.insert(mesh.edgeStart(e));
-                        removedEdgeTargets.insert(mesh.edgeTarget(e));
-                        removedEdges.insert(e);
-                        int n = mesh.edgeNeighbor(e);
-                        if (n >= 0)
-                        {
-                            int tn = mesh.edgeTriangle(n);
-                            if (!trisExplored.count(tn))
-                                trisToExplore.insert(tn);
-                        }
-                    }
-                }
-            }
-
-            int newVertex = mesh.addVertex(pos);
-            vertexNeighbors.clear();
-            removedBoundary.clear();
-
-            XOR_ASSERT(!removedEdges.empty(), "Each new vertex should delete at least one triangle");
-
-            print("\nDetermining boundary\n");
-            for (int e : removedEdges)
-            {
-                int n = mesh.edgeNeighbor(e);
-                if (n < 0 || !removedEdges.count(n))
-                {
-                    print("Boundary ");
-                    mesh.XOR_DE_DEBUG_EDGE(e);
-                    removedBoundary.emplace_back(mesh.edgeStart(e),
-                                                 mesh.edgeTarget(e),
-                                                 mesh.edgeNeighbor(e));
-                }
-                else
-                {
-                    print("Inside ");
-                    mesh.XOR_DE_DEBUG_EDGE(e);
-                }
-            }
-
-            print("\nChecking boundary validity\n");
-            {
-                std::unordered_map<int, int> startVerts;
-                std::unordered_map<int, int> targetVerts;
-
-                std::unordered_map<int, int> vertPath;
-                for (int3 stn : removedBoundary)
-                {
-                    ++startVerts[stn.x];
-                    ++targetVerts[stn.y];
-                    vertPath[stn.x] = stn.y;
-                }
-
-                for (auto &kv : startVerts)
-                    XOR_ASSERT(kv.second == 1, "Vertices must form a closed loop");
-                for (auto &kv : targetVerts)
-                    XOR_ASSERT(kv.second == 1, "Vertices must form a closed loop");
-
-                size_t count = 0;
-                int first = vertPath.begin()->first;
-                int v = first;
-                for (;;)
-                {
-                    print("%d -> ", v);
-                    auto it = vertPath.find(v);
-                    XOR_ASSERT(it != vertPath.end(), "Vertices must form a closed loop");
-                    ++count;
-                    v = it->second;
-
-                    if (v == first)
-                        break;
-                }
-                print("\n");
-
-                XOR_ASSERT(count == vertPath.size(), "Vertices must form a closed loop");
-            }
-
-            print("\nRetriangulating\n");
-
-            for (auto stn : removedBoundary)
-            {
-                int3 vs;
-                vs.x = stn.x;
-                vs.y = stn.y;
-                vs.z = newVertex;
-
-                int newTriangle = mesh.addTriangle(vs.x, vs.y, vs.z);
-                int3 es = mesh.triangleAllEdges(newTriangle);
-
-                int n = stn.z;
-                mesh.edgeUpdateNeighbor(es.x, n);
-
-                auto updateVertexNeighbors = [&] (int vert, int edge)
-                {
-                    auto it = vertexNeighbors.find(vert);
-                    if (it == vertexNeighbors.end())
-                    {
-                        vertexNeighbors.insert(it, { vert, edge });
-                    }
-                    else
-                    {
-                        mesh.edgeUpdateNeighbor(edge, it->second);
-                    }
-                };
-
-                updateVertexNeighbors(vs.y, es.y);
-                updateVertexNeighbors(vs.x, es.z);
-
-                mesh.XOR_DE_DEBUG_TRIANGLE(newTriangle, "Creating");
-
-                tris.emplace_back(newTriangle);
-            }
-
-            for (int tri : removedTriangles)
-            {
-                mesh.disconnectTriangle(tri);
-                mesh.removeTriangle(tri);
-            }
-#endif
+            delaunay.insertVertex(triangle, pos);
 		}
 
         log("Heightmap", "Generated random triangulation with %d vertices and %d triangles in %.2f ms\n",
@@ -588,10 +464,9 @@ struct HeightmapRenderer
 
 		if (mode == VisualizationMode::OnlyError || mode == VisualizationMode::WireframeError)
 			cmd.bind(visualizeTriangulation.variant()
-                     .inputLayout(mesh.inputLayout())
 					 .pixelShader(info::SameShader {}, { { "SHOW_ERROR" } }));
 		else
-			cmd.bind(visualizeTriangulation.variant().inputLayout(mesh.inputLayout()));
+			cmd.bind(visualizeTriangulation);
 
 		cmd.setConstants(vtConstants);
 		cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->srv);
@@ -600,7 +475,6 @@ struct HeightmapRenderer
 		if (mode == VisualizationMode::WireframeHeight || mode == VisualizationMode::WireframeError)
 		{
 			cmd.bind(visualizeTriangulation.variant()
-                     .inputLayout(mesh.inputLayout())
 					 .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
 					 .fill(D3D12_FILL_MODE_WIREFRAME));
 			cmd.setConstants(vtConstants);
@@ -672,7 +546,6 @@ public:
     void mainLoop(double deltaTime) override
     {
         camera.update(*this);
-        heightmapRenderer.randomTriangulation(Rect::withSize(heightmap.size), 300, device, swapChain, *this);
 
         auto cmd        = device.graphicsCommandList("Frame");
         auto backbuffer = swapChain.backbuffer();
