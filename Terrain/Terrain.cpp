@@ -288,6 +288,7 @@ struct HeightmapRenderer
             cmd.setRenderTargets();
             device.execute(cmd);
             device.present(swapChain, false);
+#if 0
             for (;;)
             {
                 wnd.pumpMessages();
@@ -296,6 +297,7 @@ struct HeightmapRenderer
                 else
                     Sleep(1);
             }
+#endif
 #if 0
             for (;;)
             {
@@ -306,9 +308,28 @@ struct HeightmapRenderer
                     Sleep(1);
             }
 #endif
-            Sleep(10);
+            // Sleep(10);
 
-            size_t i = std::uniform_int_distribution<size_t>(0u, tris.size() - 1)(gen);
+            size_t i;
+            float largestArea = 0;
+
+            for (int j = 0; j < 10; ++j)
+            {
+                size_t idx = std::uniform_int_distribution<size_t>(0u, tris.size() - 1)(gen);
+                int t = tris[idx];
+                if (!mesh.triangleIsValid(t))
+                    continue;
+                int3 verts = mesh.triangleVertices(t);
+                float area = abs(triangleDoubleSignedArea(float2(mesh.V(verts.x).pos),
+                                                          float2(mesh.V(verts.y).pos),
+                                                          float2(mesh.V(verts.z).pos)));
+                if (area > largestArea)
+                {
+                    i = idx;
+                    largestArea = area;
+                }
+            }
+
             std::swap(tris[i], tris.back());
             int t = tris.back();
             tris.pop_back();
@@ -361,67 +382,45 @@ struct HeightmapRenderer
                 if (!removeTriangle)
                 {
                     int3 verts = mesh.triangleVertices(tri);
+
                     float2 v0 = float2(mesh.V(verts.x).pos);
                     float2 v1 = float2(mesh.V(verts.y).pos);
                     float2 v2 = float2(mesh.V(verts.z).pos);
 
-#if 0
-                    float2 outside(10, 10);
-
-                    float outsideSign = pointsOnCircle(v0, v1, v2, outside);
-                    float posSign     = pointsOnCircle(v0, v1, v2, float2(pos));
-                    print("Circumcircle test (outside): %f vs %f\n", outsideSign, posSign);
-
-                    // If the signs are the same, the product will be non-negative.
-                    // This means that pos is inside the circumcircle.
-                    removeTriangle = outsideSign * posSign < 0;
-#else
                     float2 inside = (v0 + v1 + v2) / 3.f;
 
                     float insideSign = pointsOnCircle(v0, v1, v2, inside);
                     float posSign     = pointsOnCircle(v0, v1, v2, float2(pos));
-                    print("Circumcircle test (inside): %f vs %f\n", insideSign, posSign);
+                    print("Circumcircle test (inside): %g vs %g\n", insideSign, posSign);
 
                     // If the signs are the same, the product will be non-negative.
                     // This means that pos is inside the circumcircle.
                     removeTriangle = insideSign * posSign >= 0;
-#endif
+
+                    constexpr float Threshold = 1e-5f;
+                    if (abs(posSign) < Threshold)
+                        removeTriangle = false;
                 }
 
                 if (removeTriangle)
                 {
                     int3 edges = mesh.triangleAllEdges(tri);
 
-                    bool violatesLoopInvariant = false;
-
+                    mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Removing");
+                    removedTriangles.insert(tri);
                     for (int e : edges.span())
                     {
-                        if (removedEdgeStarts.count(mesh.edgeStart(e)) || removedEdgeTargets.count(mesh.edgeTarget(e)))
-                            violatesLoopInvariant = true;
-                    }
-
-                    if (!violatesLoopInvariant)
-                    {
-                        mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Removing");
-                        removedTriangles.insert(tri);
-                        for (int e : edges.span())
+                        mesh.XOR_DE_DEBUG_EDGE(e);
+                        removedEdgeStarts.insert(mesh.edgeStart(e));
+                        removedEdgeTargets.insert(mesh.edgeTarget(e));
+                        removedEdges.insert(e);
+                        int n = mesh.edgeNeighbor(e);
+                        if (n >= 0)
                         {
-                            mesh.XOR_DE_DEBUG_EDGE(e);
-                            removedEdgeStarts.insert(mesh.edgeStart(e));
-                            removedEdgeTargets.insert(mesh.edgeTarget(e));
-                            removedEdges.insert(e);
-                            int n = mesh.edgeNeighbor(e);
-                            if (n >= 0)
-                            {
-                                int tn = mesh.edgeTriangle(n);
-                                if (!trisExplored.count(tn))
-                                    trisToExplore.insert(tn);
-                            }
+                            int tn = mesh.edgeTriangle(n);
+                            if (!trisExplored.count(tn))
+                                trisToExplore.insert(tn);
                         }
-                    }
-                    else
-                    {
-                        mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Violates loop invariant");
                     }
                 }
             }
