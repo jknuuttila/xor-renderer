@@ -6,6 +6,8 @@
 // https://www.graphics.rwth-aachen.de/media/papers/directed.pdf
 
 #include <vector>
+#include <unordered_set>
+#include <unordered_map>
 
 namespace xor
 {
@@ -555,4 +557,146 @@ namespace xor
         }
 
     };
+
+    // Helper class to perform Delaunay triangulation using the Bowyer-Watson
+    // algorithm on a given DirectedEdge mesh.
+    template <typename DE>
+    class BowyerWatson
+    {
+        // Mesh that this algorithm operates on
+        DE &mesh;
+        // Triangles that have already been checked for circumcircle violations
+        // during the current insertion.
+        std::unordered_set<int> trisExplored;
+        // Triangles that will be checked for circumcircle violations.
+        std::unordered_set<int> trisToExplore;
+        std::unordered_set<int> removedEdges;
+        std::unordered_set<int> removedTriangles;
+        std::vector<int> removedBoundary;
+        std::unordered_map<int, int> vertexNeighbors;
+    public:
+        BowyerWatson(DE &mesh) : mesh(mesh) {}
+
+        // Assuming that the triangulation is already a Delaunay triangulation,
+        // insert one new vertex inside the specified triangle, and retriangulate
+        // so that the mesh stays Delaunay.
+        void insertVertex(int containingTriangle, float3 newVertexPos)
+        {
+            removedTriangles.clear();
+            removedEdges.clear();
+            trisToExplore.clear();
+            trisExplored.clear();
+            trisToExplore.insert(containingTriangle);
+
+            while (!trisToExplore.empty())
+            {
+                int tri = *trisToExplore.begin();
+
+                bool removeTriangle = trisExplored.empty();
+
+                trisToExplore.erase(tri);
+                trisExplored.insert(tri);
+
+                // The first triangle is the triangle we placed the vertex in,
+                // which will be removed by definition. We don't check the
+                // circumcircle for it to avoid numerical errors and the situation
+                // where we would remove no triangles, which is impossible.
+                if (!removeTriangle)
+                {
+                    int3 verts = mesh.triangleVertices(tri);
+
+                    float2 v0 = float2(mesh.V(verts.x).pos);
+                    float2 v1 = float2(mesh.V(verts.y).pos);
+                    float2 v2 = float2(mesh.V(verts.z).pos);
+
+                    float2 inside = (v0 + v1 + v2) / 3.f;
+
+                    float insideSign = pointsOnCircle(v0, v1, v2, inside);
+                    float posSign    = pointsOnCircle(v0, v1, v2, float2(newVertexPos));
+
+                    // If the signs are the same, the product will be non-negative.
+                    // This means that pos is inside the circumcircle.
+                    removeTriangle = insideSign * posSign > 0;
+
+                    // Do not remove triangles for which the vertex is extremely close
+                    // to being on the circumcircle. This usually happens because of
+                    // small triangles and numerical instability, and leads to problems
+                    // with the removed area not being well-behaved anymore.
+                    constexpr float Epsilon = 1e-5f;
+                    if (abs(posSign) < Epsilon)
+                        removeTriangle = false;
+                }
+
+                // Collect the removed triangle and its edges for later processing
+                if (removeTriangle)
+                {
+                    int3 edges = mesh.triangleAllEdges(tri);
+
+                    removedTriangles.insert(tri);
+                    for (int e : edges.span())
+                    {
+                        removedEdges.insert(e);
+                        int n = mesh.edgeNeighbor(e);
+                        if (n >= 0)
+                        {
+                            int tn = mesh.edgeTriangle(n);
+                            if (!trisExplored.count(tn))
+                                trisToExplore.insert(tn);
+                        }
+                    }
+                }
+            }
+
+            int newVertex = mesh.addVertex(newVertexPos);
+            vertexNeighbors.clear();
+            removedBoundary.clear();
+
+            XOR_ASSERT(!removedEdges.empty(), "Each new vertex should delete at least one triangle");
+
+            // Separate the boundary edges from the inside edges
+            for (int e : removedEdges)
+            {
+                int n = mesh.edgeNeighbor(e);
+                if (n < 0 || !removedEdges.count(n))
+                    removedBoundary.emplace_back(e);
+            }
+
+            // Create new triangles in the removed area, and connect
+            // them to the mesh.
+            for (int e : removedBoundary)
+            {
+                int3 vs;
+                vs.x = mesh.edgeStart(e);
+                vs.y = mesh.edgeTarget(e);
+                vs.z = newVertex;
+
+                int newTriangle = mesh.addTriangle(vs.x, vs.y, vs.z);
+                int3 es = mesh.triangleAllEdges(newTriangle);
+
+                int n = mesh.edgeNeighbor(e);
+                mesh.edgeUpdateNeighbor(es.x, n);
+
+                auto updateVertexNeighbors = [&](int vert, int edge)
+                {
+                    auto it = vertexNeighbors.find(vert);
+                    if (it == vertexNeighbors.end())
+                        vertexNeighbors.insert(it, { vert, edge });
+                    else
+                        mesh.edgeUpdateNeighbor(edge, it->second);
+                };
+
+                updateVertexNeighbors(vs.y, es.y);
+                updateVertexNeighbors(vs.x, es.z);
+            }
+
+            // Finally, actually delete the removed triangles, which should now
+            // be unconnected except maybe to other removed triangles.
+            for (int tri : removedTriangles)
+            {
+                mesh.disconnectTriangle(tri);
+                mesh.removeTriangle(tri);
+            }
+        }
+    };
+
 }
