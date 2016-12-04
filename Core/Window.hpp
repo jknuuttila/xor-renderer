@@ -78,5 +78,7 @@ namespace xor
         virtual void keyUp(int keyCode) {}
         virtual void keyDown(int keyCode) {}
         bool isKeyHeld(int keyCode) const;
+
+        void pumpMessages();
     };
 }

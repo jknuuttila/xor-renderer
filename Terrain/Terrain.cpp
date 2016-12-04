@@ -90,7 +90,12 @@ struct HeightmapRenderer
 		heightmap = &hmap;
 
 		// uniformGrid(Rect::withSize(heightmap->size), -2);
-		randomTriangulation(Rect::withSize(heightmap->size), 300);
+		// randomTriangulation(Rect::withSize(heightmap->size), 300);
+
+        auto il = info::InputLayoutInfoBuilder()
+            .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT)
+            .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT)
+            .element("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT);
 
         renderTerrain  = device.createGraphicsPipeline(
 			GraphicsPipeline::Info()
@@ -99,15 +104,16 @@ struct HeightmapRenderer
 			.depthMode(info::DepthMode::Write)
 			.depthFormat(DXGI_FORMAT_D32_FLOAT)
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-			.inputLayout(mesh.inputLayout()));
+            .inputLayout(il));
+			//.inputLayout(mesh.inputLayout()));
 
         visualizeTriangulation  = device.createGraphicsPipeline(
 			GraphicsPipeline::Info()
 			.vertexShader("VisualizeTriangulation.vs")
 			.pixelShader("VisualizeTriangulation.ps")
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-			.inputLayout(mesh.inputLayout()));
-	}
+            .inputLayout(il));
+    }
 
 #if 0
     void uniformGrid(Rect area, int vertexDistance = 0)
@@ -249,7 +255,7 @@ struct HeightmapRenderer
 		this->mesh = Mesh::generate(device, attrs, indices);
 	}
 
-	void randomTriangulation(Rect area, uint vertices)
+	void randomTriangulation(Rect area, uint vertices, Device &device, SwapChain &swapChain, Window &wnd)
 	{
 		Timer timer;
 
@@ -264,11 +270,44 @@ struct HeightmapRenderer
         std::unordered_set<int> trisToExplore;
         std::unordered_set<int> removedEdges;
         std::unordered_set<int> removedTriangles;
+        std::unordered_set<int> removedEdgeStarts;
+        std::unordered_set<int> removedEdgeTargets;
         std::vector<int3> removedBoundary;
         std::unordered_map<int, int> vertexNeighbors;
 
 		while (!tris.empty() && mesh.numVertices() < static_cast<int>(vertices))
 		{
+            auto cmd = device.graphicsCommandList();
+            auto backbuffer = swapChain.backbuffer();
+            cmd.clearRTV(backbuffer);
+            gpuMesh(mesh);
+            cmd.setRenderTargets(backbuffer);
+            visualize(cmd, 
+                      remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(0, 0)),
+                      remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(900, 900)));
+            cmd.setRenderTargets();
+            device.execute(cmd);
+            device.present(swapChain, false);
+            for (;;)
+            {
+                wnd.pumpMessages();
+                if (wnd.isKeyHeld(VK_SPACE))
+                    break;
+                else
+                    Sleep(1);
+            }
+#if 0
+            for (;;)
+            {
+                wnd.pumpMessages();
+                if (!wnd.isKeyHeld(VK_SPACE))
+                    break;
+                else
+                    Sleep(1);
+            }
+#endif
+            Sleep(10);
+
             size_t i = std::uniform_int_distribution<size_t>(0u, tris.size() - 1)(gen);
             std::swap(tris[i], tris.back());
             int t = tris.back();
@@ -299,10 +338,13 @@ struct HeightmapRenderer
 
             removedTriangles.clear();
             removedEdges.clear();
+            removedEdgeStarts.clear();
+            removedEdgeTargets.clear();
             trisToExplore.clear();
             trisExplored.clear();
             trisToExplore.insert(t);
 
+            print("\nRemoving triangles\n");
             while (!trisToExplore.empty())
             {
                 int tri = *trisToExplore.begin();
@@ -311,6 +353,7 @@ struct HeightmapRenderer
 
                 trisToExplore.erase(tri);
                 trisExplored.insert(tri);
+                mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Checking");
 
                 // The first triangle is the triangle we placed the vertex in,
                 // which will be removed by definition. We thus don't check the
@@ -322,32 +365,63 @@ struct HeightmapRenderer
                     float2 v1 = float2(mesh.V(verts.y).pos);
                     float2 v2 = float2(mesh.V(verts.z).pos);
 
-                    // The average of the vertices is always inside the triangle
-                    // and thus its circumcircle.
+#if 0
+                    float2 outside(10, 10);
+
+                    float outsideSign = pointsOnCircle(v0, v1, v2, outside);
+                    float posSign     = pointsOnCircle(v0, v1, v2, float2(pos));
+                    print("Circumcircle test (outside): %f vs %f\n", outsideSign, posSign);
+
+                    // If the signs are the same, the product will be non-negative.
+                    // This means that pos is inside the circumcircle.
+                    removeTriangle = outsideSign * posSign < 0;
+#else
                     float2 inside = (v0 + v1 + v2) / 3.f;
 
                     float insideSign = pointsOnCircle(v0, v1, v2, inside);
-                    float posSign    = pointsOnCircle(v0, v1, v2, float2(pos));
+                    float posSign     = pointsOnCircle(v0, v1, v2, float2(pos));
+                    print("Circumcircle test (inside): %f vs %f\n", insideSign, posSign);
 
                     // If the signs are the same, the product will be non-negative.
                     // This means that pos is inside the circumcircle.
                     removeTriangle = insideSign * posSign >= 0;
+#endif
                 }
 
                 if (removeTriangle)
                 {
-                    removedTriangles.insert(tri);
                     int3 edges = mesh.triangleAllEdges(tri);
+
+                    bool violatesLoopInvariant = false;
+
                     for (int e : edges.span())
                     {
-                        removedEdges.insert(e);
-                        int n = mesh.edgeNeighbor(e);
-                        if (n >= 0)
+                        if (removedEdgeStarts.count(mesh.edgeStart(e)) || removedEdgeTargets.count(mesh.edgeTarget(e)))
+                            violatesLoopInvariant = true;
+                    }
+
+                    if (!violatesLoopInvariant)
+                    {
+                        mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Removing");
+                        removedTriangles.insert(tri);
+                        for (int e : edges.span())
                         {
-                            int tn = mesh.edgeTriangle(n);
-                            if (!trisExplored.count(tn))
-                                trisToExplore.insert(tn);
+                            mesh.XOR_DE_DEBUG_EDGE(e);
+                            removedEdgeStarts.insert(mesh.edgeStart(e));
+                            removedEdgeTargets.insert(mesh.edgeTarget(e));
+                            removedEdges.insert(e);
+                            int n = mesh.edgeNeighbor(e);
+                            if (n >= 0)
+                            {
+                                int tn = mesh.edgeTriangle(n);
+                                if (!trisExplored.count(tn))
+                                    trisToExplore.insert(tn);
+                            }
                         }
+                    }
+                    else
+                    {
+                        mesh.XOR_DE_DEBUG_TRIANGLE(tri, "Violates loop invariant");
                     }
                 }
             }
@@ -356,18 +430,65 @@ struct HeightmapRenderer
             vertexNeighbors.clear();
             removedBoundary.clear();
 
+            XOR_ASSERT(!removedEdges.empty(), "Each new vertex should delete at least one triangle");
+
+            print("\nDetermining boundary\n");
             for (int e : removedEdges)
             {
                 int n = mesh.edgeNeighbor(e);
                 if (n < 0 || !removedEdges.count(n))
+                {
+                    print("Boundary ");
+                    mesh.XOR_DE_DEBUG_EDGE(e);
                     removedBoundary.emplace_back(mesh.edgeStart(e),
                                                  mesh.edgeTarget(e),
                                                  mesh.edgeNeighbor(e));
+                }
+                else
+                {
+                    print("Inside ");
+                    mesh.XOR_DE_DEBUG_EDGE(e);
+                }
             }
 
-            XOR_ASSERT(!removedBoundary.empty(), "Each new vertex should delete at least one triangle");
+            print("\nChecking boundary validity\n");
+            {
+                std::unordered_map<int, int> startVerts;
+                std::unordered_map<int, int> targetVerts;
 
-            print("\n----\n\n");
+                std::unordered_map<int, int> vertPath;
+                for (int3 stn : removedBoundary)
+                {
+                    ++startVerts[stn.x];
+                    ++targetVerts[stn.y];
+                    vertPath[stn.x] = stn.y;
+                }
+
+                for (auto &kv : startVerts)
+                    XOR_ASSERT(kv.second == 1, "Vertices must form a closed loop");
+                for (auto &kv : targetVerts)
+                    XOR_ASSERT(kv.second == 1, "Vertices must form a closed loop");
+
+                size_t count = 0;
+                int first = vertPath.begin()->first;
+                int v = first;
+                for (;;)
+                {
+                    print("%d -> ", v);
+                    auto it = vertPath.find(v);
+                    XOR_ASSERT(it != vertPath.end(), "Vertices must form a closed loop");
+                    ++count;
+                    v = it->second;
+
+                    if (v == first)
+                        break;
+                }
+                print("\n");
+
+                XOR_ASSERT(count == vertPath.size(), "Vertices must form a closed loop");
+            }
+
+            print("\nRetriangulating\n");
 
             for (auto stn : removedBoundary)
             {
@@ -384,24 +505,21 @@ struct HeightmapRenderer
 
                 auto updateVertexNeighbors = [&] (int vert, int edge)
                 {
-                    print("updateVertexNeighbors(%d, %d)\n", vert, edge);
                     auto it = vertexNeighbors.find(vert);
                     if (it == vertexNeighbors.end())
                     {
-                        int insertedEdge = edge;
-                        mesh.XOR_DE_DEBUG_EDGE(insertedEdge);
                         vertexNeighbors.insert(it, { vert, edge });
                     }
                     else
                     {
-                        mesh.XOR_DE_DEBUG_EDGE(edge);
-                        mesh.XOR_DE_DEBUG_EDGE(it->second);
                         mesh.edgeUpdateNeighbor(edge, it->second);
                     }
                 };
 
                 updateVertexNeighbors(vs.y, es.y);
                 updateVertexNeighbors(vs.x, es.z);
+
+                mesh.XOR_DE_DEBUG_TRIANGLE(newTriangle, "Creating");
 
                 tris.emplace_back(newTriangle);
             }
@@ -471,9 +589,10 @@ struct HeightmapRenderer
 
 		if (mode == VisualizationMode::OnlyError || mode == VisualizationMode::WireframeError)
 			cmd.bind(visualizeTriangulation.variant()
+                     .inputLayout(mesh.inputLayout())
 					 .pixelShader(info::SameShader {}, { { "SHOW_ERROR" } }));
 		else
-			cmd.bind(visualizeTriangulation);
+			cmd.bind(visualizeTriangulation.variant().inputLayout(mesh.inputLayout()));
 
 		cmd.setConstants(vtConstants);
 		cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->srv);
@@ -482,6 +601,7 @@ struct HeightmapRenderer
 		if (mode == VisualizationMode::WireframeHeight || mode == VisualizationMode::WireframeError)
 		{
 			cmd.bind(visualizeTriangulation.variant()
+                     .inputLayout(mesh.inputLayout())
 					 .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
 					 .fill(D3D12_FILL_MODE_WIREFRAME));
 			cmd.setConstants(vtConstants);
@@ -553,6 +673,7 @@ public:
     void mainLoop(double deltaTime) override
     {
         camera.update(*this);
+        heightmapRenderer.randomTriangulation(Rect::withSize(heightmap.size), 300, device, swapChain, *this);
 
         auto cmd        = device.graphicsCommandList("Frame");
         auto backbuffer = swapChain.backbuffer();

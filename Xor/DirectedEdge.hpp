@@ -42,9 +42,9 @@ namespace xor
         {}
     };
 
-#define XOR_DE_DEBUG_EDGE(e)     debugEdge(__FILE__, __LINE__, #e, e)
-#define XOR_DE_DEBUG_VERTEX(v)   debugVertex(__FILE__, __LINE__, #v, v)
-#define XOR_DE_DEBUG_TRIANGLE(t) debugTriangle(__FILE__, __LINE__, #t, t)
+#define XOR_DE_DEBUG_EDGE(e, ...)     debugEdge(__FILE__, __LINE__, #e, e, ## __VA_ARGS__)
+#define XOR_DE_DEBUG_VERTEX(v, ...)   debugVertex(__FILE__, __LINE__, #v, v, ## __VA_ARGS__)
+#define XOR_DE_DEBUG_TRIANGLE(t, ...) debugTriangle(__FILE__, __LINE__, #t, t, ## __VA_ARGS__)
 
     template <
         typename TriangleData = Empty,
@@ -432,19 +432,20 @@ namespace xor
             if (e1 >= 0) E(e1).neighbor = e0;
         }
 
-        void debugEdge(const char *file, int line, const char *name, int e) const
+        void debugEdge(const char *file, int line, const char *name, int e, const char *prefix = nullptr) const
         {
             if (e >= 0)
-                print("%s(%d): Edge \"%s\" (%d): (%d -> %d) neighbor: %d\n",
-                      file, line, name, e, edgeStart(e), edgeTarget(e), edgeNeighbor(e));
+                print("%s%sEdge \"%s\" (%d): (%d -> %d) neighbor: %d\n",
+                      prefix ? prefix : "", prefix ? " " : "",
+                      name, e, edgeStart(e), edgeTarget(e), edgeNeighbor(e));
             else
-                print("%s(%d): Edge \"%s\" (%d)\n", file, line, name, e);
+                print("%s%sEdge \"%s\" (%d)\n", file, line, name, e);
         }
 
-        void debugVertex(const char *file, int line, const char *name, int v) const
+        void debugVertex(const char *file, int line, const char *name, int v, const char *prefix = nullptr) const
         {
-            print("%s(%d): Vertex \"%s\" (%d): (%.3f %.3f %.3f) edge: %d\n",
-                  file, line,
+            print("%s%sVertex \"%s\" (%d): (%.3f %.3f %.3f) edge: %d\n",
+                  prefix ? prefix : "", prefix ? " " : "",
                   name, v,
                   V(v).pos.x,
                   V(v).pos.y,
@@ -452,11 +453,12 @@ namespace xor
                   V(v).edge);
         }
 
-        void debugTriangle(const char *file, int line, const char *name, int t) const
+        void debugTriangle(const char *file, int line, const char *name, int t, const char *prefix = nullptr) const
         {
             auto vs = triangleVertices(t);
-            print("%s(%d): Triangle \"%s\" (%d): (%d %d %d)\n",
-                  file, line, name, t, vs.x, vs.y, vs.z);
+            print("%s%sTriangle \"%s\" (%d): (%d %d %d)\n",
+                  prefix ? prefix : "", prefix ? " " : "",
+                  name, t, vs.x, vs.y, vs.z);
         }
     private:
         std::vector<int>      m_freeVertices;

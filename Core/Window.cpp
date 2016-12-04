@@ -166,21 +166,7 @@ namespace xor
 
         while (!m_terminate)
         {
-            MSG msg;
-            while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE) != 0)
-            {
-                if (msg.message == WM_QUIT)
-                    terminate(0);
-
-                TranslateMessage(&msg);
-                DispatchMessageA(&msg);
-            }
-
-            if (!m_input.empty())
-            {
-                handleInput(m_input);
-                m_input.clear();
-            }
+            pumpMessages();
 
             double delta = m_mainLoopTimer.seconds();
             mainLoop(delta);
@@ -200,6 +186,25 @@ namespace xor
     bool Window::isKeyHeld(int keyCode) const
     {
         return m_keyHeld[keyCode];
+    }
+
+    void Window::pumpMessages()
+    {
+        MSG msg;
+        while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE) != 0)
+        {
+            if (msg.message == WM_QUIT)
+                terminate(0);
+
+            TranslateMessage(&msg);
+            DispatchMessageA(&msg);
+        }
+
+        if (!m_input.empty())
+        {
+            handleInput(m_input);
+            m_input.clear();
+        }
     }
 
     // TODO: Move this elsewhere
