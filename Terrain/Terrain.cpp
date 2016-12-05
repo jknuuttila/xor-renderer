@@ -64,6 +64,7 @@ enum class TriangulationMode
 {
     UniformGrid,
     Random,
+    IncMinError,
 };
 
 enum class VisualizationMode
@@ -124,7 +125,8 @@ struct HeightmapRenderer
 			.inputLayout(mesh.inputLayout()));
     }
 
-	void gpuMesh(const DE &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
+    template <typename DEMesh>
+	void gpuMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
 	{
         auto verts    = mesh.vertices();
 		auto numVerts = verts.size();
@@ -345,6 +347,163 @@ struct HeightmapRenderer
                 float2(area.rightBottom) / float2(heightmap->size));
 	}
 
+	void incrementalMinError(Rect area, uint vertices)
+	{
+		Timer timer;
+
+        struct TriangleError
+        {
+            float3 bary;
+            float error = -1;
+        };
+        struct LargestError
+        {
+            int triangle = -1;
+            float error  = std::numeric_limits<float>::max();
+
+            LargestError(int tri = -1)
+                : triangle(tri)
+            {}
+            LargestError(int tri, float error)
+                : triangle(tri)
+                , error(error)
+            {}
+
+            explicit operator bool() const { return error != std::numeric_limits<float>::max(); }
+
+            bool operator<(const LargestError &e) const { return error < e.error; }
+        };
+
+        using DErr = DirectedEdge<TriangleError>;
+		DErr mesh;
+
+        int first  = mesh.addTriangle(vertex(area, {1, 0}), vertex(area, {0, 1}), vertex(area, {0, 0}));
+        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), vertex(area, {1, 1}));
+
+        std::mt19937 gen(95832);
+        BowyerWatson<DErr> delaunay(mesh);
+        std::priority_queue<LargestError> largestError;
+        std::unordered_set<int> knownTriangles;
+        largestError.emplace(first);
+        largestError.emplace(second);
+        knownTriangles.emplace(first);
+        knownTriangles.emplace(second);
+        std::vector<int> newTriangles;
+
+		while (mesh.numVertices() < static_cast<int>(vertices))
+		{
+            auto largest = largestError.top();
+            largestError.pop();
+            int t = largest.triangle;
+
+            if (t < 0 || !mesh.triangleIsValid(t))
+            {
+                print("Triangle %d is invalid, skipping\n", t);
+                continue;
+            }
+
+            auto &triData = mesh.T(t);
+            int3 verts  = mesh.triangleVertices(t);
+            float3 v0   = mesh.V(verts.x).pos;
+            float3 v1   = mesh.V(verts.y).pos;
+            float3 v2   = mesh.V(verts.z).pos;
+
+            // If the error isn't known, estimate it
+            if (!largest.error || largest.error != triData.error)
+            {
+                float3 largestErrorBary;
+                float largestErrorFound = -1;
+                print("Estimating error for triangle %d\n", t);
+                print("    V0: (%f %f %f)\n", v0.x, v0.y, v0.z);
+                print("    V1: (%f %f %f)\n", v1.x, v1.y, v1.z);
+                print("    V2: (%f %f %f)\n", v2.x, v2.y, v2.z);
+
+                constexpr int InteriorSamples = 100;
+                constexpr int EdgeSamples     = 100;
+
+                auto errorAt = [&] (float3 bary)
+                {
+                    float3 interpolated = interpolateBarycentric(v0, v1, v2, bary);
+                    float  correctZ     = heightData.pixel<float>(float2(interpolated));
+
+                    float error = abs(correctZ - interpolated.z);
+                    if (error > largestErrorFound)
+                    {
+                        print("    (%.3f %.3f %.3f): abs(%f - %f) = %f > %f\n",
+                              bary.x, bary.y, bary.z,
+                              correctZ, interpolated.z, error, largestErrorFound);
+                        largestErrorBary  = bary;
+                        largestErrorFound = error;
+                    }
+                };
+
+                for (int i = 0; i < InteriorSamples; ++i)
+                {
+                    float3 bary = uniformBarycentric(gen);
+                    errorAt(bary);
+                }
+
+                for (int i = 0; i < EdgeSamples; ++i)
+                {
+                    float x = std::uniform_real_distribution<float>()(gen);
+                    int e = std::uniform_int_distribution<int>(0, 2)(gen);
+                    float3 bary(0, x, 1 - x);
+                    std::swap(bary[0], bary[e]);
+                    errorAt(bary);
+                }
+
+                triData.bary  = largestErrorBary;
+                triData.error = largestErrorFound;
+
+                largestError.emplace(t, largestErrorFound);
+                print("Triangle %d error: %f at (%.3f %.3f %.3f)\n",
+                      t, triData.error,
+                      triData.bary.x, triData.bary.y, triData.bary.z);
+            }
+            // The error is known, and it was the largest, so insert a new vertex
+            // in that position.
+            else
+            {
+                auto bary = triData.bary;
+                float3 newVertex = interpolateBarycentric(v0, v1, v2, bary);
+                newVertex.z      = heightData.pixel<float>(float2(newVertex));
+                newTriangles.clear();
+                delaunay.insertVertex(t, newVertex, &newTriangles);
+                print("Inserted new vertex (%f %f %f) in triangle %d (%.3f %.3f %.3f)\n",
+                      newVertex.x,
+                      newVertex.y,
+                      newVertex.z,
+                      t,
+                      bary.x,
+                      bary.y,
+                      bary.z);
+
+                knownTriangles.erase(t);
+                print("New triangles: ");
+                for (auto &nt : newTriangles)
+                {
+                    print("%d, ", nt);
+                    //if (!knownTriangles.count(nt))
+                    {
+                        largestError.emplace(nt);
+                        knownTriangles.emplace(nt);
+                    }
+                }
+                print("\n");
+            }
+		}
+
+        log("Heightmap", "Generated incremental min error triangulation with %d vertices and %d triangles in %.2f ms\n",
+            mesh.numVertices(),
+            mesh.numTriangles(),
+            timer.milliseconds());
+
+        setBounds(area);
+		gpuMesh(mesh,
+                float2(area.leftTop) / float2(heightmap->size),
+                float2(area.rightBottom) / float2(heightmap->size));
+	}
+
 	void render(CommandList &cmd, const Matrix &viewProj, bool wireframe = false)
 	{
         cmd.bind(renderTerrain);
@@ -430,7 +589,7 @@ class Terrain : public Window
     int2 areaStart = { 2000, 0 };
     int areaSize  = 2048;
 	int triangulationDensity = 6;
-    TriangulationMode triangulationMode = TriangulationMode::UniformGrid;
+    TriangulationMode triangulationMode = TriangulationMode::IncMinError;//TriangulationMode::UniformGrid;
     int vertexCount = -1;
     bool blitArea  = true;
     bool wireframe = false;
@@ -473,6 +632,7 @@ public:
     {
         auto area = Rect::withSize(areaStart, areaSize);
         vertexCount = 1 << triangulationDensity;
+        //vertexCount = triangulationDensity;
 
         switch (triangulationMode)
         {
@@ -482,6 +642,9 @@ public:
             break;
         case TriangulationMode::Random:
             heightmapRenderer.randomTriangulation(area, vertexCount);
+            break;
+        case TriangulationMode::IncMinError:
+            heightmapRenderer.incrementalMinError(area, vertexCount);
             break;
         }
 
@@ -507,7 +670,8 @@ public:
             ImGui::Combo("Triangulation mode",
                          reinterpret_cast<int *>(&triangulationMode),
                          "Uniform grid\0"
-                         "Random\0");
+                         "Random\0"
+                         "Incremental min error\0");
             ImGui::Checkbox("Show area", &blitArea);
             ImGui::Checkbox("Wireframe", &wireframe);
 			ImGui::Combo("Visualize triangulation",
@@ -523,6 +687,12 @@ public:
                 updateTerrain();
 
             ImGui::End();
+        }
+
+        if (0) {
+            auto area = Rect::withSize(areaStart, areaSize);
+            static int V = 2;
+            heightmapRenderer.incrementalMinError(area, V++);
         }
 
         {
@@ -560,6 +730,11 @@ public:
 
         device.execute(cmd);
         device.present(swapChain);
+
+#if 0
+        while ((GetAsyncKeyState(VK_SPACE) & 0x8000)) { pumpMessages(); Sleep(1); }
+        while (!(GetAsyncKeyState(VK_SPACE) & 0x8000)) { pumpMessages(); Sleep(1); }
+#endif
     }
 };
 

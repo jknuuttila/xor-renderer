@@ -263,6 +263,7 @@ namespace xor
             E(es.x) = Edge();
             E(es.y) = Edge();
             E(es.z) = Edge();
+            T(t)    = Triangle();
             removeData(t, m_freeTriangles, m_triangles);
         }
 
@@ -628,7 +629,7 @@ namespace xor
                     // to being on the circumcircle. This usually happens because of
                     // small triangles and numerical instability, and leads to problems
                     // with the removed area not being well-behaved anymore.
-                    constexpr float Epsilon = 1e-5f;
+                    constexpr float Epsilon = 1e-6f;
                     if (abs(posSign) < Epsilon)
                         removeTriangle = false;
                 }
