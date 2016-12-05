@@ -257,7 +257,7 @@ namespace xor
 
         struct UploadHeap
         {
-            static const size_t UploadHeapSize = 128 * 1024 * 1024;
+            static const size_t UploadHeapSize = 32 * 1024 * 1024;
             static const size_t UploadMetadataEntries = 4096;
 
             ComPtr<ID3D12Resource> heap;

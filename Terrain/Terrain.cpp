@@ -45,7 +45,7 @@ struct Heightmap
 #else
         Timer t;
         auto size = image.size();
-        auto sr   = image.subresource(0);
+        auto sr   = image.imageData();
         for (uint y = 0; y < size.y; ++y)
         {
             for (float f : sr.scanline<float>(y))
@@ -78,6 +78,7 @@ struct HeightmapRenderer
     GraphicsPipeline visualizeTriangulation;
 	Mesh mesh;
 	Heightmap *heightmap = nullptr;
+    ImageData heightData;
 	float2 minWorld;
 	float2 maxWorld;
 	float  maxErrorCoeff = .05f;
@@ -88,6 +89,7 @@ struct HeightmapRenderer
 	{
 		this->device = device;
 		heightmap = &hmap;
+        heightData = heightmap->image.imageData();
 
 		// uniformGrid(Rect::withSize(heightmap->size), -2);
 		randomTriangulation(Rect::withSize(heightmap->size), 300);
@@ -170,13 +172,23 @@ struct HeightmapRenderer
 		this->mesh = Mesh::generate(device, attrs, indices);
 	}
 
+    float3 vertex(Rect area, float2 uv)
+    {
+        float2 unnormalized = lerp(float2(area.leftTop), float2(area.rightBottom), uv);
+        float2 normalized   = unnormalized / float2(heightmap->size);
+
+        float height = heightData.pixel<float>(uint2(unnormalized));
+
+        return float3(normalized.x, normalized.y, height);
+    }
+
 	void randomTriangulation(Rect area, uint vertices)
 	{
 		Timer timer;
 
 		DE mesh;
-        int first  = mesh.addTriangle({1, 0, 0}, {0, 1, 0}, {0, 0, 0});
-        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), {1, 1, 0});
+        int first  = mesh.addTriangle(vertex(area, {1, 0}), vertex(area, {0, 1}), vertex(area, {0, 0}));
+        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), vertex(area, {1, 1}));
 
 		std::mt19937 gen(12345);
 
@@ -184,7 +196,7 @@ struct HeightmapRenderer
 
 		while (mesh.numVertices() < static_cast<int>(vertices))
 		{
-            int triangle;
+            int triangle = -1;
             float largestArea = 0;
 
             for (int j = 0; j < 10; ++j)
@@ -193,9 +205,12 @@ struct HeightmapRenderer
                 if (!mesh.triangleIsValid(t))
                     continue;
                 int3 verts = mesh.triangleVertices(t);
-                float area = abs(triangleDoubleSignedArea(float2(mesh.V(verts.x).pos),
-                                                          float2(mesh.V(verts.y).pos),
-                                                          float2(mesh.V(verts.z).pos)));
+
+                float2 v0 = float2(mesh.V(verts.x).pos);
+                float2 v1 = float2(mesh.V(verts.y).pos);
+                float2 v2 = float2(mesh.V(verts.z).pos);
+                float area = abs(triangleDoubleSignedArea(v0, v1, v2));
+
                 if (area > largestArea)
                 {
                     triangle    = t;
@@ -203,7 +218,7 @@ struct HeightmapRenderer
                 }
             }
 
-            if (!mesh.triangleIsValid(triangle))
+            if (triangle < 0 || !mesh.triangleIsValid(triangle))
                 continue;
 
 			float3 bary = uniformBarycentric(gen);

@@ -233,6 +233,13 @@ namespace xor
         return totalSize;
     }
 
+    ImageData Image::imageData() const
+    {
+        XOR_ASSERT(mipLevels() == 1 && arraySize() == 1,
+                   "Use subresource() for images with many subresources");
+        return subresource(0);
+    }
+
     ImageData Image::subresource(Subresource sr) const
     {
         return m_state->subresources[sr.index(m_state->mipLevels)].imageData();

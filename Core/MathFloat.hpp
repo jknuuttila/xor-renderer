@@ -12,6 +12,9 @@ namespace xor
         float integral;
         return modf(f, &integral);
     }
+    inline float2 frac(float2 f) { return float2(frac(f.x), frac(f.y)); }
+    inline float3 frac(float3 f) { return float3(frac(f.x), frac(f.y), frac(f.z)); }
+    inline float4 frac(float4 f) { return float4(frac(f.x), frac(f.y), frac(f.z), frac(f.w)); }
 
     // https://en.wikipedia.org/wiki/HSL_and_HSV#From_HSV
     inline float3 hsvToRGB(float3 hsv)
@@ -57,7 +60,8 @@ namespace xor
         return { s, c };
     }
 
-	inline float lerp(float a, float b, float alpha)
+    template <typename T, typename U>
+	inline T lerp(T a, T b, U alpha)
 	{
 		return a + (b - a) * alpha;
 	}

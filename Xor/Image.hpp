@@ -113,6 +113,8 @@ namespace xor
         template <typename T>
         const T &pixel(uint2 coords) const
         {
+			coords = min(coords, size - 1);
+
             // TODO: Block compressed formats
             uint offset =
                 coords.y * pitch +
@@ -125,7 +127,6 @@ namespace xor
         const T &pixel(float2 uv) const
         {
 			uint2 coords = uint2(uv * float2(size));
-			coords       = min(coords, size - 1);
 			return pixel<T>(coords);
         }
 
@@ -191,6 +192,7 @@ namespace xor
         uint mipLevels() const;
         uint arraySize() const;
         size_t sizeBytes() const;
+        ImageData imageData() const;
         ImageData subresource(Subresource sr) const;
         std::vector<ImageData> allSubresources() const;
         Image compress(Format dstFormat = Format()) const;
