@@ -60,6 +60,12 @@ struct Heightmap
 
 };
 
+enum class TriangulationMode
+{
+    UniformGrid,
+    Random,
+};
+
 enum class VisualizationMode
 {
 	Disabled,
@@ -91,8 +97,8 @@ struct HeightmapRenderer
 		heightmap = &hmap;
         heightData = heightmap->image.imageData();
 
-		// uniformGrid(Rect::withSize(heightmap->size), -2);
-		randomTriangulation(Rect::withSize(heightmap->size), 300);
+		uniformGrid(Rect::withSize(heightmap->size), 100);
+		// randomTriangulation(Rect::withSize(heightmap->size), 500);
 
 #if 0
         auto il = info::InputLayoutInfoBuilder()
@@ -118,7 +124,7 @@ struct HeightmapRenderer
 			.inputLayout(mesh.inputLayout()));
     }
 
-	void gpuMesh(const DE &mesh)
+	void gpuMesh(const DE &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
 	{
         auto verts    = mesh.vertices();
 		auto numVerts = verts.size();
@@ -129,9 +135,9 @@ struct HeightmapRenderer
 		for (uint i = 0; i < numVerts; ++i)
 		{
 			auto &v          = verts[i];
-			normalizedPos[i] = float2(v.pos);
+			uv[i]            = float2(v.pos);
+			normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), float2(v.pos));
 			height[i]        = v.pos.z;
-			uv[i]            = normalizedPos[i];
 		}
 
 		std::vector<uint> indices;
@@ -182,6 +188,102 @@ struct HeightmapRenderer
         return float3(normalized.x, normalized.y, height);
     }
 
+    void setBounds(Rect area)
+    {
+        float2 texels = float2(area.size());
+        float2 size   = texels * heightmap->texelSize;
+        float2 extent = size / 2.f;
+        minWorld = -extent;
+        maxWorld =  extent;
+    }
+
+    void uniformGrid(Rect area, uint vertices)
+    {
+        int density = static_cast<int>(round(sqrt(static_cast<double>(vertices))));
+
+        Timer t;
+
+        area.rightBottom = min(area.rightBottom, heightmap->size);
+        if (all(area.size() < uint2(128)))
+            area.leftTop = area.rightBottom - 128;
+
+        int2 sz        = int2(area.size());
+        float2 szWorld = float2(sz) * heightmap->texelSize;
+
+        int minDim = std::min(sz.x, sz.y);
+        int vertexDistance = minDim / density;
+        vertexDistance = std::max(1, vertexDistance);
+
+        int2 verts = sz / vertexDistance;
+        float2 fVerts = float2(verts);
+        float2 fRes   = float2(sz);
+        minWorld = -szWorld / 2.f;
+        maxWorld = minWorld + szWorld;
+
+        auto numVerts   = (verts.x + 1) * (verts.y + 1);
+
+        std::vector<float2> normalizedPos;
+        std::vector<float>  heights;
+        std::vector<float2> uvs;
+        std::vector<uint>   indices;
+
+        normalizedPos.reserve(numVerts);
+        uvs.reserve(numVerts);
+        heights.reserve(numVerts);
+        indices.reserve(verts.x * verts.y * (3 * 2));
+
+        float2 invSize = 1.f / float2(heightmap->size);
+
+        for (int y = 0; y <= verts.y; ++y)
+        {
+            for (int x = 0; x <= verts.x; ++x)
+            {
+                int2 vertexGridCoords = int2(x, y);
+                int2 texCoords = min(vertexGridCoords * vertexDistance + area.leftTop, heightmap->size - 1);
+                float2 uv = float2(vertexGridCoords * vertexDistance) / fRes;
+
+                float height = heightData.pixel<float>(uint2(texCoords));
+
+                normalizedPos.emplace_back(uv);
+                heights.emplace_back(height);
+                uvs.emplace_back((float2(texCoords) + 0.5f) * invSize);
+            }
+        }
+
+        int vertsPerRow = verts.y + 1;
+        for (int y = 0; y < verts.y; ++y)
+        {
+            for (int x = 0; x < verts.x; ++x)
+            {
+                uint ul = y * vertsPerRow + x;
+                uint ur = ul + 1;
+                uint dl = ul + vertsPerRow;
+                uint dr = dl + 1;
+
+                indices.emplace_back(ul);
+                indices.emplace_back(dl);
+                indices.emplace_back(ur);
+                indices.emplace_back(dl);
+                indices.emplace_back(dr);
+                indices.emplace_back(ur);
+            }
+        }
+
+        log("HeightmapRenderer", "Generated uniform grid mesh with %zu vertices and %zu indices in %.2f ms\n",
+            normalizedPos.size(),
+            indices.size(),
+            t.milliseconds());
+
+        VertexAttribute attrs[] =
+        {
+            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
+            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
+            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uvs) },
+        };
+
+        this->mesh = Mesh::generate(device, attrs, indices);
+    }
+
 	void randomTriangulation(Rect area, uint vertices)
 	{
 		Timer timer;
@@ -227,6 +329,7 @@ struct HeightmapRenderer
                                                 mesh.V(vs.y).pos,
                                                 mesh.V(vs.z).pos,
                                                 bary);
+            pos.z = heightData.pixel<float>(float2(pos));
 
             delaunay.insertVertex(triangle, pos);
 		}
@@ -236,7 +339,10 @@ struct HeightmapRenderer
             mesh.numTriangles(),
             timer.milliseconds());
 
-		gpuMesh(mesh);
+        setBounds(area);
+		gpuMesh(mesh,
+                float2(area.leftTop) / float2(heightmap->size),
+                float2(area.rightBottom) / float2(heightmap->size));
 	}
 
 	void render(CommandList &cmd, const Matrix &viewProj, bool wireframe = false)
@@ -324,6 +430,8 @@ class Terrain : public Window
     int2 areaStart = { 2000, 0 };
     int areaSize  = 2048;
 	int triangulationDensity = 6;
+    TriangulationMode triangulationMode = TriangulationMode::UniformGrid;
+    int vertexCount = -1;
     bool blitArea  = true;
     bool wireframe = false;
 
@@ -363,7 +471,20 @@ public:
 
     void updateTerrain()
     {
-        //heightmapRenderer.uniformGrid(Rect::withSize(areaStart, areaSize), -(1 << triangulationDensity));
+        auto area = Rect::withSize(areaStart, areaSize);
+        vertexCount = 1 << triangulationDensity;
+
+        switch (triangulationMode)
+        {
+        case TriangulationMode::UniformGrid:
+        default:
+            heightmapRenderer.uniformGrid(area, vertexCount);
+            break;
+        case TriangulationMode::Random:
+            heightmapRenderer.randomTriangulation(area, vertexCount);
+            break;
+        }
+
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
     }
 
@@ -380,7 +501,13 @@ public:
         {
             ImGui::SliderInt("Size", &areaSize, 0, heightmap.size.x);
             ImGui::SliderInt2("Start", areaStart.data(), 0, heightmap.size.x - areaSize);
-            ImGui::SliderInt("Density", &triangulationDensity, 1, 11);
+            ImGui::SliderInt("Density", &triangulationDensity, 5, 16);
+            vertexCount = 1 << triangulationDensity;
+            ImGui::Text("Vertex count: %d", vertexCount);
+            ImGui::Combo("Triangulation mode",
+                         reinterpret_cast<int *>(&triangulationMode),
+                         "Uniform grid\0"
+                         "Random\0");
             ImGui::Checkbox("Show area", &blitArea);
             ImGui::Checkbox("Wireframe", &wireframe);
 			ImGui::Combo("Visualize triangulation",

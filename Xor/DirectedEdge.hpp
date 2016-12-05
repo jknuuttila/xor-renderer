@@ -571,7 +571,7 @@ namespace xor
         // Triangles that will be checked for circumcircle violations.
         std::vector<int> m_trisToExplore;
         std::unordered_set<int> m_removedEdges;
-        std::vector<int> m_removedTriangles;
+        std::unordered_set<int> m_removedTriangles;
         std::vector<int> m_removedBoundary;
         std::unordered_map<int, int> m_vertexNeighbors;
     public:
@@ -595,6 +595,9 @@ namespace xor
             {
                 int tri = m_trisToExplore.back();
                 m_trisToExplore.pop_back();
+
+                if (m_removedTriangles.count(tri))
+                    continue;
 
                 bool removeTriangle = m_trisExplored.empty();
 
@@ -625,7 +628,7 @@ namespace xor
                     // to being on the circumcircle. This usually happens because of
                     // small triangles and numerical instability, and leads to problems
                     // with the removed area not being well-behaved anymore.
-                    constexpr float Epsilon = 1e-6f;
+                    constexpr float Epsilon = 1e-5f;
                     if (abs(posSign) < Epsilon)
                         removeTriangle = false;
                 }
@@ -635,7 +638,7 @@ namespace xor
                 {
                     int3 edges = mesh.triangleAllEdges(tri);
 
-                    m_removedTriangles.emplace_back(tri);
+                    m_removedTriangles.insert(tri);
                     for (int e : edges.span())
                     {
                         m_removedEdges.insert(e);
