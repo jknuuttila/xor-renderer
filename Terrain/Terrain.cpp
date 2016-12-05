@@ -208,10 +208,10 @@ struct HeightmapRenderer
 
 			float3 bary = uniformBarycentric(gen);
             int3 vs = mesh.triangleVertices(triangle);
-            float3 pos =
-                mesh.V(vs.x).pos * bary.x +
-                mesh.V(vs.y).pos * bary.y +
-                mesh.V(vs.z).pos * bary.z;
+            float3 pos = interpolateBarycentric(mesh.V(vs.x).pos,
+                                                mesh.V(vs.y).pos,
+                                                mesh.V(vs.z).pos,
+                                                bary);
 
             delaunay.insertVertex(triangle, pos);
 		}

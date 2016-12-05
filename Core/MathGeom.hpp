@@ -52,6 +52,14 @@ namespace xor
         return barycentric(a, b, c, triangleDoubleSignedArea(a, b, c));
     }
 
+    template <typename T>
+    inline T interpolateBarycentric(T a, T b, T c, float3 bary)
+    {
+        return a * bary.x
+            +  b * bary.y
+            +  c * bary.z;
+    }
+
     // Test if the quadrilateral ABCD is convex. Vertices B and C should
     // be adjacent to both A and D.
     inline bool isQuadConvex(float2 a, float2 b, float2 c, float2 d)
