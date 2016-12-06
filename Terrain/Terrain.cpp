@@ -377,20 +377,27 @@ struct HeightmapRenderer
         using DErr = DirectedEdge<TriangleError>;
 		DErr mesh;
 
-        int first  = mesh.addTriangle(vertex(area, {1, 0}), vertex(area, {0, 1}), vertex(area, {0, 0}));
-        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), vertex(area, {1, 1}));
+        float3 minBound = vertex(area, {0, 0});
+        float3 maxBound = vertex(area, {1, 1});
 
         std::mt19937 gen(95832);
         BowyerWatson<DErr> delaunay(mesh);
         std::priority_queue<LargestError> largestError;
         std::unordered_set<int> knownTriangles;
+        std::vector<int> newTriangles;
+
+        delaunay.superTriangle(float2(minBound), float2(maxBound));
+
+        int first  = mesh.addTriangle(vertex(area, {1, 0}), vertex(area, {0, 1}), vertex(area, {0, 0}));
+        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), vertex(area, {1, 1}));
+
         largestError.emplace(first);
         largestError.emplace(second);
         knownTriangles.emplace(first);
         knownTriangles.emplace(second);
-        std::vector<int> newTriangles;
 
-		while (mesh.numVertices() < static_cast<int>(vertices))
+        // Subtract 3 from the vertex count to account for the supertriangle
+		while (mesh.numVertices() - 3 < static_cast<int>(vertices))
 		{
             auto largest = largestError.top();
             largestError.pop();
@@ -492,6 +499,8 @@ struct HeightmapRenderer
                 print("\n");
             }
 		}
+
+        delaunay.removeSuperTriangle();
 
         log("Heightmap", "Generated incremental min error triangulation with %d vertices and %d triangles in %.2f ms\n",
             mesh.numVertices(),

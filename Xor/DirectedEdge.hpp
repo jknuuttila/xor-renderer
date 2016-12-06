@@ -157,6 +157,67 @@ namespace xor
             return edgeNeighbor(e) < 0;
         }
 
+        int vertexEdge(int v) const
+        {
+            return V(v).edge;
+        }
+
+        template <typename F>
+        int vertexForEachTriangle(int v, F &&f) const
+        {
+            int count = 0;
+            int firstEdge = vertexEdge(v);
+            int e = firstEdge;
+
+            if (e < 0)
+                return count;
+
+            for (;;)
+            {
+                int t = edgeTriangle(e);
+                f(t);
+                ++count;
+
+                // e always points away from the edge, so its neighbor,
+                // if any, points to it.
+                int n = edgeNeighbor(e);
+
+                // If we hit an edge with no neighbor, the vertex is
+                // a boundary vertex and we need to loop the other
+                // direction also.
+                if (n < 0)
+                    break;
+
+                // Because n points to the edge, its successor points away
+                // from it. They both belong to the same triangle, which
+                // is a different triangle than the one iterated just before.
+                e = edgeNext(n);
+
+                // Once we hit the first edge again, we are done.
+                if (e == firstEdge)
+                    return count;
+            }
+
+            e = firstEdge;
+
+            for (;;)
+            {
+                // e points away from the edge, so its predecessor points to it.
+                int p = edgePrev(e);
+
+                // And its neighbor again points away from it.
+                int e = edgeNeighbor(p);
+
+                if (e < 0 || e == firstEdge)
+                    return count;
+
+                // The neighbor belongs to a new triangle.
+                int t = edgeTriangle(e);
+                f(t);
+                ++count;
+            }
+        }
+
         void clear()
         {
             m_vertices.clear();
@@ -564,6 +625,7 @@ namespace xor
     template <typename DE>
     class BowyerWatson
     {
+        // using DE = DirectedEdge<>;
         // Mesh that this algorithm operates on
         DE &mesh;
         // Triangles that have already been checked for circumcircle violations
@@ -575,16 +637,35 @@ namespace xor
         std::unordered_set<int> m_removedTriangles;
         std::vector<int> m_removedBoundary;
         std::unordered_map<int, int> m_vertexNeighbors;
+        int3 m_superTriangle = int3(-1);
     public:
         BowyerWatson(DE &mesh) : mesh(mesh) {}
 
+        // TODO: float rectangles
+        void superTriangle(float2 pointSetMinBound, float2 pointSetMaxBound)
+        {
+            XOR_ASSERT(all(m_superTriangle == int3(-1)), "Supertriangle can only be set once");
+            float2 dims = pointSetMaxBound - pointSetMinBound;
+            float2 center = pointSetMinBound + dims / 2.f;
+            float maxDim = std::max(dims.x, dims.y);
+
+            float enclosingDim = maxDim * 10.f;
+
+            auto v0 = float3(center.x,                center.y - enclosingDim, 0);
+            auto v1 = float3(center.x - enclosingDim, center.y + enclosingDim, 0);
+            auto v2 = float3(center.x + enclosingDim, center.y + enclosingDim, 0);
+
+            int t = mesh.addTriangle(v0, v1, v2);
+            m_superTriangle = mesh.triangleVertices(t);
+        }
+
         // Assuming that the triangulation is already a Delaunay triangulation,
         // insert one new vertex inside the specified triangle, and retriangulate
-        // so that the mesh stays Delaunay.
-        void insertVertex(int containingTriangle,
-                          float3 newVertexPos,
-                          std::vector<int> *newTriangles = nullptr,
-                          std::vector<int> *removedTriangles = nullptr)
+        // so that the mesh stays Delaunay. Returns the new vertex ID.
+        int insertVertex(int containingTriangle,
+                         float3 newVertexPos,
+                         std::vector<int> *newTriangles = nullptr,
+                         std::vector<int> *removedTriangles = nullptr)
         {
             m_removedTriangles.clear();
             m_removedEdges.clear();
@@ -711,6 +792,34 @@ namespace xor
                 mesh.disconnectTriangle(tri);
                 mesh.removeTriangle(tri);
             }
+
+            return newVertex;
+        }
+
+        void removeSuperTriangle()
+        {
+            m_removedTriangles.clear();
+
+            mesh.vertexForEachTriangle(m_superTriangle.x, [&] (int t)
+            {
+                m_removedTriangles.emplace(t);
+            });
+            mesh.vertexForEachTriangle(m_superTriangle.y, [&] (int t)
+            {
+                m_removedTriangles.emplace(t);
+            });
+            mesh.vertexForEachTriangle(m_superTriangle.z, [&] (int t)
+            {
+                m_removedTriangles.emplace(t);
+            });
+
+            for (int t : m_removedTriangles)
+            {
+                mesh.disconnectTriangle(t);
+                mesh.removeTriangle(t);
+            }
+
+            m_superTriangle = int3(-1);
         }
     };
 
