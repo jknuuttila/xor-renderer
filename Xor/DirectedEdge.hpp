@@ -361,7 +361,7 @@ namespace xor
         }
 
         // Subdivide an existing triangle to three triangles by adding a new vertex
-        // inside the triangle.
+        // inside the triangle. The first edge of each new triangle is the outer edge.
         int3 triangleSubdivide(int t, float3 newVertexPos)
         {
             int v = addVertex(newVertexPos);
@@ -921,6 +921,131 @@ namespace xor
             return any(int3(verts.x) == m_superTriangle) ||
                 any(int3(verts.y) == m_superTriangle) ||
                 any(int3(verts.z) == m_superTriangle);
+        }
+    };
+
+    template <typename DE>
+    class DelaunayFlip
+    {
+         // using DE = DirectedEdge<>;
+
+         DE &mesh;
+         std::unordered_set<int> m_affected;
+         std::unordered_set<int> m_edges;
+    public:
+
+        DelaunayFlip(DE &mesh) : mesh(mesh)
+        {}
+
+        int insertVertex(int containingTriangle,
+                         float3 newVertexPos,
+                         std::vector<int> *affectedTriangles = nullptr)
+        {
+            m_edges.clear();
+            m_affected.clear();
+
+            m_affected.emplace(containingTriangle);
+
+            int3 ts = mesh.triangleSubdivide(containingTriangle, newVertexPos);
+            int newVertex = mesh.edgeTarget(mesh.edgeNext(ts.x));
+
+            m_affected.emplace(ts.x);
+            m_affected.emplace(ts.y);
+            m_affected.emplace(ts.z);
+
+            m_edges.emplace(mesh.triangleEdge(ts.x));
+            m_edges.emplace(mesh.triangleEdge(ts.y));
+            m_edges.emplace(mesh.triangleEdge(ts.z));
+
+            while (!m_edges.empty())
+            {
+                int e = *m_edges.begin();
+                m_edges.erase(e);
+
+                if (!isLocallyDelaunay(e))
+                {
+                    m_affected.emplace(mesh.edgeTriangle(e));
+                    m_affected.emplace(mesh.edgeTriangle(mesh.edgeNeighbor(e)));
+
+                    int diagonal = mesh.edgeFlip(e);
+                    int n = mesh.edgeNeighbor(diagonal);
+
+                    m_affected.emplace(mesh.edgeTriangle(diagonal));
+                    m_affected.emplace(mesh.edgeTriangle(n));
+
+                    m_edges.emplace(mesh.edgePrev(diagonal));
+                    m_edges.emplace(mesh.edgeNext(diagonal));
+                    m_edges.emplace(mesh.edgePrev(n));
+                    m_edges.emplace(mesh.edgeNext(n));
+                }
+            }
+
+            if (affectedTriangles)
+                affectedTriangles->insert(affectedTriangles->begin(),
+                                          m_affected.begin(),
+                                          m_affected.end());
+
+            return newVertex;
+        }
+
+        bool isLocallyDelaunay(int e) const
+        {
+            int n = mesh.edgeNeighbor(e);
+
+            if (n < 0)
+                return true;
+
+            if (!mesh.edgeIsFlippable(e))
+                return true;
+
+            int t0 = mesh.edgeTriangle(e);
+            int t1 = mesh.edgeTriangle(n);
+
+            auto pos0 = mesh.triangleVertexPositions(t0);
+            auto pos1 = mesh.triangleVertexPositions(t1);
+
+            auto cc0 = circumcircle(float2(pos0[0]), float2(pos0[1]), float2(pos0[2]));
+            int v1 = mesh.edgeTarget(mesh.edgeNext(n));
+
+            if (cc0.contains(float2(mesh.V(v1).pos)))
+                return false;
+
+            auto cc1 = circumcircle(float2(pos1[0]), float2(pos1[1]), float2(pos1[2]));
+            int v0 = mesh.edgeTarget(mesh.edgeNext(e));
+
+            if (cc1.contains(float2(mesh.V(v0).pos)))
+                return false;
+
+            return true;
+        }
+
+        int insertVertex(float3 newVertexPos,
+                         std::vector<int> *affectedTriangles = nullptr)
+        {
+            for (int t = 0; t < mesh.numTriangles(); ++t)
+            {
+                if (mesh.triangleIsValid(t))
+                {
+                    auto vs = mesh.triangleVertexPositions(t);
+                    float2 v0 = float2(vs[0]);
+                    float2 v1 = float2(vs[1]);
+                    float2 v2 = float2(vs[2]);
+
+                    if (isTriangleCCW(v0, v1, v2))
+                    {
+                        if (isPointInsideTriangle(v0, v1, v2, float2(newVertexPos)))
+                            return insertVertex(t, newVertexPos, affectedTriangles);
+                    }
+                    else
+                    {
+                        if (isPointInsideTriangle(v0, v2, v1, float2(newVertexPos)))
+                            return insertVertex(t, newVertexPos, affectedTriangles);
+                    }
+                }
+            }
+
+            XOR_ASSERT(false, "Could not find a triangle to insert the vertex in");
+            return -1;
         }
     };
 

@@ -381,11 +381,13 @@ struct HeightmapRenderer
         float3 maxBound = vertex(area, {1, 1});
 
         std::mt19937 gen(95832);
-        BowyerWatson<DErr> delaunay(mesh);
+
         std::priority_queue<LargestError> largestError;
         std::unordered_set<int> knownTriangles;
         std::vector<int> newTriangles;
 
+#if 0
+        BowyerWatson<DErr> delaunay(mesh);
         delaunay.superTriangle(float2(minBound), float2(maxBound));
 
         {
@@ -402,6 +404,13 @@ struct HeightmapRenderer
                 });
             }
         }
+#else
+        DelaunayFlip<DErr> delaunay(mesh);
+        int first  = mesh.addTriangle(vertex(area, {1, 0}), vertex(area, {0, 1}), vertex(area, {0, 0}));
+        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), vertex(area, {1, 1}));
+        largestError.emplace(first);
+        largestError.emplace(second);
+#endif
 
         XOR_ASSERT(!largestError.empty(), "No valid triangles to subdivide");
 
@@ -412,7 +421,9 @@ struct HeightmapRenderer
             largestError.pop();
             int t = largest.triangle;
 
-            if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t))
+            if (t < 0 || !mesh.triangleIsValid(t)
+                // || delaunay.triangleContainsSuperVertices(t)
+                )
             {
                 print("Triangle %d is invalid, skipping\n", t);
                 continue;
@@ -434,7 +445,7 @@ struct HeightmapRenderer
                 print("    V1: (%f %f %f)\n", v1.x, v1.y, v1.z);
                 print("    V2: (%f %f %f)\n", v2.x, v2.y, v2.z);
 
-                constexpr int InteriorSamples = 100;
+                constexpr int InteriorSamples = 5;
                 constexpr int EdgeSamples     = 100;
 
                 auto errorAt = [&] (float3 bary)
@@ -509,7 +520,7 @@ struct HeightmapRenderer
             }
 		}
 
-        delaunay.removeSuperTriangle();
+        // delaunay.removeSuperTriangle();
 
         log("Heightmap", "Generated incremental min error triangulation with %d vertices and %d triangles in %.2f ms\n",
             mesh.numVertices(),
