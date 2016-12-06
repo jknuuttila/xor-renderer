@@ -114,6 +114,17 @@ namespace xor
             return { edgeTarget(edges.z), edgeTarget(edges.x), edgeTarget(edges.y) };
         }
 
+        // Return the positions of the three vertices of the triangle.
+        std::array<float3, 3> triangleVertexPositions(int t) const
+        {
+            std::array<float3, 3> ps;
+            int3 verts = triangleVertices(t);
+            ps[0] = V(verts.x).pos;
+            ps[1] = V(verts.y).pos;
+            ps[2] = V(verts.z).pos;
+            return ps;
+        }
+
         // Return true if the given triangle is a valid triangle in the mesh.
         bool triangleIsValid(int t) const
         {
@@ -206,15 +217,17 @@ namespace xor
                 int p = edgePrev(e);
 
                 // And its neighbor again points away from it.
-                int e = edgeNeighbor(p);
+                int n = edgeNeighbor(p);
 
-                if (e < 0 || e == firstEdge)
+                if (n < 0 || n == firstEdge)
                     return count;
 
                 // The neighbor belongs to a new triangle.
-                int t = edgeTriangle(e);
+                int t = edgeTriangle(n);
                 f(t);
                 ++count;
+                
+                e = n;
             }
         }
 
@@ -499,30 +512,54 @@ namespace xor
         void debugEdge(const char *file, int line, const char *name, int e, const char *prefix = nullptr) const
         {
             if (e >= 0)
+            {
                 print("%s%sEdge \"%s\" (%d): (%d -> %d) neighbor: %d\n",
                       prefix ? prefix : "", prefix ? " " : "",
                       name, e, edgeStart(e), edgeTarget(e), edgeNeighbor(e));
+            }
             else
-                print("%s%sEdge \"%s\" (%d)\n", file, line, name, e);
+            {
+                print("%s%sEdge \"%s\" (%d)\n",
+                      prefix ? prefix : "", prefix ? " " : "",
+                      name, e);
+            }
         }
 
         void debugVertex(const char *file, int line, const char *name, int v, const char *prefix = nullptr) const
         {
-            print("%s%sVertex \"%s\" (%d): (%.3f %.3f %.3f) edge: %d\n",
-                  prefix ? prefix : "", prefix ? " " : "",
-                  name, v,
-                  V(v).pos.x,
-                  V(v).pos.y,
-                  V(v).pos.z,
-                  V(v).edge);
+            if (v >= 0)
+            {
+                print("%s%sVertex \"%s\" (%d): (%.3f %.3f %.3f) edge: %d\n",
+                      prefix ? prefix : "", prefix ? " " : "",
+                      name, v,
+                      V(v).pos.x,
+                      V(v).pos.y,
+                      V(v).pos.z,
+                      V(v).edge);
+            }
+            else
+            {
+                print("%s%sVertex \"%s\" (%d)\n",
+                      prefix ? prefix : "", prefix ? " " : "",
+                      name, v);
+            }
         }
 
         void debugTriangle(const char *file, int line, const char *name, int t, const char *prefix = nullptr) const
         {
-            auto vs = triangleVertices(t);
-            print("%s%sTriangle \"%s\" (%d): (%d %d %d)\n",
-                  prefix ? prefix : "", prefix ? " " : "",
-                  name, t, vs.x, vs.y, vs.z);
+            if (t >= 0)
+            {
+                auto vs = triangleVertices(t);
+                print("%s%sTriangle \"%s\" (%d): (%d %d %d)\n",
+                      prefix ? prefix : "", prefix ? " " : "",
+                      name, t, vs.x, vs.y, vs.z);
+            }
+            else
+            {
+                print("%s%sTriangle \"%s\" (%d)\n",
+                      prefix ? prefix : "", prefix ? " " : "",
+                      name, t);
+            }
         }
     private:
         std::vector<int>      m_freeVertices;
@@ -697,6 +734,7 @@ namespace xor
                     float2 v1 = float2(mesh.V(verts.y).pos);
                     float2 v2 = float2(mesh.V(verts.z).pos);
 
+#if 0
                     float2 inside = (v0 + v1 + v2) / 3.f;
 
                     float insideSign = pointsOnCircle(v0, v1, v2, inside);
@@ -713,6 +751,10 @@ namespace xor
                     constexpr float Epsilon = 1e-6f;
                     if (abs(posSign) < Epsilon)
                         removeTriangle = false;
+#else
+                    auto cc = circumcircle(v0, v1, v2);
+                    removeTriangle = cc.contains(float2(newVertexPos));
+#endif
                 }
 
                 // Collect the removed triangle and its edges for later processing
@@ -796,22 +838,70 @@ namespace xor
             return newVertex;
         }
 
+        // Like insertVertex(t, pos, ...), but searches for the containing triangle instead.
+        int insertVertex(float3 newVertexPos,
+                         std::vector<int> *newTriangles = nullptr,
+                         std::vector<int> *removedTriangles = nullptr)
+        {
+            for (int t = 0; t < mesh.numTriangles(); ++t)
+            {
+                if (mesh.triangleIsValid(t))
+                {
+                    auto vs = mesh.triangleVertexPositions(t);
+                    float2 v0 = float2(vs[0]);
+                    float2 v1 = float2(vs[1]);
+                    float2 v2 = float2(vs[2]);
+
+                    print("Check (%f %f) vs triangle %d (%f %f)-(%f %f)-(%f %f)\n",
+                          newVertexPos.x, newVertexPos.y, t,
+                          v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
+
+                    if (isTriangleCCW(v0, v1, v2))
+                    {
+                        if (isPointInsideTriangle(v0, v1, v2, float2(newVertexPos)))
+                        {
+                            print("    Yes (CCW)\n");
+                            return insertVertex(t, newVertexPos, newTriangles, removedTriangles);
+                        }
+                        else
+                        {
+                            print("    No (CCW)\n");
+                        }
+                    }
+                    else
+                    {
+                        if (isPointInsideTriangle(v0, v2, v1, float2(newVertexPos)))
+                        {
+                            print("    Yes (CW)\n");
+                            return insertVertex(t, newVertexPos, newTriangles, removedTriangles);
+                        }
+                        else
+                        {
+                            print("    No (CW)\n");
+                        }
+                    }
+                }
+                else
+                {
+                    print("Triangle %d invalid\n");
+                }
+            }
+
+            XOR_ASSERT(false, "Could not find a triangle to insert the vertex in");
+            return -1;
+        }
+
         void removeSuperTriangle()
         {
             m_removedTriangles.clear();
 
-            mesh.vertexForEachTriangle(m_superTriangle.x, [&] (int t)
+            for (int v : m_superTriangle.span())
             {
-                m_removedTriangles.emplace(t);
-            });
-            mesh.vertexForEachTriangle(m_superTriangle.y, [&] (int t)
-            {
-                m_removedTriangles.emplace(t);
-            });
-            mesh.vertexForEachTriangle(m_superTriangle.z, [&] (int t)
-            {
-                m_removedTriangles.emplace(t);
-            });
+                mesh.vertexForEachTriangle(v, [&](int t)
+                {
+                    m_removedTriangles.emplace(t);
+                });
+            }
 
             for (int t : m_removedTriangles)
             {
@@ -820,6 +910,17 @@ namespace xor
             }
 
             m_superTriangle = int3(-1);
+        }
+
+        bool triangleContainsSuperVertices(int t) const
+        {
+            if (m_superTriangle.x < 0)
+                return false;
+
+            int3 verts = mesh.triangleVertices(t);
+            return any(int3(verts.x) == m_superTriangle) ||
+                any(int3(verts.y) == m_superTriangle) ||
+                any(int3(verts.z) == m_superTriangle);
         }
     };
 

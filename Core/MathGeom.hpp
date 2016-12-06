@@ -28,9 +28,9 @@ namespace xor
     inline bool isPointInsideTriangle(float2 a, float2 b, float2 c, float2 p)
     {
         return
-            edgeFunction01(a, b, c, p) > 0 &&
-            edgeFunction12(a, b, c, p) > 0 &&
-            edgeFunction20(a, b, c, p) > 0;
+            edgeFunction01(a, b, c, p) >= 0 &&
+            edgeFunction12(a, b, c, p) >= 0 &&
+            edgeFunction20(a, b, c, p) >= 0;
     }
 
     inline float triangleDoubleSignedArea(float2 a, float2 b, float2 c)
@@ -73,8 +73,27 @@ namespace xor
         return (ABD * ACD < 0);
     }
 
+    struct Circle
+    {
+        float2 center;
+        float radiusSqr = 0;
+
+        Circle() = default;
+        Circle(float2 center, float radius)
+            : center(center)
+            , radiusSqr(radius * radius)
+        {}
+
+        float radius() const { return sqrt(radiusSqr); }
+
+        bool contains(float2 p) const
+        {
+            return (center - p).lengthSqr() <= radiusSqr;
+        }
+    };
+
     // From https://en.wikipedia.org/wiki/Circumscribed_circle
-    inline float2 circumcircleCenter(float2 A, float2 B, float2 C)
+    inline Circle circumcircle(float2 A, float2 B, float2 C)
     {
         float A2 = A.lengthSqr();
         float B2 = B.lengthSqr();
@@ -96,7 +115,10 @@ namespace xor
                            B.x, B.y, B2,
                            C.x, C.y, C2).determinant();
 
-        return S / a;
+        Circle cc;
+        cc.center    = S / a;
+        cc.radiusSqr = b/a + S.lengthSqr() / (a*a);
+        return cc;
     }
 
     // Return a number that is zero if all the points are on the same circle.

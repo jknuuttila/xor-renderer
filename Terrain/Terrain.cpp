@@ -388,13 +388,22 @@ struct HeightmapRenderer
 
         delaunay.superTriangle(float2(minBound), float2(maxBound));
 
-        int first  = mesh.addTriangle(vertex(area, {1, 0}), vertex(area, {0, 1}), vertex(area, {0, 0}));
-        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), vertex(area, {1, 1}));
+        {
+            int v0 = delaunay.insertVertex(vertex(area, { 1, 0 }));
+            int v1 = delaunay.insertVertex(vertex(area, { 0, 1 }));
+            int v2 = delaunay.insertVertex(vertex(area, { 0, 0 }));
+            int v3 = delaunay.insertVertex(vertex(area, { 1, 1 }));
 
-        largestError.emplace(first);
-        largestError.emplace(second);
-        knownTriangles.emplace(first);
-        knownTriangles.emplace(second);
+            for (int v : { v0, v1, v2, v3 })
+            {
+                mesh.vertexForEachTriangle(v, [&](int t)
+                {
+                    largestError.emplace(t);
+                });
+            }
+        }
+
+        XOR_ASSERT(!largestError.empty(), "No valid triangles to subdivide");
 
         // Subtract 3 from the vertex count to account for the supertriangle
 		while (mesh.numVertices() - 3 < static_cast<int>(vertices))
@@ -403,7 +412,7 @@ struct HeightmapRenderer
             largestError.pop();
             int t = largest.triangle;
 
-            if (t < 0 || !mesh.triangleIsValid(t))
+            if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t))
             {
                 print("Triangle %d is invalid, skipping\n", t);
                 continue;
@@ -487,11 +496,11 @@ struct HeightmapRenderer
 
                 knownTriangles.erase(t);
                 print("New triangles: ");
-                for (auto &nt : newTriangles)
+                for (int nt : newTriangles)
                 {
-                    print("%d, ", nt);
                     //if (!knownTriangles.count(nt))
                     {
+                        print("%d, ", nt);
                         largestError.emplace(nt);
                         knownTriangles.emplace(nt);
                     }
