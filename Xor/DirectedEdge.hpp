@@ -932,6 +932,8 @@ namespace xor
          DE &mesh;
          std::unordered_set<int> m_affected;
          std::unordered_set<int> m_edges;
+         std::unordered_set<int> m_nextEdges;
+         int3 m_superTriangle = int3(-1);
     public:
 
         DelaunayFlip(DE &mesh) : mesh(mesh)
@@ -947,36 +949,81 @@ namespace xor
             m_affected.emplace(containingTriangle);
 
             int3 ts = mesh.triangleSubdivide(containingTriangle, newVertexPos);
-            int newVertex = mesh.edgeTarget(mesh.edgeNext(ts.x));
+            int newVertex = mesh.edgeTarget(mesh.edgeNext(mesh.triangleEdge(ts.x)));
 
             m_affected.emplace(ts.x);
             m_affected.emplace(ts.y);
             m_affected.emplace(ts.z);
 
-            m_edges.emplace(mesh.triangleEdge(ts.x));
-            m_edges.emplace(mesh.triangleEdge(ts.y));
-            m_edges.emplace(mesh.triangleEdge(ts.z));
+            m_nextEdges.emplace(mesh.triangleEdge(ts.x));
+            m_nextEdges.emplace(mesh.triangleEdge(ts.y));
+            m_nextEdges.emplace(mesh.triangleEdge(ts.z));
 
-            while (!m_edges.empty())
+            constexpr int InfiniteLoopGuard = 10;
+            int loops = 0;
+            std::unordered_set<int> prevEdges;
+
+            while (!m_nextEdges.empty())
             {
-                int e = *m_edges.begin();
-                m_edges.erase(e);
+                XOR_ASSERT(m_edges.empty(), "Edges unexpectedly empty");
+                m_nextEdges.swap(m_edges);
 
-                if (!isLocallyDelaunay(e))
+                if (loops++ > InfiniteLoopGuard)
                 {
-                    m_affected.emplace(mesh.edgeTriangle(e));
-                    m_affected.emplace(mesh.edgeTriangle(mesh.edgeNeighbor(e)));
+                    if (prevEdges.empty())
+                    {
+                        prevEdges.insert(m_edges.begin(), m_edges.end());
+                    }
+                    else if (prevEdges.size() == m_edges.size())
+                    {
+                        bool inInfiniteLoop = true;
 
-                    int diagonal = mesh.edgeFlip(e);
-                    int n = mesh.edgeNeighbor(diagonal);
+                        for (int e : m_edges)
+                        {
+                            if (!prevEdges.count(e))
+                            {
+                                inInfiniteLoop = false;
+                                break;
+                            }
+                        }
 
-                    m_affected.emplace(mesh.edgeTriangle(diagonal));
-                    m_affected.emplace(mesh.edgeTriangle(n));
+                        if (inInfiniteLoop)
+                        {
+                            break;
+                        }
+                        else
+                        {
+                            loops = 0;
+                            prevEdges.clear();
+                        }
+                    }
+                    else
+                    {
+                        prevEdges.clear();
+                    }
+                }
 
-                    m_edges.emplace(mesh.edgePrev(diagonal));
-                    m_edges.emplace(mesh.edgeNext(diagonal));
-                    m_edges.emplace(mesh.edgePrev(n));
-                    m_edges.emplace(mesh.edgeNext(n));
+                while (!m_edges.empty())
+                {
+                    int e = *m_edges.begin();
+                    m_edges.erase(e);
+
+                    if (!isLocallyDelaunay(e))
+                    {
+                        m_affected.emplace(mesh.edgeTriangle(e));
+                        m_affected.emplace(mesh.edgeTriangle(mesh.edgeNeighbor(e)));
+
+                        int diagonal = mesh.edgeFlip(e);
+                        int n = mesh.edgeNeighbor(diagonal);
+
+                        m_affected.emplace(mesh.edgeTriangle(diagonal));
+                        m_affected.emplace(mesh.edgeTriangle(n));
+
+                        m_nextEdges.emplace(mesh.edgePrev(diagonal));
+                        m_nextEdges.emplace(mesh.edgeNext(diagonal));
+                        m_nextEdges.emplace(mesh.edgePrev(n));
+                        m_nextEdges.emplace(mesh.edgeNext(n));
+                    }
                 }
             }
 
@@ -1046,6 +1093,55 @@ namespace xor
 
             XOR_ASSERT(false, "Could not find a triangle to insert the vertex in");
             return -1;
+        }
+
+        void superTriangle(float2 pointSetMinBound, float2 pointSetMaxBound)
+        {
+            XOR_ASSERT(all(m_superTriangle == int3(-1)), "Supertriangle can only be set once");
+            float2 dims = pointSetMaxBound - pointSetMinBound;
+            float2 center = pointSetMinBound + dims / 2.f;
+            float maxDim = std::max(dims.x, dims.y);
+
+            float enclosingDim = maxDim * 10.f;
+
+            auto v0 = float3(center.x,                center.y - enclosingDim, 0);
+            auto v1 = float3(center.x - enclosingDim, center.y + enclosingDim, 0);
+            auto v2 = float3(center.x + enclosingDim, center.y + enclosingDim, 0);
+
+            int t = mesh.addTriangle(v0, v1, v2);
+            m_superTriangle = mesh.triangleVertices(t);
+        }
+
+        void removeSuperTriangle()
+        {
+            m_affected.clear();
+
+            for (int v : m_superTriangle.span())
+            {
+                mesh.vertexForEachTriangle(v, [&](int t)
+                {
+                    m_affected.emplace(t);
+                });
+            }
+
+            for (int t : m_affected)
+            {
+                mesh.disconnectTriangle(t);
+                mesh.removeTriangle(t);
+            }
+
+            m_superTriangle = int3(-1);
+        }
+
+        bool triangleContainsSuperVertices(int t) const
+        {
+            if (m_superTriangle.x < 0)
+                return false;
+
+            int3 verts = mesh.triangleVertices(t);
+            return any(int3(verts.x) == m_superTriangle) ||
+                any(int3(verts.y) == m_superTriangle) ||
+                any(int3(verts.z) == m_superTriangle);
         }
     };
 

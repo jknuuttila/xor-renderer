@@ -386,8 +386,9 @@ struct HeightmapRenderer
         std::unordered_set<int> knownTriangles;
         std::vector<int> newTriangles;
 
-#if 0
-        BowyerWatson<DErr> delaunay(mesh);
+#if 1
+        // BowyerWatson<DErr> delaunay(mesh);
+        DelaunayFlip<DErr> delaunay(mesh);
         delaunay.superTriangle(float2(minBound), float2(maxBound));
 
         {
@@ -404,7 +405,7 @@ struct HeightmapRenderer
                 });
             }
         }
-#else
+#elif 0
         DelaunayFlip<DErr> delaunay(mesh);
         int first  = mesh.addTriangle(vertex(area, {1, 0}), vertex(area, {0, 1}), vertex(area, {0, 0}));
         int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), vertex(area, {1, 1}));
@@ -421,8 +422,7 @@ struct HeightmapRenderer
             largestError.pop();
             int t = largest.triangle;
 
-            if (t < 0 || !mesh.triangleIsValid(t)
-                // || delaunay.triangleContainsSuperVertices(t)
+            if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t)
                 )
             {
                 print("Triangle %d is invalid, skipping\n", t);
@@ -520,7 +520,7 @@ struct HeightmapRenderer
             }
 		}
 
-        // delaunay.removeSuperTriangle();
+        delaunay.removeSuperTriangle();
 
         log("Heightmap", "Generated incremental min error triangulation with %d vertices and %d triangles in %.2f ms\n",
             mesh.numVertices(),

@@ -90,6 +90,11 @@ namespace xor
         {
             return (center - p).lengthSqr() <= radiusSqr;
         }
+
+        bool contains(float2 p, float epsilon) const
+        {
+            return (center - p).lengthSqr() <= (radiusSqr + epsilon);
+        }
     };
 
     // From https://en.wikipedia.org/wiki/Circumscribed_circle
