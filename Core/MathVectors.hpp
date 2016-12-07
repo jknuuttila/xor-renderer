@@ -3,6 +3,7 @@
 #include "OS.hpp"
 #include "Utils.hpp"
 #include "String.hpp"
+#include "Hash.hpp"
 
 #include <cstdint>
 

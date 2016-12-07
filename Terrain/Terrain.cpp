@@ -353,7 +353,7 @@ struct HeightmapRenderer
 
         struct TriangleError
         {
-            float3 bary;
+            uint2 coords;
             float error = -1;
         };
         struct LargestError
@@ -415,6 +415,8 @@ struct HeightmapRenderer
 
         XOR_ASSERT(!largestError.empty(), "No valid triangles to subdivide");
 
+        std::unordered_set<uint2, PodHash, PodEqual> usedVertices;
+
         // Subtract 3 from the vertex count to account for the supertriangle
 		while (mesh.numVertices() - 3 < static_cast<int>(vertices))
 		{
@@ -422,8 +424,7 @@ struct HeightmapRenderer
             largestError.pop();
             int t = largest.triangle;
 
-            if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t)
-                )
+            if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t))
             {
                 print("Triangle %d is invalid, skipping\n", t);
                 continue;
@@ -438,29 +439,30 @@ struct HeightmapRenderer
             // If the error isn't known, estimate it
             if (!largest.error || largest.error != triData.error)
             {
-                float3 largestErrorBary;
+                uint2 largestErrorCoords;
                 float largestErrorFound = -1;
                 print("Estimating error for triangle %d\n", t);
                 print("    V0: (%f %f %f)\n", v0.x, v0.y, v0.z);
                 print("    V1: (%f %f %f)\n", v1.x, v1.y, v1.z);
                 print("    V2: (%f %f %f)\n", v2.x, v2.y, v2.z);
 
-                constexpr int InteriorSamples = 5;
+                constexpr int InteriorSamples = 100;
                 constexpr int EdgeSamples     = 100;
 
                 auto errorAt = [&] (float3 bary)
                 {
                     float3 interpolated = interpolateBarycentric(v0, v1, v2, bary);
-                    float  correctZ     = heightData.pixel<float>(float2(interpolated));
+                    uint2  coords       = uint2(float2(interpolated) * float2(heightData.size));
+                    float  correctZ     = heightData.pixel<float>(coords);
 
                     float error = abs(correctZ - interpolated.z);
-                    if (error > largestErrorFound)
+                    if (!usedVertices.count(coords) && error > largestErrorFound)
                     {
-                        print("    (%.3f %.3f %.3f): abs(%f - %f) = %f > %f\n",
-                              bary.x, bary.y, bary.z,
+                        print("    (%u %u): abs(%f - %f) = %f > %f\n",
+                              coords.x, coords.y,
                               correctZ, interpolated.z, error, largestErrorFound);
-                        largestErrorBary  = bary;
-                        largestErrorFound = error;
+                        largestErrorCoords = coords;
+                        largestErrorFound  = error;
                     }
                 };
 
@@ -479,31 +481,32 @@ struct HeightmapRenderer
                     errorAt(bary);
                 }
 
-                triData.bary  = largestErrorBary;
-                triData.error = largestErrorFound;
+                triData.coords = largestErrorCoords;
+                triData.error  = largestErrorFound;
 
                 largestError.emplace(t, largestErrorFound);
-                print("Triangle %d error: %f at (%.3f %.3f %.3f)\n",
+                print("Triangle %d error: %f at (%u %u)\n",
                       t, triData.error,
-                      triData.bary.x, triData.bary.y, triData.bary.z);
+                      triData.coords.x, triData.coords.y);
             }
             // The error is known, and it was the largest, so insert a new vertex
             // in that position.
             else
             {
-                auto bary = triData.bary;
-                float3 newVertex = interpolateBarycentric(v0, v1, v2, bary);
-                newVertex.z      = heightData.pixel<float>(float2(newVertex));
+                uint2 coords = triData.coords;
+                float3 newVertex = float3((float2(coords) + .5f) / float2(heightData.size));
+                newVertex.z      = heightData.pixel<float>(coords);
                 newTriangles.clear();
                 delaunay.insertVertex(t, newVertex, &newTriangles);
-                print("Inserted new vertex (%f %f %f) in triangle %d (%.3f %.3f %.3f)\n",
+                print("Inserted new vertex (%f %f %f) in triangle %d (%u %u)\n",
                       newVertex.x,
                       newVertex.y,
                       newVertex.z,
                       t,
-                      bary.x,
-                      bary.y,
-                      bary.z);
+                      coords.x,
+                      coords.y);
+
+                usedVertices.emplace(coords);
 
                 knownTriangles.erase(t);
                 print("New triangles: ");

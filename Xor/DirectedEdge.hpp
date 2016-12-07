@@ -960,13 +960,18 @@ namespace xor
             m_nextEdges.emplace(mesh.triangleEdge(ts.z));
 
             constexpr int InfiniteLoopGuard = 10;
+            constexpr int MaxLoops = 500;
             int loops = 0;
+            int totalLoops = 0; 
             std::unordered_set<int> prevEdges;
 
             while (!m_nextEdges.empty())
             {
                 XOR_ASSERT(m_edges.empty(), "Edges unexpectedly empty");
                 m_nextEdges.swap(m_edges);
+
+                if (totalLoops++ > MaxLoops)
+                    break;
 
                 if (loops++ > InfiniteLoopGuard)
                 {

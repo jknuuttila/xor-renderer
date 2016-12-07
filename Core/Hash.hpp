@@ -85,4 +85,22 @@ namespace xor
         int dummy[] = { (h.pod(ts), 0)... };
         return h.done();
     }
+
+    struct PodHash
+    {
+        template <typename T>
+        size_t operator()(const T &t) const
+        {
+            return hashPods(t);
+        }
+    };
+
+    struct PodEqual
+    {
+        template <typename T>
+        bool operator()(const T &a, const T &b) const
+        {
+            return memcmp(&a, &b, sizeof(a)) == 0;
+        }
+    };
 }
