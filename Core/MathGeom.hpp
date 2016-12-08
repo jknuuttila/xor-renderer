@@ -7,25 +7,40 @@
 
 namespace xor
 {
-	inline float orient2D(float2 a, float2 b, float2 c)
+    template <typename T>
+	inline T orient2D(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
 	{
 		return (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
 	}
 
-	inline bool isTriangleCCW(float2 a, float2 b, float2 c)
+    template <typename T>
+	inline bool isTriangleCCW(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
 	{
 		return orient2D(a, b, c) > 0;
 	}
 
-    inline float edgeFunction(float2 v0, float2 v1, float2 p)
+    template <typename T>
+    inline T edgeFunction(Vector<T, 2> v0, Vector<T, 2> v1, Vector<T, 2> p)
     {
+        T A = (v0.y - v1.y);
+        T B = (v1.x - v0.x);
+        T C = (v0.x * v1.y);
+        T D = (v0.y * v1.x);
+        T E = A * p.x;
+        T F = B * p.y;
+        T G = C - D;
+        T H = E + F + G;
         return (v0.y - v1.y) * p.x + (v1.x - v0.x) * p.y + (v0.x * v1.y - v0.y * v1.x);
     }
-    inline float edgeFunction01(float2 a, float2 b, float2 c, float2 p) { return edgeFunction(a, b, p); }
-    inline float edgeFunction12(float2 a, float2 b, float2 c, float2 p) { return edgeFunction(b, c, p); }
-    inline float edgeFunction20(float2 a, float2 b, float2 c, float2 p) { return edgeFunction(c, a, p); }
+    template <typename T>
+    inline T edgeFunction01(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p) { return edgeFunction(a, b, p); }
+    template <typename T>
+    inline T edgeFunction12(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p) { return edgeFunction(b, c, p); }
+    template <typename T>
+    inline T edgeFunction20(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p) { return edgeFunction(c, a, p); }
 
-    inline bool isPointInsideTriangle(float2 a, float2 b, float2 c, float2 p)
+    template <typename T>
+    inline bool isPointInsideTriangle(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p)
     {
         return
             edgeFunction01(a, b, c, p) >= 0 &&
@@ -33,21 +48,34 @@ namespace xor
             edgeFunction20(a, b, c, p) >= 0;
     }
 
-    inline float triangleDoubleSignedArea(float2 a, float2 b, float2 c)
+    template <typename T>
+    inline bool isPointInsideTriangleUnknownWinding(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p)
+    {
+        if (isTriangleCCW(a, b, c))
+            return isPointInsideTriangle(a, b, c, p);
+        else
+            return isPointInsideTriangle(a, c, b, p);
+    }
+
+    template <typename T>
+    inline T triangleDoubleSignedArea(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
     {
         return orient2D(a, b, c);
     }
-    inline float triangleSignedArea(float2 a, float2 b, float2 c)
+    template <typename T>
+    inline float triangleSignedArea(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
     {
         return triangleDoubleSignedArea(a, b, c) / 2;
     }
-    inline float3 barycentric(float2 a, float2 b, float2 c, float2 p, float doubleSignedArea)
+    template <typename T>
+    inline float3 barycentric(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p, T doubleSignedArea)
     {
         return float3(edgeFunction01(a, b, c, p),
                       edgeFunction12(a, b, c, p),
-                      edgeFunction20(a, b, c, p)) / doubleSignedArea;
+                      edgeFunction20(a, b, c, p)) / float(doubleSignedArea);
     }
-    inline float3 barycentric(float2 a, float2 b, float2 c, float2 p)
+    template <typename T>
+    inline float3 barycentric(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p)
     {
         return barycentric(a, b, c, triangleDoubleSignedArea(a, b, c));
     }
@@ -62,43 +90,45 @@ namespace xor
 
     // Test if the quadrilateral ABCD is convex. Vertices B and C should
     // be adjacent to both A and D.
-    inline bool isQuadConvex(float2 a, float2 b, float2 c, float2 d)
+    template <typename T>
+    inline bool isQuadConvex(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> d)
     {
         // It is convex iff the vertex D lies on different sides
         // of the directed edges AB and AC
-        float ABD = orient2D(a, b, d);
-        float ACD = orient2D(a, c, d);
+        T ABD = orient2D(a, b, d);
+        T ACD = orient2D(a, c, d);
 
         // It is on different sides if the sign of the product is negative
         return (ABD * ACD < 0);
     }
 
+    template <typename T>
     struct Circle
     {
-        float2 center;
-        float radiusSqr = 0;
+        Vector<T, 2> center;
+        T radiusSqr = 0;
 
         Circle() = default;
-        Circle(float2 center, float radius)
+        Circle(Vector<T, 2> center, T radius)
             : center(center)
             , radiusSqr(radius * radius)
         {}
 
-        float radius() const { return sqrt(radiusSqr); }
+        float radius() const { return sqrt(float(radiusSqr)); }
 
-        bool contains(float2 p) const
+        bool contains(Vector<T, 2> p) const
         {
             return (center - p).lengthSqr() <= radiusSqr;
         }
 
-        bool contains(float2 p, float epsilon) const
+        T power(Vector<T, 2> p) const
         {
-            return (center - p).lengthSqr() <= (radiusSqr + epsilon);
+            return (center - p).lengthSqr() - radiusSqr;
         }
     };
 
     // From https://en.wikipedia.org/wiki/Circumscribed_circle
-    inline Circle circumcircle(float2 A, float2 B, float2 C)
+    inline Circle<float> circumcircle(float2 A, float2 B, float2 C)
     {
         float A2 = A.lengthSqr();
         float B2 = B.lengthSqr();
@@ -120,7 +150,7 @@ namespace xor
                            B.x, B.y, B2,
                            C.x, C.y, C2).determinant();
 
-        Circle cc;
+        Circle<float> cc;
         cc.center    = S / a;
         cc.radiusSqr = b/a + S.lengthSqr() / (a*a);
         return cc;
@@ -129,20 +159,20 @@ namespace xor
     // Return a number that is zero if all the points are on the same circle.
     // If points p1, p2 and p3 define a circle but p4 is not on the circle,
     // the sign of the determinant is different whether p4 is inside or outside
-    // the circle. However, the sign which is inside the circle is undefined,
-    // and must be checked separately by e.g. testing with a point that is
-    // definitely inside or outside the circle.
-    inline float pointsOnCircle(float2 p1, float2 p2, float2 p3, float2 p4)
+    // the circle. However, the sign depends on the triangle winding.
+    // TODO: Define which way the winding goes.
+    template <typename T>
+    inline T inCircle(Vector<T, 2> p1, Vector<T, 2> p2, Vector<T, 2> p3, Vector<T, 2> p4)
     {
-        float N1 = p1.lengthSqr();
-        float N2 = p2.lengthSqr();
-        float N3 = p3.lengthSqr();
-        float N4 = p4.lengthSqr();
+        T N1 = p1.lengthSqr();
+        T N2 = p2.lengthSqr();
+        T N3 = p3.lengthSqr();
+        T N4 = p4.lengthSqr();
 
-        return float4x4(N1, p1.x, p1.y, 1.f,
-                        N2, p2.x, p2.y, 1.f,
-                        N3, p3.x, p3.y, 1.f,
-                        N4, p4.x, p4.y, 1.f).determinant();
+        return Mat<T, 4, 4>(N1, p1.x, p1.y, 1.f,
+                            N2, p2.x, p2.y, 1.f,
+                            N3, p3.x, p3.y, 1.f,
+                            N4, p4.x, p4.y, 1.f).determinant();
     }
 
 	template <typename RandomGen>

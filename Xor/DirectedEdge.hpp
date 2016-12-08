@@ -49,25 +49,28 @@ namespace xor
 #define XOR_DE_DEBUG_TRIANGLE(t, ...) debugTriangle(__FILE__, __LINE__, #t, t, ## __VA_ARGS__)
 
     template <
-        typename TriangleData = Empty,
-        typename VertexData   = Empty,
-        typename EdgeData     = Empty,
-        typename EdgeType     = EdgeMedium
+        typename TriangleData       = Empty,
+        typename VertexPositionType = float3,
+        typename VertexData         = Empty,
+        typename EdgeData           = Empty,
+        typename EdgeType           = EdgeMedium
     >
     class DirectedEdge
     {
     public:
+        using VertexPosition = VertexPositionType;
+
         struct Triangle : TriangleData
         {
         };
 
         struct Vertex : VertexData
         {
-            float3 pos;    // position of the vertex
+            VertexPosition pos;    // position of the vertex
             int edge = -1; // an arbitrary directed edge starting from the vertex
 
             Vertex() = default;
-            Vertex(float3 pos) : pos(pos) {}
+            Vertex(VertexPosition pos) : pos(pos) {}
         };
 
         struct Edge : EdgeType, EdgeData
@@ -115,9 +118,9 @@ namespace xor
         }
 
         // Return the positions of the three vertices of the triangle.
-        std::array<float3, 3> triangleVertexPositions(int t) const
+        std::array<VertexPosition, 3> triangleVertexPositions(int t) const
         {
-            std::array<float3, 3> ps;
+            std::array<VertexPosition, 3> ps;
             int3 verts = triangleVertices(t);
             ps[0] = V(verts.x).pos;
             ps[1] = V(verts.y).pos;
@@ -266,7 +269,7 @@ namespace xor
         }
 
         // Add a new unconnected vertex
-        int addVertex(float3 pos)
+        int addVertex(VertexPosition pos)
         {
             int v = addData(m_freeVertices, m_vertices);
             V(v) = Vertex(pos);
@@ -288,7 +291,7 @@ namespace xor
         }
 
         // Add a new unconnected triangle with new vertices
-        int addTriangle(float3 p0, float3 p1, float3 p2)
+        int addTriangle(VertexPosition p0, VertexPosition p1, VertexPosition p2)
         {
             return addTriangle(addVertex(p0), addVertex(p1), addVertex(p2));
         }
@@ -343,7 +346,7 @@ namespace xor
 
         // Add a new triangle by extending from a boundary edge
         // using one new vertex
-        int addTriangleToBoundary(int boundaryEdge, float3 newVertexPos)
+        int addTriangleToBoundary(int boundaryEdge, VertexPosition newVertexPos)
         {
             XOR_ASSERT(edgeIsBoundary(boundaryEdge), "Given edge is not a boundary edge");
             int v2 = addVertex(newVertexPos);
@@ -362,7 +365,7 @@ namespace xor
 
         // Subdivide an existing triangle to three triangles by adding a new vertex
         // inside the triangle. The first edge of each new triangle is the outer edge.
-        int3 triangleSubdivide(int t, float3 newVertexPos)
+        int3 triangleSubdivide(int t, VertexPosition newVertexPos)
         {
             int v = addVertex(newVertexPos);
 
@@ -396,12 +399,12 @@ namespace xor
 
         // As triangleSubdivide, but the position of the new vertex is expressed
         // in barycentric coordinates of the subdivided triangle.
-        int3 triangleSubdivideBarycentric(int t, float3 newVertexBary)
+        int3 triangleSubdivideBarycentric(int t, VertexPosition newVertexBary)
         {
             int3 verts = triangleVertices(t);
-            float3 p0 = V(verts.x).pos;
-            float3 p1 = V(verts.y).pos;
-            float3 p2 = V(verts.z).pos;
+            VertexPosition p0 = V(verts.x).pos;
+            VertexPosition p1 = V(verts.y).pos;
+            VertexPosition p2 = V(verts.z).pos;
             return triangleSubdivide(t,
                                      newVertexBary.x * p0 +
                                      newVertexBary.y * p1 +
@@ -422,10 +425,10 @@ namespace xor
             int D = edgeTarget(edgeNext(n));
 
             return isQuadConvex(
-                float2(V(A).pos),
-                float2(V(B).pos),
-                float2(V(C).pos),
-                float2(V(D).pos));
+                V(A).pos.vec2(),
+                V(B).pos.vec2(),
+                V(C).pos.vec2(),
+                V(D).pos.vec2());
         }
 
         // Given an edge BC that is a diagonal of the convex quadrilateral ABDC formed
@@ -665,6 +668,8 @@ namespace xor
         // using DE = DirectedEdge<>;
         // Mesh that this algorithm operates on
         DE &mesh;
+        using Pos = typename DE::VertexPosition;
+
         // Triangles that have already been checked for circumcircle violations
         // during the current insertion.
         std::unordered_set<int> m_trisExplored;
@@ -678,19 +683,18 @@ namespace xor
     public:
         BowyerWatson(DE &mesh) : mesh(mesh) {}
 
-        // TODO: float rectangles
-        void superTriangle(float2 pointSetMinBound, float2 pointSetMaxBound)
+        void superTriangle(Pos pointSetMinBound, Pos pointSetMaxBound)
         {
             XOR_ASSERT(all(m_superTriangle == int3(-1)), "Supertriangle can only be set once");
-            float2 dims = pointSetMaxBound - pointSetMinBound;
-            float2 center = pointSetMinBound + dims / 2.f;
-            float maxDim = std::max(dims.x, dims.y);
+            Pos dims = pointSetMaxBound - pointSetMinBound;
+            Pos center = pointSetMinBound + dims / 2;
 
-            float enclosingDim = maxDim * 10.f;
+            auto maxDim = std::max(dims.x, dims.y);
+            auto enclosingDim = maxDim * 10;
 
-            auto v0 = float3(center.x,                center.y - enclosingDim, 0);
-            auto v1 = float3(center.x - enclosingDim, center.y + enclosingDim, 0);
-            auto v2 = float3(center.x + enclosingDim, center.y + enclosingDim, 0);
+            auto v0 = Pos(center.x,                center.y - enclosingDim);
+            auto v1 = Pos(center.x - enclosingDim, center.y + enclosingDim);
+            auto v2 = Pos(center.x + enclosingDim, center.y + enclosingDim);
 
             int t = mesh.addTriangle(v0, v1, v2);
             m_superTriangle = mesh.triangleVertices(t);
@@ -700,7 +704,7 @@ namespace xor
         // insert one new vertex inside the specified triangle, and retriangulate
         // so that the mesh stays Delaunay. Returns the new vertex ID.
         int insertVertex(int containingTriangle,
-                         float3 newVertexPos,
+                         Pos newVertexPos,
                          std::vector<int> *newTriangles = nullptr,
                          std::vector<int> *removedTriangles = nullptr)
         {
@@ -839,7 +843,7 @@ namespace xor
         }
 
         // Like insertVertex(t, pos, ...), but searches for the containing triangle instead.
-        int insertVertex(float3 newVertexPos,
+        int insertVertex(Pos newVertexPos,
                          std::vector<int> *newTriangles = nullptr,
                          std::vector<int> *removedTriangles = nullptr)
         {
@@ -930,6 +934,8 @@ namespace xor
          // using DE = DirectedEdge<>;
 
          DE &mesh;
+         using Pos = typename DE::VertexPosition;
+
          std::unordered_set<int> m_affected;
          std::unordered_set<int> m_edges;
          std::unordered_set<int> m_nextEdges;
@@ -940,7 +946,7 @@ namespace xor
         {}
 
         int insertVertex(int containingTriangle,
-                         float3 newVertexPos,
+                         Pos newVertexPos,
                          std::vector<int> *affectedTriangles = nullptr)
         {
             m_edges.clear();
@@ -1071,7 +1077,7 @@ namespace xor
             return true;
         }
 
-        int insertVertex(float3 newVertexPos,
+        int insertVertex(Pos newVertexPos,
                          std::vector<int> *affectedTriangles = nullptr)
         {
             for (int t = 0; t < mesh.numTriangles(); ++t)
@@ -1079,19 +1085,46 @@ namespace xor
                 if (mesh.triangleIsValid(t))
                 {
                     auto vs = mesh.triangleVertexPositions(t);
-                    float2 v0 = float2(vs[0]);
-                    float2 v1 = float2(vs[1]);
-                    float2 v2 = float2(vs[2]);
 
-                    if (isTriangleCCW(v0, v1, v2))
-                    {
-                        if (isPointInsideTriangle(v0, v1, v2, float2(newVertexPos)))
-                            return insertVertex(t, newVertexPos, affectedTriangles);
-                    }
+                    print("Test (%d %d) vs (%d %d)-(%d %d)-(%d %d) -> ",
+                          newVertexPos.x, 
+                          newVertexPos.y, 
+                          vs[0].x,
+                          vs[0].y,
+                          vs[1].x,
+                          vs[1].y,
+                          vs[2].x,
+                          vs[2].y);
+
+                    if (isPointInsideTriangleUnknownWinding(
+                        vs[0].vec2(),
+                        vs[1].vec2(),
+                        vs[2].vec2(),
+                        newVertexPos.vec2()))
+                        print("true\n");
                     else
+                        print("false\n");
+                }
+            }
+
+            for (int t = 0; t < mesh.numTriangles(); ++t)
+            {
+                if (mesh.triangleIsValid(t))
+                {
+                    auto vs = mesh.triangleVertexPositions(t);
+
+                    if (isPointInsideTriangleUnknownWinding(
+                        vs[0].vec2(),
+                        vs[1].vec2(),
+                        vs[2].vec2(),
+                        newVertexPos.vec2()))
                     {
-                        if (isPointInsideTriangle(v0, v2, v1, float2(newVertexPos)))
-                            return insertVertex(t, newVertexPos, affectedTriangles);
+                        XOR_ASSERT(isPointInsideTriangleUnknownWinding(
+                            float2(vs[0]),
+                            float2(vs[1]),
+                            float2(vs[2]),
+                            float2(newVertexPos)), "Halp");
+                        return insertVertex(t, newVertexPos, affectedTriangles);
                     }
                 }
             }
@@ -1100,18 +1133,18 @@ namespace xor
             return -1;
         }
 
-        void superTriangle(float2 pointSetMinBound, float2 pointSetMaxBound)
+        void superTriangle(Pos pointSetMinBound, Pos pointSetMaxBound)
         {
             XOR_ASSERT(all(m_superTriangle == int3(-1)), "Supertriangle can only be set once");
-            float2 dims = pointSetMaxBound - pointSetMinBound;
-            float2 center = pointSetMinBound + dims / 2.f;
-            float maxDim = std::max(dims.x, dims.y);
+            Pos dims = pointSetMaxBound - pointSetMinBound;
+            Pos center = pointSetMinBound + dims / 2;
 
-            float enclosingDim = maxDim * 10.f;
+            auto maxDim = std::max(dims.x, dims.y);
+            auto enclosingDim = maxDim * 10 / 3;
 
-            auto v0 = float3(center.x,                center.y - enclosingDim, 0);
-            auto v1 = float3(center.x - enclosingDim, center.y + enclosingDim, 0);
-            auto v2 = float3(center.x + enclosingDim, center.y + enclosingDim, 0);
+            auto v0 = Pos(center.x,                center.y - enclosingDim);
+            auto v1 = Pos(center.x - enclosingDim, center.y + enclosingDim);
+            auto v2 = Pos(center.x + enclosingDim, center.y + enclosingDim);
 
             int t = mesh.addTriangle(v0, v1, v2);
             m_superTriangle = mesh.triangleVertices(t);

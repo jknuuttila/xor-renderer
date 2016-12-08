@@ -78,7 +78,7 @@ enum class VisualizationMode
 
 struct HeightmapRenderer
 {
-    using DE = DirectedEdge<>;
+    using DE = DirectedEdge<Empty, int3>;
 
 	Device device;
     GraphicsPipeline renderTerrain;
@@ -134,12 +134,14 @@ struct HeightmapRenderer
 		std::vector<float>  height(numVerts);
 		std::vector<float2> uv(numVerts);
 
+        float2 dims = float2(heightmap->size);
+
 		for (uint i = 0; i < numVerts; ++i)
 		{
 			auto &v          = verts[i];
-			uv[i]            = float2(v.pos);
-			normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), float2(v.pos));
-			height[i]        = v.pos.z;
+			uv[i]            = float2(v.pos) / dims;
+			normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), uv[i]);
+			height[i]        = heightData.pixel<float>(uint2(v.pos));
 		}
 
 		std::vector<uint> indices;
@@ -180,14 +182,22 @@ struct HeightmapRenderer
 		this->mesh = Mesh::generate(device, attrs, indices);
 	}
 
-    float3 vertex(Rect area, float2 uv)
+    int3 vertex(int2 coords) const
+    {
+        float height = heightData.pixel<float>(uint2(coords));
+        return int3(coords.x, coords.y, int(height * float(0x1000)));
+    }
+
+    int3 vertex(float2 uv) const
+    {
+        float2 unnormalized = uv * float2(heightmap->size);
+        return vertex(int2(unnormalized));
+    }
+
+    int3 vertex(Rect area, float2 uv)
     {
         float2 unnormalized = lerp(float2(area.leftTop), float2(area.rightBottom), uv);
-        float2 normalized   = unnormalized / float2(heightmap->size);
-
-        float height = heightData.pixel<float>(uint2(unnormalized));
-
-        return float3(normalized.x, normalized.y, height);
+        return vertex(int2(unnormalized));
     }
 
     void setBounds(Rect area)
@@ -298,6 +308,7 @@ struct HeightmapRenderer
 
         BowyerWatson<DE> delaunay(mesh);
 
+#if 0
 		while (mesh.numVertices() < static_cast<int>(vertices))
 		{
             int triangle = -1;
@@ -335,6 +346,7 @@ struct HeightmapRenderer
 
             delaunay.insertVertex(triangle, pos);
 		}
+#endif
 
         log("Heightmap", "Generated random triangulation with %d vertices and %d triangles in %.2f ms\n",
             mesh.numVertices(),
@@ -353,7 +365,7 @@ struct HeightmapRenderer
 
         struct TriangleError
         {
-            uint2 coords;
+            int2 coords;
             float error = -1;
         };
         struct LargestError
@@ -374,22 +386,21 @@ struct HeightmapRenderer
             bool operator<(const LargestError &e) const { return error < e.error; }
         };
 
-        using DErr = DirectedEdge<TriangleError>;
+        using DErr = DirectedEdge<TriangleError, int3>;
 		DErr mesh;
 
-        float3 minBound = vertex(area, {0, 0});
-        float3 maxBound = vertex(area, {1, 1});
+        int3 minBound = vertex(area, {0, 0});
+        int3 maxBound = vertex(area, {1, 1});
 
         std::mt19937 gen(95832);
 
         std::priority_queue<LargestError> largestError;
-        std::unordered_set<int> knownTriangles;
         std::vector<int> newTriangles;
 
 #if 1
         // BowyerWatson<DErr> delaunay(mesh);
         DelaunayFlip<DErr> delaunay(mesh);
-        delaunay.superTriangle(float2(minBound), float2(maxBound));
+        delaunay.superTriangle(minBound, maxBound);
 
         {
             int v0 = delaunay.insertVertex(vertex(area, { 1, 0 }));
@@ -415,7 +426,7 @@ struct HeightmapRenderer
 
         XOR_ASSERT(!largestError.empty(), "No valid triangles to subdivide");
 
-        std::unordered_set<uint2, PodHash, PodEqual> usedVertices;
+        std::unordered_set<int2, PodHash, PodEqual> usedVertices;
 
         // Subtract 3 from the vertex count to account for the supertriangle
 		while (mesh.numVertices() - 3 < static_cast<int>(vertices))
@@ -432,36 +443,38 @@ struct HeightmapRenderer
 
             auto &triData = mesh.T(t);
             int3 verts  = mesh.triangleVertices(t);
-            float3 v0   = mesh.V(verts.x).pos;
-            float3 v1   = mesh.V(verts.y).pos;
-            float3 v2   = mesh.V(verts.z).pos;
+            int3 v0   = mesh.V(verts.x).pos;
+            int3 v1   = mesh.V(verts.y).pos;
+            int3 v2   = mesh.V(verts.z).pos;
 
             // If the error isn't known, estimate it
             if (!largest.error || largest.error != triData.error)
             {
-                uint2 largestErrorCoords;
+                int2 largestErrorCoords;
                 float largestErrorFound = -1;
                 print("Estimating error for triangle %d\n", t);
-                print("    V0: (%f %f %f)\n", v0.x, v0.y, v0.z);
-                print("    V1: (%f %f %f)\n", v1.x, v1.y, v1.z);
-                print("    V2: (%f %f %f)\n", v2.x, v2.y, v2.z);
+                print("    V0: (%d %d %d)\n", v0.x, v0.y, v0.z);
+                print("    V1: (%d %d %d)\n", v1.x, v1.y, v1.z);
+                print("    V2: (%d %d %d)\n", v2.x, v2.y, v2.z);
 
                 constexpr int InteriorSamples = 100;
-                constexpr int EdgeSamples     = 100;
+                constexpr int EdgeSamples     = 0;
 
                 auto errorAt = [&] (float3 bary)
                 {
-                    float3 interpolated = interpolateBarycentric(v0, v1, v2, bary);
-                    uint2  coords       = uint2(float2(interpolated) * float2(heightData.size));
-                    float  correctZ     = heightData.pixel<float>(coords);
+                    float3 interpolated = interpolateBarycentric(float3(v0), float3(v1), float3(v2), bary);
+                    int3 point          = vertex(int2(interpolated));
 
-                    float error = abs(correctZ - interpolated.z);
-                    if (!usedVertices.count(coords) && error > largestErrorFound)
+                    float error = abs(float(point.z) - interpolated.z);
+                    if (isPointInsideTriangleUnknownWinding(int2(v0), int2(v1), int2(v2), int2(point))
+                        && !usedVertices.count(int2(point))
+                        && error > largestErrorFound)
                     {
-                        print("    (%u %u): abs(%f - %f) = %f > %f\n",
-                              coords.x, coords.y,
-                              correctZ, interpolated.z, error, largestErrorFound);
-                        largestErrorCoords = coords;
+                        print("    (%d %d): abs(%f - %f) = %f > %f\n",
+                              point.x, point.y,
+                              float(point.z), interpolated.z,
+                              error, largestErrorFound);
+                        largestErrorCoords = int2(point);
                         largestErrorFound  = error;
                     }
                 };
@@ -485,7 +498,7 @@ struct HeightmapRenderer
                 triData.error  = largestErrorFound;
 
                 largestError.emplace(t, largestErrorFound);
-                print("Triangle %d error: %f at (%u %u)\n",
+                print("Triangle %d error: %f at (%d %d)\n",
                       t, triData.error,
                       triData.coords.x, triData.coords.y);
             }
@@ -493,31 +506,22 @@ struct HeightmapRenderer
             // in that position.
             else
             {
-                uint2 coords = triData.coords;
-                float3 newVertex = float3((float2(coords) + .5f) / float2(heightData.size));
-                newVertex.z      = heightData.pixel<float>(coords);
+                int3 newVertex = vertex(triData.coords);
                 newTriangles.clear();
                 delaunay.insertVertex(t, newVertex, &newTriangles);
-                print("Inserted new vertex (%f %f %f) in triangle %d (%u %u)\n",
+                print("Inserted new vertex (%d %d %d) in triangle %d\n",
                       newVertex.x,
                       newVertex.y,
                       newVertex.z,
-                      t,
-                      coords.x,
-                      coords.y);
+                      t);
 
-                usedVertices.emplace(coords);
+                usedVertices.emplace(int2(newVertex));
 
-                knownTriangles.erase(t);
                 print("New triangles: ");
                 for (int nt : newTriangles)
                 {
-                    //if (!knownTriangles.count(nt))
-                    {
-                        print("%d, ", nt);
-                        largestError.emplace(nt);
-                        knownTriangles.emplace(nt);
-                    }
+                    print("%d, ", nt);
+                    largestError.emplace(nt);
                 }
                 print("\n");
             }

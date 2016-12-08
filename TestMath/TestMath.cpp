@@ -11,6 +11,11 @@ template <> struct Epsilon<double> { static double value() { return 0.001; } };
 template <typename T, uint N> struct Epsilon<Vector<T, N>> { static double value() { return Epsilon<T>::value(); } };
 template <> struct Epsilon<Matrix> { static double value() { return Epsilon<float>::value(); } };
 
+bool compareEq(bool a, bool b, double epsilon)
+{
+    return a == b;
+}
+
 template <typename T> bool compareEq(const T &a, const T &b, double epsilon)
 {
     bool plus  = a + static_cast<T>(epsilon) >= b;
@@ -152,16 +157,54 @@ void testProjectionMatrices()
 void testGeometry()
 {
     {
-        float2 p1 { 1, 0 };
-        float2 p2 { 0, 1 };
-        float2 p3 { 0, 0 };
-        auto circumcenter = circumcircleCenter(p1, p2, p3);
-        float circumradius1 = (p1 - circumcenter).length();
-        float circumradius2 = (p2 - circumcenter).length();
-        float circumradius3 = (p3 - circumcenter).length();
+        float2 af = float2(1, 1);
+        float2 bf = float2(5, 1);
+        float2 cf = float2(1, 5);
+        float2 pf = float2(2, 2);
+        float2 of = float2(4, 4);
+        int2 ai   = int2(1000, 1000);
+        int2 bi   = int2(5000, 1000);
+        int2 ci   = int2(1000, 5000);
+        int2 pi   = int2(2000, 2000);
+        int2 oi   = int2(4000, 4000);
 
-        XOR_CHECK_EQ(circumradius1, circumradius2);
-        XOR_CHECK_EQ(circumradius1, circumradius3);
+        XOR_CHECK_EQ(isTriangleCCW(af, bf, cf), true);
+        XOR_CHECK_EQ(isTriangleCCW(af, cf, bf), false);
+        XOR_CHECK_EQ(isTriangleCCW(ai, bi, ci), true);
+        XOR_CHECK_EQ(isTriangleCCW(ai, ci, bi), false);
+        XOR_CHECK_EQ(isPointInsideTriangleUnknownWinding(af, bf, cf, pf), true);
+        XOR_CHECK_EQ(isPointInsideTriangleUnknownWinding(af, cf, bf, pf), true);
+        XOR_CHECK_EQ(isPointInsideTriangleUnknownWinding(af, bf, cf, of), false);
+        XOR_CHECK_EQ(isPointInsideTriangleUnknownWinding(af, cf, bf, of), false);
+        XOR_CHECK_EQ(isPointInsideTriangleUnknownWinding(ai, bi, ci, pi), true);
+        XOR_CHECK_EQ(isPointInsideTriangleUnknownWinding(ai, ci, bi, pi), true);
+        XOR_CHECK_EQ(isPointInsideTriangleUnknownWinding(ai, bi, ci, oi), false);
+        XOR_CHECK_EQ(isPointInsideTriangleUnknownWinding(ai, ci, bi, oi), false);
+    }
+
+    {
+        int2 a = int2(10, 2);
+        int2 b = int2(3, 4);
+        int2 c = int2(6, 10);
+
+        for (int y = 0; y < 12; ++y)
+        {
+            for (int x = 0; x < 12; ++x)
+            {
+                if (isPointInsideTriangleUnknownWinding(a, b, c, int2(x, y)))
+                {
+                    if (isPointInsideTriangleUnknownWinding(a, c, b, int2(x, y)))
+                        print("#");
+                    else
+                        print("!");
+                }
+                else
+                {
+                    print(".");
+                }
+            }
+            print("\n");
+        }
     }
 }
 

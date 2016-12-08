@@ -95,12 +95,12 @@ namespace xor
             using VectorBase<T, N>::VectorBase;
             Vector() = default;
 
-            template <uint M>
-            explicit Vector(const Vector<T, M> &v)
+            template <typename U, uint M>
+            explicit Vector(const Vector<U, M> &v)
             {
                 uint n = std::min(N, M);
                 for (uint i = 0; i < n; ++i)
-                    (*this)[i] = v[i];
+                    (*this)[i] = T(v[i]);
             }
 
             Span<T> span() { return Span<T>(&x, N); }
@@ -222,6 +222,12 @@ namespace xor
             Vector &operator*=(Vector a) { *this = *this * a; return *this; }
             Vector &operator/=(Vector a) { *this = *this / a; return *this; }
 
+            template <uint M>
+            Vector<T, M> vec()  const { return Vector<T, M>(*this); }
+            Vector<T, 2> vec2() const { return Vector<T, 2>(*this); }
+            Vector<T, 3> vec3() const { return Vector<T, 3>(*this); }
+            Vector<T, 4> vec4() const { return Vector<T, 4>(*this); }
+
             template <typename V, int SX, int SY = SwizzleDontCare, int SZ = SwizzleDontCare, int SW = SwizzleDontCare>
             class Swizzle
             {
@@ -293,6 +299,12 @@ namespace xor
                 Swizzle &operator-=(Vec a) { *this = Vec(*this) - a; return *this; }
                 Swizzle &operator*=(Vec a) { *this = Vec(*this) * a; return *this; }
                 Swizzle &operator/=(Vec a) { *this = Vec(*this) / a; return *this; }
+
+                template <uint M>
+                Vector<T, M> vec()  const { return Vector<T, M>(Vec(*this)); }
+                Vector<T, 2> vec2() const { return Vector<T, 2>(Vec(*this)); }
+                Vector<T, 3> vec3() const { return Vector<T, 3>(Vec(*this)); }
+                Vector<T, 4> vec4() const { return Vector<T, 4>(Vec(*this)); }
             };
 
             template <int SX, int SY = SwizzleDontCare, int SZ = SwizzleDontCare, int SW = SwizzleDontCare>
@@ -650,52 +662,52 @@ namespace xor
 
         // Matrix of arbitrary dimensions. Less functionality, more generality.
         // Amount of rows comes first to conform with M-by-N notation.
-        template <uint M, uint N>
+        template <typename T, uint M, uint N>
         class Mat
         {
-            float v[M][N];
+            T v[M][N];
         public:
             Mat()
             {
                 zero(v);
             }
 
-            template <typename... Ts> Mat(float v0, float v1, const Ts &... values)
+            template <typename... Ts> Mat(T v0, T v1, const Ts &... values)
             {
-                // Put two fixed float parameters in the constructor so it doesn't mess up overloads for
+                // Put two fixed T parameters in the constructor so it doesn't mess up overloads for
                 // one-argument constructors.
                 static_assert(sizeof...(Ts) == N * M - 2, "Must give all elements of the matrix in row-major order.");
-                float fs[N * M] = { v0, v1, values... };
+                T fs[N * M] = { v0, v1, values... };
                 static_assert(sizeof(v) == sizeof(fs), "Unexpected size mismatch");
                 memcpy(v, fs, sizeof(v));
             }
 
-            Mat(Span<const float> values)
+            Mat(Span<const T> values)
             {
                 XOR_ASSERT(values.size() == N * M, "Must give all elements of the matrix in row-major order");
                 memcpy(v, values.data(), sizeof(v));
             }
 
-            Mat(const float (&values)[M][N])
+            Mat(const T (&values)[M][N])
             {
                 static_assert(sizeof(v) == sizeof(values), "Unexpected size mismatch");
                 memcpy(v, values, sizeof(v));
             }
 
-            Mat(const float (&values)[M * N])
+            Mat(const T (&values)[M * N])
             {
                 static_assert(sizeof(v) == sizeof(values), "Unexpected size mismatch");
                 memcpy(v, values, sizeof(v));
             }
 
-            float &m(uint y, uint x) { return v[y][x]; }
-            float m(uint y, uint x) const { return v[y][x]; }
-            float &operator()(uint y, uint x) { return v[y][x]; }
-            float operator()(uint y, uint x) const { return v[y][x]; }
+            T &m(uint y, uint x) { return v[y][x]; }
+            T m(uint y, uint x) const { return v[y][x]; }
+            T &operator()(uint y, uint x) { return v[y][x]; }
+            T operator()(uint y, uint x) const { return v[y][x]; }
 
-            Mat<N, M> transpose() const
+            Mat<T, N, M> transpose() const
             {
-                float fs[N][M];
+                T fs[N][M];
 
                 for (uint x = 0; x < N; ++x)
                 {
@@ -708,7 +720,7 @@ namespace xor
                 return fs;
             }
 
-            float determinant() const
+            T determinant() const
             {
                 XOR_ASSERT(N == M, "Determinant is only defined for square matrices");
 
@@ -744,9 +756,9 @@ namespace xor
             }
 
             template <uint N, uint M, uint K>
-            friend inline Mat<M, K> operator*(const Mat<M, N> &a, const Mat<N, K> &b)
+            friend inline Mat<T, M, K> operator*(const Mat<T, M, N> &a, const Mat<T, N, K> &b)
             {
-                float m[M][K] = { 0 };
+                T m[M][K] = { 0 };
 
                 for (uint y = 0; y < M; ++y)
                 {
@@ -762,7 +774,7 @@ namespace xor
 
             friend inline Mat operator+(const Mat &a, const Mat &b)
             {
-                float m[M][N];
+                T m[M][N];
 
                 for (uint y = 0; y < M; ++y)
                 {
@@ -775,7 +787,7 @@ namespace xor
                 return m;
             }
 
-            Mat &operator*=(float k)
+            Mat &operator*=(T k)
             {
                 for (uint y = 0; y < M; ++y)
                 {
@@ -785,21 +797,23 @@ namespace xor
                 return *this;
             }
 
-            friend inline Mat operator*(const Mat &a, float k)
+            friend inline Mat operator*(const Mat &a, T k)
             {
                 Mat m = a;
                 m *= k;
                 return m;
             }
 
-            friend inline Mat operator*(float k, const Mat &a)
+            friend inline Mat operator*(T k, const Mat &a)
             {
                 return a * k;
             }
         };
 
         using float4x4 = Matrix;
-        using float3x3 = Mat<3, 3>;
+        using float3x3 = Mat<float, 3, 3>;
+        using int4x4 = Mat<int, 4, 4>;
+        using int3x3 = Mat<int, 3, 3>;
 
         static_assert(sizeof(int2) == sizeof(int) * 2, "Unexpected padding inside Vector.");
         static_assert(sizeof(int3) == sizeof(int) * 3, "Unexpected padding inside Vector.");
@@ -906,3 +920,5 @@ using xor::math::float3;
 using xor::math::float4;
 using xor::math::float4x4;
 using xor::math::float3x3;
+using xor::math::int4x4;
+using xor::math::int3x3;
