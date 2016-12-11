@@ -98,8 +98,11 @@ namespace xor
         T ABD = orient2D(a, b, d);
         T ACD = orient2D(a, c, d);
 
-        // It is on different sides if the sign of the product is negative
-        return (ABD * ACD < 0);
+        // It is on different sides if the signs are different
+        if (ABD < 0)
+            return ACD >= 0;
+        else
+            return ACD <= 0;
     }
 
     template <typename T>
@@ -162,17 +165,48 @@ namespace xor
     // the circle. However, the sign depends on the triangle winding.
     // TODO: Define which way the winding goes.
     template <typename T>
-    inline T inCircle(Vector<T, 2> p1, Vector<T, 2> p2, Vector<T, 2> p3, Vector<T, 2> p4)
+    inline bool inCircle(Vector<T, 2> p1, Vector<T, 2> p2, Vector<T, 2> p3, Vector<T, 2> p4)
     {
         T N1 = p1.lengthSqr();
         T N2 = p2.lengthSqr();
         T N3 = p3.lengthSqr();
         T N4 = p4.lengthSqr();
 
-        return Mat<T, 4, 4>(N1, p1.x, p1.y, 1.f,
-                            N2, p2.x, p2.y, 1.f,
-                            N3, p3.x, p3.y, 1.f,
-                            N4, p4.x, p4.y, 1.f).determinant();
+        return Mat<T, 4, 4>(p1.x, p1.y, N1, 1,
+                            p2.x, p2.y, N2, 1,
+                            p3.x, p3.y, N3, 1,
+                            p4.x, p4.y, N4, 1).determinant() > 0;
+    }
+
+    template <typename T>
+    inline T inCircleUnknownWinding(Vector<T, 2> p1, Vector<T, 2> p2, Vector<T, 2> p3, Vector<T, 2> p4)
+    {
+        T N1 = p1.lengthSqr();
+        T N2 = p2.lengthSqr();
+        T N3 = p3.lengthSqr();
+        T N4 = p4.lengthSqr();
+
+        auto inCircleTest = Mat<T, 4, 4>(p1.x, p1.y, N1, 1,
+                                         p2.x, p2.y, N2, 1,
+                                         p3.x, p3.y, N3, 1,
+                                         p4.x, p4.y, N4, 1).determinant();
+
+        bool ccw = isTriangleCCW(p1, p2, p3);
+
+#if 0
+        print("inCircle[(%d %d), (%d %d), (%d %d), (%d %d)] = %x (%s)\n",
+              p1.x, p1.y,
+              p2.x, p2.y,
+              p3.x, p3.y,
+              p4.x, p4.y,
+              inCircleTest,
+              ccw ? "CCW" : "CW");
+#endif
+
+        if (ccw)
+            return inCircleTest > 0;
+        else
+            return inCircleTest < 0;
     }
 
 	template <typename RandomGen>

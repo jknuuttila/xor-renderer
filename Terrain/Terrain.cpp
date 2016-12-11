@@ -182,19 +182,21 @@ struct HeightmapRenderer
 		this->mesh = Mesh::generate(device, attrs, indices);
 	}
 
-    int3 vertex(int2 coords) const
+    using Vert = Vector<int64_t, 3>;
+
+    Vert vertex(int2 coords) const
     {
         float height = heightData.pixel<float>(uint2(coords));
-        return int3(coords.x, coords.y, int(height * float(0x1000)));
+        return Vert(coords.x, coords.y, int(height * float(0x1000)));
     }
 
-    int3 vertex(float2 uv) const
+    Vert vertex(float2 uv) const
     {
         float2 unnormalized = uv * float2(heightmap->size);
         return vertex(int2(unnormalized));
     }
 
-    int3 vertex(Rect area, float2 uv)
+    Vert vertex(Rect area, float2 uv)
     {
         float2 unnormalized = lerp(float2(area.leftTop), float2(area.rightBottom), uv);
         return vertex(int2(unnormalized));
@@ -298,6 +300,7 @@ struct HeightmapRenderer
 
 	void randomTriangulation(Rect area, uint vertices)
 	{
+#if 0
 		Timer timer;
 
 		DE mesh;
@@ -308,7 +311,6 @@ struct HeightmapRenderer
 
         BowyerWatson<DE> delaunay(mesh);
 
-#if 0
 		while (mesh.numVertices() < static_cast<int>(vertices))
 		{
             int triangle = -1;
@@ -346,7 +348,6 @@ struct HeightmapRenderer
 
             delaunay.insertVertex(triangle, pos);
 		}
-#endif
 
         log("Heightmap", "Generated random triangulation with %d vertices and %d triangles in %.2f ms\n",
             mesh.numVertices(),
@@ -357,6 +358,7 @@ struct HeightmapRenderer
 		gpuMesh(mesh,
                 float2(area.leftTop) / float2(heightmap->size),
                 float2(area.rightBottom) / float2(heightmap->size));
+#endif
 	}
 
 	void incrementalMinError(Rect area, uint vertices)
@@ -386,11 +388,11 @@ struct HeightmapRenderer
             bool operator<(const LargestError &e) const { return error < e.error; }
         };
 
-        using DErr = DirectedEdge<TriangleError, int3>;
+        using DErr = DirectedEdge<TriangleError, Vert>;
 		DErr mesh;
 
-        int3 minBound = vertex(area, {0, 0});
-        int3 maxBound = vertex(area, {1, 1});
+        Vert minBound = vertex(area, {0, 0});
+        Vert maxBound = vertex(area, {1, 1});
 
         std::mt19937 gen(95832);
 
@@ -407,6 +409,7 @@ struct HeightmapRenderer
             int v1 = delaunay.insertVertex(vertex(area, { 0, 1 }));
             int v2 = delaunay.insertVertex(vertex(area, { 0, 0 }));
             int v3 = delaunay.insertVertex(vertex(area, { 1, 1 }));
+#if 1
 
             for (int v : { v0, v1, v2, v3 })
             {
@@ -415,6 +418,7 @@ struct HeightmapRenderer
                     largestError.emplace(t);
                 });
             }
+#endif
         }
 #elif 0
         DelaunayFlip<DErr> delaunay(mesh);
@@ -443,19 +447,21 @@ struct HeightmapRenderer
 
             auto &triData = mesh.T(t);
             int3 verts  = mesh.triangleVertices(t);
-            int3 v0   = mesh.V(verts.x).pos;
-            int3 v1   = mesh.V(verts.y).pos;
-            int3 v2   = mesh.V(verts.z).pos;
+            Vert v0     = mesh.V(verts.x).pos;
+            Vert v1     = mesh.V(verts.y).pos;
+            Vert v2     = mesh.V(verts.z).pos;
 
             // If the error isn't known, estimate it
             if (!largest.error || largest.error != triData.error)
             {
                 int2 largestErrorCoords;
                 float largestErrorFound = -1;
+#if 0
                 print("Estimating error for triangle %d\n", t);
                 print("    V0: (%d %d %d)\n", v0.x, v0.y, v0.z);
                 print("    V1: (%d %d %d)\n", v1.x, v1.y, v1.z);
                 print("    V2: (%d %d %d)\n", v2.x, v2.y, v2.z);
+#endif
 
                 constexpr int InteriorSamples = 100;
                 constexpr int EdgeSamples     = 0;
@@ -463,17 +469,19 @@ struct HeightmapRenderer
                 auto errorAt = [&] (float3 bary)
                 {
                     float3 interpolated = interpolateBarycentric(float3(v0), float3(v1), float3(v2), bary);
-                    int3 point          = vertex(int2(interpolated));
+                    Vert point          = vertex(int2(interpolated));
 
                     float error = abs(float(point.z) - interpolated.z);
-                    if (isPointInsideTriangleUnknownWinding(int2(v0), int2(v1), int2(v2), int2(point))
+                    if (isPointInsideTriangleUnknownWinding(v0.vec2(), v1.vec2(), v2.vec2(), point.vec2())
                         && !usedVertices.count(int2(point))
                         && error > largestErrorFound)
                     {
+#if 0
                         print("    (%d %d): abs(%f - %f) = %f > %f\n",
                               point.x, point.y,
                               float(point.z), interpolated.z,
                               error, largestErrorFound);
+#endif
                         largestErrorCoords = int2(point);
                         largestErrorFound  = error;
                     }
@@ -498,22 +506,26 @@ struct HeightmapRenderer
                 triData.error  = largestErrorFound;
 
                 largestError.emplace(t, largestErrorFound);
+#if 0
                 print("Triangle %d error: %f at (%d %d)\n",
                       t, triData.error,
                       triData.coords.x, triData.coords.y);
+#endif
             }
             // The error is known, and it was the largest, so insert a new vertex
             // in that position.
             else
             {
-                int3 newVertex = vertex(triData.coords);
+                Vert newVertex = vertex(triData.coords);
                 newTriangles.clear();
                 delaunay.insertVertex(t, newVertex, &newTriangles);
+#if 0
                 print("Inserted new vertex (%d %d %d) in triangle %d\n",
                       newVertex.x,
                       newVertex.y,
                       newVertex.z,
                       t);
+#endif
 
                 usedVertices.emplace(int2(newVertex));
 
@@ -727,7 +739,7 @@ public:
 
         if (0) {
             auto area = Rect::withSize(areaStart, areaSize);
-            static int V = 2;
+            static int V = 4;
             heightmapRenderer.incrementalMinError(area, V++);
         }
 
@@ -746,8 +758,13 @@ public:
 							 wireframe);
 
 		heightmapRenderer.visualize(cmd,
+#if 0
 								remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1110, 410)),
 							    remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1590, 890)));
+#else
+								remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2( 900, 350)),
+							    remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1100, 550)));
+#endif
 
         cmd.setRenderTargets();
 

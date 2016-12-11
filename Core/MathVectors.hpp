@@ -319,7 +319,7 @@ namespace xor
                 return Swizzle<const Vector, SX, SY, SZ, SW>(*this);
             }
 
-            float lengthSqr() const
+            T lengthSqr() const
             {
                 return dot(*this, *this);
             }
@@ -377,10 +377,10 @@ namespace xor
             return c;
         }
 
-        template <uint N>
-        inline float dot(Vector<float, N> a, Vector<float, N> b)
+        template <typename T, uint N>
+        inline T dot(Vector<T, N> a, Vector<T, N> b)
         {
-            float dp = 0;
+            T dp = 0;
             for (uint i = 0; i < N; ++i) dp += a[i] * b[i];
             return dp;
         }

@@ -293,7 +293,10 @@ namespace xor
         // Add a new unconnected triangle with new vertices
         int addTriangle(VertexPosition p0, VertexPosition p1, VertexPosition p2)
         {
-            return addTriangle(addVertex(p0), addVertex(p1), addVertex(p2));
+            int v0 = addVertex(p0);
+            int v1 = addVertex(p1);
+            int v2 = addVertex(p2);
+            return addTriangle(v0, v1, v2);
         }
 
         // Disconnect the given triangle from the mesh
@@ -424,11 +427,12 @@ namespace xor
             int C = edgeTarget(e);
             int D = edgeTarget(edgeNext(n));
 
-            return isQuadConvex(
-                V(A).pos.vec2(),
-                V(B).pos.vec2(),
-                V(C).pos.vec2(),
-                V(D).pos.vec2());
+            auto pA = V(A).pos.vec2();
+            auto pB = V(B).pos.vec2();
+            auto pC = V(C).pos.vec2();
+            auto pD = V(D).pos.vec2();
+
+            return isQuadConvex(pA, pB, pC, pD);
         }
 
         // Given an edge BC that is a diagonal of the convex quadrilateral ABDC formed
@@ -856,38 +860,20 @@ namespace xor
                     float2 v1 = float2(vs[1]);
                     float2 v2 = float2(vs[2]);
 
-                    print("Check (%f %f) vs triangle %d (%f %f)-(%f %f)-(%f %f)\n",
-                          newVertexPos.x, newVertexPos.y, t,
-                          v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-
                     if (isTriangleCCW(v0, v1, v2))
                     {
                         if (isPointInsideTriangle(v0, v1, v2, float2(newVertexPos)))
                         {
-                            print("    Yes (CCW)\n");
                             return insertVertex(t, newVertexPos, newTriangles, removedTriangles);
-                        }
-                        else
-                        {
-                            print("    No (CCW)\n");
                         }
                     }
                     else
                     {
                         if (isPointInsideTriangle(v0, v2, v1, float2(newVertexPos)))
                         {
-                            print("    Yes (CW)\n");
                             return insertVertex(t, newVertexPos, newTriangles, removedTriangles);
                         }
-                        else
-                        {
-                            print("    No (CW)\n");
-                        }
                     }
-                }
-                else
-                {
-                    print("Triangle %d invalid\n");
                 }
             }
 
@@ -1051,28 +1037,57 @@ namespace xor
             int n = mesh.edgeNeighbor(e);
 
             if (n < 0)
+            {
                 return true;
+            }
+
+            // mesh.XOR_DE_DEBUG_EDGE(e);
 
             if (!mesh.edgeIsFlippable(e))
+            {
+                // print("Not flippable\n");
                 return true;
+            }
 
             int t0 = mesh.edgeTriangle(e);
             int t1 = mesh.edgeTriangle(n);
 
             auto pos0 = mesh.triangleVertexPositions(t0);
-            auto pos1 = mesh.triangleVertexPositions(t1);
-
-            auto cc0 = circumcircle(float2(pos0[0]), float2(pos0[1]), float2(pos0[2]));
             int v1 = mesh.edgeTarget(mesh.edgeNext(n));
 
-            if (cc0.contains(float2(mesh.V(v1).pos)))
-                return false;
+            if (inCircleUnknownWinding(pos0[0].vec2(),
+                                       pos0[1].vec2(),
+                                       pos0[2].vec2(),
+                                       mesh.V(v1).pos.vec2()))
+            {
+                auto f0 = float2(pos0[0]);
+                auto f1 = float2(pos0[1]);
+                auto f2 = float2(pos0[2]);
+                auto f3 = float2(mesh.V(v1).pos);
 
-            auto cc1 = circumcircle(float2(pos1[0]), float2(pos1[1]), float2(pos1[2]));
+                auto cc = circumcircle(f0, f1, f2);
+                XOR_ASSERT(cc.contains(f3), "halp");
+
+                return false;
+            }
+
+            auto pos1 = mesh.triangleVertexPositions(t1);
             int v0 = mesh.edgeTarget(mesh.edgeNext(e));
+            if (inCircleUnknownWinding(pos1[0].vec2(),
+                                       pos1[1].vec2(),
+                                       pos1[2].vec2(),
+                                       mesh.V(v0).pos.vec2()))
+            {
+                auto f0 = float2(pos1[0]);
+                auto f1 = float2(pos1[1]);
+                auto f2 = float2(pos1[2]);
+                auto f3 = float2(mesh.V(v0).pos);
 
-            if (cc1.contains(float2(mesh.V(v0).pos)))
+                auto cc = circumcircle(f0, f1, f2);
+                XOR_ASSERT(cc.contains(f3), "halp");
+
                 return false;
+            }
 
             return true;
         }
@@ -1086,46 +1101,12 @@ namespace xor
                 {
                     auto vs = mesh.triangleVertexPositions(t);
 
-                    print("Test (%d %d) vs (%d %d)-(%d %d)-(%d %d) -> ",
-                          newVertexPos.x, 
-                          newVertexPos.y, 
-                          vs[0].x,
-                          vs[0].y,
-                          vs[1].x,
-                          vs[1].y,
-                          vs[2].x,
-                          vs[2].y);
-
                     if (isPointInsideTriangleUnknownWinding(
                         vs[0].vec2(),
                         vs[1].vec2(),
                         vs[2].vec2(),
                         newVertexPos.vec2()))
-                        print("true\n");
-                    else
-                        print("false\n");
-                }
-            }
-
-            for (int t = 0; t < mesh.numTriangles(); ++t)
-            {
-                if (mesh.triangleIsValid(t))
-                {
-                    auto vs = mesh.triangleVertexPositions(t);
-
-                    if (isPointInsideTriangleUnknownWinding(
-                        vs[0].vec2(),
-                        vs[1].vec2(),
-                        vs[2].vec2(),
-                        newVertexPos.vec2()))
-                    {
-                        XOR_ASSERT(isPointInsideTriangleUnknownWinding(
-                            float2(vs[0]),
-                            float2(vs[1]),
-                            float2(vs[2]),
-                            float2(newVertexPos)), "Halp");
                         return insertVertex(t, newVertexPos, affectedTriangles);
-                    }
                 }
             }
 
