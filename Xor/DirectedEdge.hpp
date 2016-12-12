@@ -738,31 +738,11 @@ namespace xor
                 {
                     int3 verts = mesh.triangleVertices(tri);
 
-                    float2 v0 = float2(mesh.V(verts.x).pos);
-                    float2 v1 = float2(mesh.V(verts.y).pos);
-                    float2 v2 = float2(mesh.V(verts.z).pos);
+                    auto v0 = mesh.V(verts.x).pos.vec2();
+                    auto v1 = mesh.V(verts.y).pos.vec2();
+                    auto v2 = mesh.V(verts.z).pos.vec2();
 
-#if 0
-                    float2 inside = (v0 + v1 + v2) / 3.f;
-
-                    float insideSign = pointsOnCircle(v0, v1, v2, inside);
-                    float posSign    = pointsOnCircle(v0, v1, v2, float2(newVertexPos));
-
-                    // If the signs are the same, the product will be non-negative.
-                    // This means that pos is inside the circumcircle.
-                    removeTriangle = insideSign * posSign > 0;
-
-                    // Do not remove triangles for which the vertex is extremely close
-                    // to being on the circumcircle. This usually happens because of
-                    // small triangles and numerical instability, and leads to problems
-                    // with the removed area not being well-behaved anymore.
-                    constexpr float Epsilon = 1e-6f;
-                    if (abs(posSign) < Epsilon)
-                        removeTriangle = false;
-#else
-                    auto cc = circumcircle(v0, v1, v2);
-                    removeTriangle = cc.contains(float2(newVertexPos));
-#endif
+                    removeTriangle = inCircleUnknownWinding(v0, v1, v2, newVertexPos.vec2());
                 }
 
                 // Collect the removed triangle and its edges for later processing
@@ -856,24 +836,13 @@ namespace xor
                 if (mesh.triangleIsValid(t))
                 {
                     auto vs = mesh.triangleVertexPositions(t);
-                    float2 v0 = float2(vs[0]);
-                    float2 v1 = float2(vs[1]);
-                    float2 v2 = float2(vs[2]);
 
-                    if (isTriangleCCW(v0, v1, v2))
-                    {
-                        if (isPointInsideTriangle(v0, v1, v2, float2(newVertexPos)))
-                        {
-                            return insertVertex(t, newVertexPos, newTriangles, removedTriangles);
-                        }
-                    }
-                    else
-                    {
-                        if (isPointInsideTriangle(v0, v2, v1, float2(newVertexPos)))
-                        {
-                            return insertVertex(t, newVertexPos, newTriangles, removedTriangles);
-                        }
-                    }
+                    if (isPointInsideTriangleUnknownWinding(
+                        vs[0].vec2(),
+                        vs[1].vec2(),
+                        vs[2].vec2(),
+                        newVertexPos.vec2()))
+                        return insertVertex(t, newVertexPos, newTriangles, removedTriangles);
                 }
             }
 
@@ -1041,11 +1010,8 @@ namespace xor
                 return true;
             }
 
-            // mesh.XOR_DE_DEBUG_EDGE(e);
-
             if (!mesh.edgeIsFlippable(e))
             {
-                // print("Not flippable\n");
                 return true;
             }
 
@@ -1060,14 +1026,6 @@ namespace xor
                                        pos0[2].vec2(),
                                        mesh.V(v1).pos.vec2()))
             {
-                auto f0 = float2(pos0[0]);
-                auto f1 = float2(pos0[1]);
-                auto f2 = float2(pos0[2]);
-                auto f3 = float2(mesh.V(v1).pos);
-
-                auto cc = circumcircle(f0, f1, f2);
-                XOR_ASSERT(cc.contains(f3), "halp");
-
                 return false;
             }
 
@@ -1078,14 +1036,6 @@ namespace xor
                                        pos1[2].vec2(),
                                        mesh.V(v0).pos.vec2()))
             {
-                auto f0 = float2(pos1[0]);
-                auto f1 = float2(pos1[1]);
-                auto f2 = float2(pos1[2]);
-                auto f3 = float2(mesh.V(v0).pos);
-
-                auto cc = circumcircle(f0, f1, f2);
-                XOR_ASSERT(cc.contains(f3), "halp");
-
                 return false;
             }
 

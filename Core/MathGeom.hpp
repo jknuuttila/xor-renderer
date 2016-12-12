@@ -179,7 +179,7 @@ namespace xor
     }
 
     template <typename T>
-    inline T inCircleUnknownWinding(Vector<T, 2> p1, Vector<T, 2> p2, Vector<T, 2> p3, Vector<T, 2> p4)
+    inline bool inCircleUnknownWinding(Vector<T, 2> p1, Vector<T, 2> p2, Vector<T, 2> p3, Vector<T, 2> p4)
     {
         T N1 = p1.lengthSqr();
         T N2 = p2.lengthSqr();

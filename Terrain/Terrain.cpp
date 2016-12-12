@@ -399,9 +399,11 @@ struct HeightmapRenderer
         std::priority_queue<LargestError> largestError;
         std::vector<int> newTriangles;
 
-#if 1
-        // BowyerWatson<DErr> delaunay(mesh);
+#if 0
+        BowyerWatson<DErr> delaunay(mesh);
+#else
         DelaunayFlip<DErr> delaunay(mesh);
+#endif
         delaunay.superTriangle(minBound, maxBound);
 
         {
@@ -409,7 +411,6 @@ struct HeightmapRenderer
             int v1 = delaunay.insertVertex(vertex(area, { 0, 1 }));
             int v2 = delaunay.insertVertex(vertex(area, { 0, 0 }));
             int v3 = delaunay.insertVertex(vertex(area, { 1, 1 }));
-#if 1
 
             for (int v : { v0, v1, v2, v3 })
             {
@@ -418,15 +419,7 @@ struct HeightmapRenderer
                     largestError.emplace(t);
                 });
             }
-#endif
         }
-#elif 0
-        DelaunayFlip<DErr> delaunay(mesh);
-        int first  = mesh.addTriangle(vertex(area, {1, 0}), vertex(area, {0, 1}), vertex(area, {0, 0}));
-        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), vertex(area, {1, 1}));
-        largestError.emplace(first);
-        largestError.emplace(second);
-#endif
 
         XOR_ASSERT(!largestError.empty(), "No valid triangles to subdivide");
 
@@ -441,7 +434,6 @@ struct HeightmapRenderer
 
             if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t))
             {
-                print("Triangle %d is invalid, skipping\n", t);
                 continue;
             }
 
@@ -456,12 +448,6 @@ struct HeightmapRenderer
             {
                 int2 largestErrorCoords;
                 float largestErrorFound = -1;
-#if 0
-                print("Estimating error for triangle %d\n", t);
-                print("    V0: (%d %d %d)\n", v0.x, v0.y, v0.z);
-                print("    V1: (%d %d %d)\n", v1.x, v1.y, v1.z);
-                print("    V2: (%d %d %d)\n", v2.x, v2.y, v2.z);
-#endif
 
                 constexpr int InteriorSamples = 100;
                 constexpr int EdgeSamples     = 0;
@@ -476,12 +462,6 @@ struct HeightmapRenderer
                         && !usedVertices.count(int2(point))
                         && error > largestErrorFound)
                     {
-#if 0
-                        print("    (%d %d): abs(%f - %f) = %f > %f\n",
-                              point.x, point.y,
-                              float(point.z), interpolated.z,
-                              error, largestErrorFound);
-#endif
                         largestErrorCoords = int2(point);
                         largestErrorFound  = error;
                     }
@@ -506,11 +486,6 @@ struct HeightmapRenderer
                 triData.error  = largestErrorFound;
 
                 largestError.emplace(t, largestErrorFound);
-#if 0
-                print("Triangle %d error: %f at (%d %d)\n",
-                      t, triData.error,
-                      triData.coords.x, triData.coords.y);
-#endif
             }
             // The error is known, and it was the largest, so insert a new vertex
             // in that position.
@@ -519,23 +494,10 @@ struct HeightmapRenderer
                 Vert newVertex = vertex(triData.coords);
                 newTriangles.clear();
                 delaunay.insertVertex(t, newVertex, &newTriangles);
-#if 0
-                print("Inserted new vertex (%d %d %d) in triangle %d\n",
-                      newVertex.x,
-                      newVertex.y,
-                      newVertex.z,
-                      t);
-#endif
-
                 usedVertices.emplace(int2(newVertex));
 
-                print("New triangles: ");
                 for (int nt : newTriangles)
-                {
-                    print("%d, ", nt);
                     largestError.emplace(nt);
-                }
-                print("\n");
             }
 		}
 
@@ -641,6 +603,7 @@ class Terrain : public Window
     int vertexCount = -1;
     bool blitArea  = true;
     bool wireframe = false;
+    bool largeVisualization = false;
 
 	HeightmapRenderer heightmapRenderer;
 public:
@@ -680,7 +643,6 @@ public:
     {
         auto area = Rect::withSize(areaStart, areaSize);
         vertexCount = 1 << triangulationDensity;
-        //vertexCount = triangulationDensity;
 
         switch (triangulationMode)
         {
@@ -729,6 +691,7 @@ public:
 						 "OnlyHeight\0"
 						 "WireframeError\0"
 						 "OnlyError\0");
+            ImGui::Checkbox("Large visualization", &largeVisualization);
             ImGui::SliderFloat("Error magnitude", &heightmapRenderer.maxErrorCoeff, 0, .25f);
 
             if (ImGui::Button("Update"))
@@ -757,18 +720,22 @@ public:
 							 * camera.viewMatrix(),
 							 wireframe);
 
-		heightmapRenderer.visualize(cmd,
-#if 0
-								remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1110, 410)),
-							    remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1590, 890)));
-#else
-								remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2( 900, 350)),
-							    remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), float2(1100, 550)));
-#endif
+        {
+            float2 rightBottom = float2(1590, 890);
+            float2 leftTop;
+            if (largeVisualization)
+                leftTop = rightBottom - 800;
+            else
+                leftTop = rightBottom - 300;
+
+            heightmapRenderer.visualize(cmd,
+                                        remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), leftTop),
+                                        remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), rightBottom));
+        }
 
         cmd.setRenderTargets();
 
-        if (blitArea)
+        if (blitArea && !largeVisualization)
         {
             auto p = cmd.profilingEvent("Blit heightmap");
             float2 norm = normalizationMultiplyAdd(heightmap.minHeight, heightmap.maxHeight);
