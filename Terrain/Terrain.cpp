@@ -449,7 +449,7 @@ struct HeightmapRenderer
                 int2 largestErrorCoords;
                 float largestErrorFound = -1;
 
-                constexpr int InteriorSamples = 100;
+                constexpr int InteriorSamples = 20;
                 constexpr int EdgeSamples     = 0;
 
                 auto errorAt = [&] (float3 bary)
