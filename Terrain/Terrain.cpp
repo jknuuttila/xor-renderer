@@ -673,6 +673,9 @@ public:
         if (ImGui::Begin("Terrain", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::SliderInt("Size", &areaSize, 0, heightmap.size.x);
+            if (ImGui::Button("Round size to power of two"))
+                areaSize = roundUpToPow2(areaSize);
+
             ImGui::SliderInt2("Start", areaStart.data(), 0, heightmap.size.x - areaSize);
             ImGui::SliderInt("Density", &triangulationDensity, 5, 16);
             vertexCount = 1 << triangulationDensity;

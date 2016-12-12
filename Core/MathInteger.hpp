@@ -46,4 +46,18 @@ namespace xor
         auto offset       = (alignment - misalignment) % alignment;
         return value + offset;
     }
+
+    template <typename T> T roundUpToPow2(T v)
+    {
+        v--;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        if (sizeof(T) > 1) v |= v >> 8;
+        if (sizeof(T) > 2) v |= v >> 16;
+        if (sizeof(T) > 4) v |= v >> 32;
+        v++;
+
+        return v;
+    }
 }
