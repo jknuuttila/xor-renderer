@@ -55,7 +55,13 @@ namespace xor
         v |= v >> 4;
         if (sizeof(T) > 1) v |= v >> 8;
         if (sizeof(T) > 2) v |= v >> 16;
+#pragma warning (push)
+#pragma warning (disable: 4293)
+        // warning C4293: '>>': shift count negative or too big, undefined behavior
+        // Disable warning, because the branch makes sure the shift is never done
+        // unless it's a 64-bit integer, in which case it's not UB.
         if (sizeof(T) > 4) v |= v >> 32;
+#pragma warning (pop)
         v++;
 
         return v;
