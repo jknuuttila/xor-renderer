@@ -427,6 +427,7 @@ namespace xor
 			{
 				std::vector<float> values;
 				int next = 0;
+                bool printToConsole = false;
 			};
 			int profilingDataHistoryLength = 10;
 			std::unordered_map<uint64_t, ProfilingEventHistory> profilingDataHistory;

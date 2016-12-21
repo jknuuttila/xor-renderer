@@ -182,6 +182,211 @@ struct HeightmapRenderer
 		this->mesh = Mesh::generate(device, attrs, indices);
 	}
 
+    template <typename DEMesh>
+	void tipsifyMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
+	{
+        Timer timer;
+
+		auto numVerts = mesh.numVertices();
+
+        int seenVertexCounter = 0;
+        std::vector<int> newVertexIndices;
+        std::vector<int> vertexForNewIndex(numVerts);
+        auto newVertexIdx = [&] (int v)
+        {
+            if (newVertexIndices[v] < 0)
+            {
+                int v_ = seenVertexCounter;
+                ++seenVertexCounter;
+                newVertexIndices[v] = v_;
+                vertexForNewIndex[v_] = v;
+                return v_;
+            }
+            else
+            {
+                return newVertexIndices[v];
+            }
+        };
+
+        std::vector<int> recentVertices;
+        std::vector<int> liveTriangles;
+        std::vector<uint8_t> triangleEmitted;
+        std::vector<uint> indices;
+
+        constexpr int VertexCacheSize = 16;
+        int vertexCacheTime = 0;
+        std::vector<int> vertexCacheTimestamps;
+
+        auto processVertex = [&] (int v)
+        {
+            int &age = vertexCacheTimestamps[v];
+            if (vertexCacheTime - age >= VertexCacheSize)
+            {
+                // Not in cache
+                age = vertexCacheTime;
+                ++vertexCacheTime;
+                recentVertices.emplace_back(v);
+            }
+        };
+
+        {
+            int arbitraryVertex = 0;
+
+            int numVerts = mesh.numVertices();
+
+            newVertexIndices.resize(numVerts, -1);
+            liveTriangles.resize(numVerts);
+            vertexCacheTimestamps.resize(numVerts, -2 * VertexCacheSize);
+            triangleEmitted.resize(mesh.numTriangles());
+            indices.reserve(mesh.numTriangles() * 3);
+
+            for (int v = 0; v < numVerts; ++v)
+            {
+                mesh.vertexForEachTriangle(v, [&](int t)
+                {
+                    ++liveTriangles[v];
+                });
+            }
+
+            int fanningVertex = -1;
+            for (;;)
+            {
+                // If there is no valid vertex, pick the next vertex with some
+                // triangles left.
+                if (fanningVertex < 0)
+                {
+                    while (arbitraryVertex < numVerts)
+                    {
+                        if (liveTriangles[arbitraryVertex] > 0)
+                        {
+                            fanningVertex = arbitraryVertex;
+                            break;
+                        }
+
+                        ++arbitraryVertex;
+                    }
+
+                    if (arbitraryVertex >= numVerts)
+                        break;
+                }
+
+                XOR_ASSERT(fanningVertex >= 0, "No valid vertex");
+
+                // Emit all triangles of the vertex
+                mesh.vertexForEachTriangle(fanningVertex, [&] (int t)
+                {
+                    if (triangleEmitted[t])
+                        return;
+
+                    int3 vs = mesh.triangleVertices(t);
+
+                    for (int v : vs.span())
+                    {
+                        XOR_ASSERT(liveTriangles[v] > 0, "Trying to reduce triangles from a fully processed vertex");
+                        --liveTriangles[v];
+                    }
+
+                    processVertex(vs.x);
+                    processVertex(vs.y);
+                    processVertex(vs.z);
+
+                    indices.emplace_back(newVertexIdx(vs.x));
+                    indices.emplace_back(newVertexIdx(vs.y));
+                    indices.emplace_back(newVertexIdx(vs.z));
+
+                    triangleEmitted[t] = 1;
+                });
+
+                int oldestAge = -1;
+                int nextVertex = -1;
+                mesh.vertexForEachAdjacentVertex(fanningVertex, [&] (int v)
+                {
+                    int live = liveTriangles[v];
+                    if (live == 0)
+                        return;
+
+                    int worstCaseVerts = live * 2;
+                    int age = vertexCacheTime - vertexCacheTimestamps[v];
+
+                    if (age + worstCaseVerts < VertexCacheSize)
+                    {
+                        // Vertex would still be in cache after emitting its triangles,
+                        // and is thus valid.
+                        if (oldestAge < age)
+                        {
+                            oldestAge = age;
+                            nextVertex = v;
+                        }
+                    }
+                });
+
+                // If we don't have a valid vertex from the adjacent vertices,
+                // try the recently processed vertices
+                if (nextVertex < 0)
+                {
+                    while (!recentVertices.empty())
+                    {
+                        int v = recentVertices.back();
+                        recentVertices.pop_back();
+
+                        if (liveTriangles[v] > 0)
+                        {
+                            nextVertex = v;
+                            break;
+                        }
+                    }
+                }
+
+                fanningVertex = nextVertex;
+            }
+        }
+
+		std::vector<float2> normalizedPos(numVerts);
+		std::vector<float>  height(numVerts);
+		std::vector<float2> uv(numVerts);
+
+        float2 dims = float2(heightmap->size);
+
+        auto verts = mesh.vertices();
+
+		for (int i = 0; i < numVerts; ++i)
+		{
+			auto &v          = verts[vertexForNewIndex[i]];
+			uv[i]            = float2(v.pos) / dims;
+			normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), uv[i]);
+			height[i]        = heightData.pixel<float>(uint2(v.pos));
+		}
+
+        XOR_ASSERT(indices.size() % 3 == 0, "Unexpected amount of indices");
+		for (size_t i = 0; i < indices.size(); i += 3)
+		{
+            uint a = indices[i];
+            uint b = indices[i + 1];
+            uint c = indices[i + 2];
+
+			// Negate CCW test because the positions are in UV coordinates,
+			// which is left handed because +Y goes down
+			bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
+
+			if (!ccw)
+                std::swap(indices[i + 1], indices[i + 2]);
+		}
+
+		VertexAttribute attrs[] =
+		{
+			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
+			{ "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(height) },
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
+		};
+
+		this->mesh = Mesh::generate(device, attrs, indices);
+
+        log("Heightmap", "Generated tipsified mesh with %d vertices and %d triangles in %.2f ms\n",
+            mesh.numVertices(),
+            mesh.numTriangles(),
+            timer.milliseconds());
+	}
+
     using Vert = Vector<int64_t, 3>;
 
     Vert vertex(int2 coords) const
@@ -361,7 +566,7 @@ struct HeightmapRenderer
 #endif
 	}
 
-	void incrementalMinError(Rect area, uint vertices)
+	void incrementalMinError(Rect area, uint vertices, bool tipsify = true)
 	{
 		Timer timer;
 
@@ -509,9 +714,19 @@ struct HeightmapRenderer
             timer.milliseconds());
 
         setBounds(area);
-		gpuMesh(mesh,
-                float2(area.leftTop) / float2(heightmap->size),
-                float2(area.rightBottom) / float2(heightmap->size));
+
+        if (tipsify)
+        {
+            tipsifyMesh(mesh,
+                        float2(area.leftTop) / float2(heightmap->size),
+                        float2(area.rightBottom) / float2(heightmap->size));
+        }
+        else
+        {
+            gpuMesh(mesh,
+                    float2(area.leftTop) / float2(heightmap->size),
+                    float2(area.rightBottom) / float2(heightmap->size));
+        }
 	}
 
 	void render(CommandList &cmd, const Matrix &viewProj, bool wireframe = false)
@@ -601,6 +816,7 @@ class Terrain : public Window
 	int triangulationDensity = 6;
     TriangulationMode triangulationMode = TriangulationMode::IncMinError;//TriangulationMode::UniformGrid;
     int vertexCount = -1;
+    bool tipsifyMesh = true;
     bool blitArea  = true;
     bool wireframe = false;
     bool largeVisualization = false;
@@ -654,7 +870,7 @@ public:
             heightmapRenderer.randomTriangulation(area, vertexCount);
             break;
         case TriangulationMode::IncMinError:
-            heightmapRenderer.incrementalMinError(area, vertexCount);
+            heightmapRenderer.incrementalMinError(area, vertexCount, tipsifyMesh);
             break;
         }
 
@@ -685,6 +901,7 @@ public:
                          "Uniform grid\0"
                          "Random\0"
                          "Incremental min error\0");
+            ImGui::Checkbox("Tipsify vertex cache optimization", &tipsifyMesh);
             ImGui::Checkbox("Show area", &blitArea);
             ImGui::Checkbox("Wireframe", &wireframe);
 			ImGui::Combo("Visualize triangulation",

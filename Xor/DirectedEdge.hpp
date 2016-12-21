@@ -177,7 +177,7 @@ namespace xor
         }
 
         template <typename F>
-        int vertexForEachTriangle(int v, F &&f) const
+        int vertexForEachOutgoingEdge(int v, F &&f) const
         {
             int count = 0;
             int firstEdge = vertexEdge(v);
@@ -188,8 +188,7 @@ namespace xor
 
             for (;;)
             {
-                int t = edgeTriangle(e);
-                f(t);
+                f(e);
                 ++count;
 
                 // e always points away from the edge, so its neighbor,
@@ -225,13 +224,29 @@ namespace xor
                 if (n < 0 || n == firstEdge)
                     return count;
 
-                // The neighbor belongs to a new triangle.
-                int t = edgeTriangle(n);
-                f(t);
+                f(n);
                 ++count;
                 
                 e = n;
             }
+        }
+
+        template <typename F>
+        int vertexForEachTriangle(int v, F &&f) const
+        {
+            return vertexForEachOutgoingEdge(v, [&] (int e)
+            {
+                f(this->edgeTriangle(e));
+            });
+        }
+
+        template <typename F>
+        int vertexForEachAdjacentVertex(int v, F &&f) const
+        {
+            return vertexForEachOutgoingEdge(v, [&] (int e)
+            {
+                f(this->edgeTarget(e));
+            });
         }
 
         void clear()
@@ -313,11 +328,20 @@ namespace xor
         // their connectivity is fixed.
         void disconnectEdge(int e)
         {
-            auto &v = V(edgeStart(e));
+            int vi = edgeStart(e);
+            auto &v = V(vi);
             int n = edgeNeighbor(e);
 
             if (v.edge == e)
-                v.edge = -1;
+            {
+                int anotherEdge = -1;
+                vertexForEachOutgoingEdge(vi, [&] (int out)
+                {
+                    if (out != e)
+                        anotherEdge = out;
+                });
+                v.edge = anotherEdge;
+            }
 
             if (n >= 0)
             {

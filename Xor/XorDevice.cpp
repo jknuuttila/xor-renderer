@@ -445,6 +445,13 @@ namespace xor
 								data->name,
 								avgMs))
 			{
+                ImGui::Checkbox("Print to console", &history.printToConsole);
+                if (history.printToConsole)
+                {
+                    log("Profiling", "%s (%lld): %.4f ms\n",
+                        data->name, lld(now()), avgMs);
+                }
+
 				ImGui::PlotLines(data->name, history.values.data(), static_cast<int>(history.values.size()));
 				data = processProfilingEvent(data + 1, end, ticksToMs, indent + 1);
 				ImGui::TreePop();
