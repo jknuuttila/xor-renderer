@@ -63,7 +63,6 @@ struct Heightmap
 enum class TriangulationMode
 {
     UniformGrid,
-    Random,
     IncMinError,
 };
 
@@ -387,6 +386,84 @@ struct HeightmapRenderer
             timer.milliseconds());
 	}
 
+    double calculateMeshSquaredError()
+    {
+        Timer timer;
+        auto &uvAttr = mesh.vertexAttribute(2);
+        XOR_ASSERT(uvAttr.format == DXGI_FORMAT_R32G32_FLOAT, "Unexpected format");
+
+        auto uv = reinterpretSpan<const float2>(uvAttr.data);
+        auto indices = reinterpretSpan<const uint>(mesh.indices().data);
+
+        double squaredError = 0;
+        double maxError = 0;
+
+        float2 dims = float2(heightmap->size);
+
+        std::vector<uint8_t> once(heightmap->size.x * heightmap->size.y, 0);
+
+        XOR_ASSERT(indices.size() % 3 == 0, "Unexpected amount of indices");
+        for (size_t i = 0; i < indices.size(); i += 3)
+        {
+            uint a = indices[i];
+            uint b = indices[i + 1];
+            uint c = indices[i + 2];
+
+            float2 uv_a = uv[a];
+            float2 uv_b = uv[b];
+            float2 uv_c = uv[c];
+
+            if (!isTriangleCCW(uv_a, uv_b, uv_c))
+            {
+                std::swap(b, c);
+                std::swap(uv_b, uv_c);
+            }
+
+            int2 p_a = int2(uv_a * dims);
+            int2 p_b = int2(uv_b * dims);
+            int2 p_c = int2(uv_c * dims);
+
+            float z_a = heightData.pixel<float>(uv_a);
+            float z_b = heightData.pixel<float>(uv_b);
+            float z_c = heightData.pixel<float>(uv_c);
+
+#if 0
+            Timer rt;
+            int pixels = 0;
+#endif
+            rasterizeTriangleCCWBarycentric(p_a, p_b, p_c, [&] (int2 p, float3 bary)
+            {
+                int idx = p.y * heightmap->size.x + p.x;
+                if (once[idx]) return;
+                once[idx] = 1;
+
+                float z_p            = heightData.pixel<float>(uint2(p));
+                float z_interpolated = interpolateBarycentric(z_a, z_b, z_c, bary);
+                double dz            = z_p - z_interpolated;
+                squaredError += dz * dz;
+                maxError = std::max(maxError, std::abs(dz));
+            });
+#if 0
+            print("Rasterized (%d %d)-(%d %d)-(%d %d), %d pixels in %.4f ms\n",
+                  p_a.x,
+                  p_a.y,
+                  p_b.x,
+                  p_b.y,
+                  p_c.x,
+                  p_c.y,
+                  pixels, rt.milliseconds());
+#endif
+        }
+
+        log("Heightmap", "Calculated RMSE %e and L_inf %e for mesh with %zu triangles in %.2f ms\n",
+            sqrt(squaredError),
+            maxError,
+            indices.size() / 3,
+            timer.milliseconds());
+
+        return squaredError;
+    }
+
     using Vert = Vector<int64_t, 3>;
 
     Vert vertex(int2 coords) const
@@ -416,6 +493,7 @@ struct HeightmapRenderer
         maxWorld =  extent;
     }
 
+    // TODO: Rename "vertices", since this will actually use more
     void uniformGrid(Rect area, uint vertices)
     {
         int density = static_cast<int>(round(sqrt(static_cast<double>(vertices))));
@@ -502,69 +580,6 @@ struct HeightmapRenderer
 
         this->mesh = Mesh::generate(device, attrs, indices);
     }
-
-	void randomTriangulation(Rect area, uint vertices)
-	{
-#if 0
-		Timer timer;
-
-		DE mesh;
-        int first  = mesh.addTriangle(vertex(area, {1, 0}), vertex(area, {0, 1}), vertex(area, {0, 0}));
-        int second = mesh.addTriangleToBoundary(mesh.triangleEdge(first), vertex(area, {1, 1}));
-
-		std::mt19937 gen(12345);
-
-        BowyerWatson<DE> delaunay(mesh);
-
-		while (mesh.numVertices() < static_cast<int>(vertices))
-		{
-            int triangle = -1;
-            float largestArea = 0;
-
-            for (int j = 0; j < 10; ++j)
-            {
-                int t = std::uniform_int_distribution<int>(0u, mesh.numTriangles() - 1)(gen);
-                if (!mesh.triangleIsValid(t))
-                    continue;
-                int3 verts = mesh.triangleVertices(t);
-
-                float2 v0 = float2(mesh.V(verts.x).pos);
-                float2 v1 = float2(mesh.V(verts.y).pos);
-                float2 v2 = float2(mesh.V(verts.z).pos);
-                float area = abs(triangleDoubleSignedArea(v0, v1, v2));
-
-                if (area > largestArea)
-                {
-                    triangle    = t;
-                    largestArea = area;
-                }
-            }
-
-            if (triangle < 0 || !mesh.triangleIsValid(triangle))
-                continue;
-
-			float3 bary = uniformBarycentric(gen);
-            int3 vs = mesh.triangleVertices(triangle);
-            float3 pos = interpolateBarycentric(mesh.V(vs.x).pos,
-                                                mesh.V(vs.y).pos,
-                                                mesh.V(vs.z).pos,
-                                                bary);
-            pos.z = heightData.pixel<float>(float2(pos));
-
-            delaunay.insertVertex(triangle, pos);
-		}
-
-        log("Heightmap", "Generated random triangulation with %d vertices and %d triangles in %.2f ms\n",
-            mesh.numVertices(),
-            mesh.numTriangles(),
-            timer.milliseconds());
-
-        setBounds(area);
-		gpuMesh(mesh,
-                float2(area.leftTop) / float2(heightmap->size),
-                float2(area.rightBottom) / float2(heightmap->size));
-#endif
-	}
 
 	void incrementalMinError(Rect area, uint vertices, bool tipsify = true)
 	{
@@ -859,20 +874,20 @@ public:
     {
         auto area = Rect::withSize(areaStart, areaSize);
         vertexCount = 1 << triangulationDensity;
+        int dim = static_cast<int>(round(sqrt(double(vertexCount))));
 
         switch (triangulationMode)
         {
         case TriangulationMode::UniformGrid:
         default:
-            heightmapRenderer.uniformGrid(area, vertexCount);
-            break;
-        case TriangulationMode::Random:
-            heightmapRenderer.randomTriangulation(area, vertexCount);
+            heightmapRenderer.uniformGrid(area, dim * dim);
             break;
         case TriangulationMode::IncMinError:
-            heightmapRenderer.incrementalMinError(area, vertexCount, tipsifyMesh);
+            heightmapRenderer.incrementalMinError(area, (dim + 1) * (dim + 1), tipsifyMesh);
             break;
         }
+
+        heightmapRenderer.calculateMeshSquaredError();
 
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
     }
@@ -899,7 +914,6 @@ public:
             ImGui::Combo("Triangulation mode",
                          reinterpret_cast<int *>(&triangulationMode),
                          "Uniform grid\0"
-                         "Random\0"
                          "Incremental min error\0");
             ImGui::Checkbox("Tipsify vertex cache optimization", &tipsifyMesh);
             ImGui::Checkbox("Show area", &blitArea);

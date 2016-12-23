@@ -22,14 +22,6 @@ namespace xor
     template <typename T>
     inline T edgeFunction(Vector<T, 2> v0, Vector<T, 2> v1, Vector<T, 2> p)
     {
-        T A = (v0.y - v1.y);
-        T B = (v1.x - v0.x);
-        T C = (v0.x * v1.y);
-        T D = (v0.y * v1.x);
-        T E = A * p.x;
-        T F = B * p.y;
-        T G = C - D;
-        T H = E + F + G;
         return (v0.y - v1.y) * p.x + (v1.x - v0.x) * p.y + (v0.x * v1.y - v0.y * v1.x);
     }
     template <typename T>
@@ -70,9 +62,9 @@ namespace xor
     template <typename T>
     inline float3 barycentric(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p, T doubleSignedArea)
     {
-        return float3(edgeFunction01(a, b, c, p),
-                      edgeFunction12(a, b, c, p),
-                      edgeFunction20(a, b, c, p)) / float(doubleSignedArea);
+        return float3(Vector<T, 3>(edgeFunction01(a, b, c, p),
+                                   edgeFunction12(a, b, c, p),
+                                   edgeFunction20(a, b, c, p))) / float(doubleSignedArea);
     }
     template <typename T>
     inline float3 barycentric(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p)
@@ -193,16 +185,6 @@ namespace xor
 
         bool ccw = isTriangleCCW(p1, p2, p3);
 
-#if 0
-        print("inCircle[(%d %d), (%d %d), (%d %d), (%d %d)] = %x (%s)\n",
-              p1.x, p1.y,
-              p2.x, p2.y,
-              p3.x, p3.y,
-              p4.x, p4.y,
-              inCircleTest,
-              ccw ? "CCW" : "CW");
-#endif
-
         if (ccw)
             return inCircleTest > 0;
         else
@@ -220,5 +202,48 @@ namespace xor
 
 		return float3(1 - sr1, sr1 * (1 - r2), r2 * sr1);
 	}
-}
 
+    template <typename T, typename F>
+    void rasterizeTriangle(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, F &&f)
+    {
+        static_assert(std::is_integral<T>::value, "Rasterization only supported for integer coordinates");
+
+        auto minBound = min(a, min(b, c));
+        auto maxBound = max(a, max(b, c));
+
+        for (T y = minBound.y; y <= maxBound.y; ++y)
+        {
+            for (T x = minBound.x; x <= maxBound.x; ++x)
+            {
+                Vector<T, 2> p {x, y};
+                if (isPointInsideTriangle(a, b, c, p))
+                    f(p);
+            }
+        }
+    }
+
+    template <typename T, typename F>
+    void rasterizeTriangleUnknownWinding(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, F &&f)
+    {
+        if (isTriangleCCW(a, b, c))
+            rasterizeTriangle(a, b, c, std::forward<F>(f));
+        else
+            rasterizeTriangle(a, c, b, std::forward<F>(f));
+    }
+
+    template <typename T, typename F>
+    void rasterizeTriangleCCWBarycentric(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, F &&f)
+    {
+        T dsa = triangleDoubleSignedArea(a, b, c);
+
+        // If the triangle is degenerate, there is nothing to rasterize
+        if (dsa != 0)
+        {
+            rasterizeTriangle(a, b, c, [&](Vector<T, 2> p)
+            {
+                float3 bary = barycentric(a, b, c, p, dsa);
+                f(p, bary);
+            });
+        }
+    }
+}
