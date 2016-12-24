@@ -110,6 +110,27 @@ namespace xor
             return *this;
         }
 
+        float2 normalized(int2 coords) const
+        {
+            return float2(coords) / float2(size);
+        }
+
+        float2 normalized(uint2 coords) const
+        {
+            return float2(coords) / float2(size);
+        }
+
+        uint2 unnormalized(float2 uv) const
+        {
+            return uint2(uv * float2(size));
+        }
+
+        template <typename T>
+        const T &pixel(int2 coords) const
+        {
+            return pixel<T>(uint2(max(int2(0), coords)));
+        }
+
         template <typename T>
         const T &pixel(uint2 coords) const
         {
@@ -138,10 +159,66 @@ namespace xor
             return reinterpretSpan<const T>(data(offset, offset + length));
         }
 
+        template <typename T>
+        Span<const T> scanline(int y) const { return scanline<T>(uint(y)); }
+
         size_t sizeBytes() const
         {
             return static_cast<size_t>(size.y) * pitch;
         }
+    };
+
+    struct RWImageData : ImageData
+    {
+        Span<uint8_t> mutableData;
+
+        DynamicBuffer<uint8_t> createNewImage(uint2 size, Format format)
+        {
+            this->size = size;
+            this->format = format;
+            setDefaultSizes();
+            DynamicBuffer<uint8_t> bytes(sizeBytes());
+            mutableData = bytes;
+            data = bytes;
+            return bytes;
+        }
+
+        template <typename T>
+        T &pixel(int2 coords)
+        {
+            return pixel<T>(uint2(max(int2(0), coords)));
+        }
+
+        template <typename T>
+        T &pixel(uint2 coords)
+        {
+			coords = min(coords, size - 1);
+
+            // TODO: Block compressed formats
+            uint offset =
+                coords.y * pitch +
+                coords.x * pixelSize;
+
+            return reinterpret_cast<T &>(mutableData[offset]);
+        }
+
+        template <typename T>
+        T &pixel(float2 uv)
+        {
+			uint2 coords = uint2(uv * float2(size));
+			return pixel<T>(coords);
+        }
+
+        template <typename T>
+        Span<T> scanline(uint y)
+        {
+            uint offset = y * pitch;
+            uint length = format.areaSizeBytes(size.x);
+            return reinterpretSpan<T>(mutableData(offset, offset + length));
+        }
+
+        template <typename T>
+        Span<T> scanline(int y) { return scanline<T>(uint(y)); }
     };
 
     namespace info

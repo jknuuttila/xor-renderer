@@ -10,6 +10,7 @@ struct VSInput
 struct VSOutput
 {
 	float4 uvHeight : TEXCOORD0;
+    float4 areaUv   : TEXCOORD1;
     float4 pos      : SV_Position;
 };
 
@@ -18,6 +19,7 @@ VSOutput main(VSInput i)
 {
     VSOutput o;
 	o.uvHeight = float4(i.uv, i.height, 0);
+    o.areaUv   = float4(i.normalizedPos, 0, 0);
 	o.pos      = float4(lerp(minCorner, maxCorner, i.normalizedPos), 0, 1);
     return o;
 }

@@ -3,6 +3,7 @@
 struct PSInput
 {
     float4 uvHeight : TEXCOORD0;
+    float4 areaUv   : TEXCOORD1;
 };
 
 [RootSignature(VisualizeTriangulation_ROOT_SIGNATURE)]
@@ -17,8 +18,10 @@ float4 main(PSInput i) : SV_Target
 	float v      = remap(minHeight, maxHeight, 0, 1, height);
 
 	float4 color = 0;
-#ifdef SHOW_ERROR
+#if defined(SHOW_ERROR)
 	color.rgb = signedColor(approxHeight - height, maxError);
+#elif defined(CPU_ERROR)
+    color.rgb = signedColor(cpuCalculatedError.Sample(pointSampler, i.areaUv.xy), maxError);
 #else
 	color.r = v;
 #endif

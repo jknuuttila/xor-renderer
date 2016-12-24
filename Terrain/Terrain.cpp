@@ -73,6 +73,7 @@ enum class VisualizationMode
 	OnlyHeight,
 	WireframeError,
 	OnlyError,
+	CPUError,
 };
 
 struct HeightmapRenderer
@@ -87,8 +88,10 @@ struct HeightmapRenderer
     ImageData heightData;
 	float2 minWorld;
 	float2 maxWorld;
+    Rect area;
 	float  maxErrorCoeff = .05f;
 	VisualizationMode mode = VisualizationMode::WireframeHeight;
+    TextureSRV cpuError;
 
 	HeightmapRenderer() = default;
 	HeightmapRenderer(Device device, Heightmap &hmap)
@@ -386,17 +389,19 @@ struct HeightmapRenderer
             timer.milliseconds());
 	}
 
-    double calculateMeshSquaredError()
+    void calculateMeshError()
     {
         Timer timer;
+
+        RWImageData error;
+        auto errorBytes = error.createNewImage(area.size(), DXGI_FORMAT_R32_FLOAT);
+        errorBytes.fill(0);
+
         auto &uvAttr = mesh.vertexAttribute(2);
         XOR_ASSERT(uvAttr.format == DXGI_FORMAT_R32G32_FLOAT, "Unexpected format");
 
         auto uv = reinterpretSpan<const float2>(uvAttr.data);
         auto indices = reinterpretSpan<const uint>(mesh.indices().data);
-
-        double squaredError = 0;
-        double maxError = 0;
 
         float2 dims = float2(heightmap->size);
 
@@ -433,15 +438,10 @@ struct HeightmapRenderer
 #endif
             rasterizeTriangleCCWBarycentric(p_a, p_b, p_c, [&] (int2 p, float3 bary)
             {
-                int idx = p.y * heightmap->size.x + p.x;
-                if (once[idx]) return;
-                once[idx] = 1;
-
-                float z_p            = heightData.pixel<float>(uint2(p));
-                float z_interpolated = interpolateBarycentric(z_a, z_b, z_c, bary);
-                double dz            = z_p - z_interpolated;
-                squaredError += dz * dz;
-                maxError = std::max(maxError, std::abs(dz));
+                float z_p             = heightData.pixel<float>(p);
+                float z_interpolated  = interpolateBarycentric(z_a, z_b, z_c, bary);
+                double dz             = z_p - z_interpolated;
+                error.pixel<float>(p - area.leftTop) = float(dz);
             });
 #if 0
             print("Rasterized (%d %d)-(%d %d)-(%d %d), %d pixels in %.4f ms\n",
@@ -455,13 +455,32 @@ struct HeightmapRenderer
 #endif
         }
 
-        log("Heightmap", "Calculated RMSE %e and L_inf %e for mesh with %zu triangles in %.2f ms\n",
-            sqrt(squaredError),
+        double rmsError = 0;
+        double sumAbsError  = 0;
+        double maxError     = 0;
+
+        cpuError = device.createTextureSRV(info::TextureInfo(error));
+
+        for (uint y = 0; y < error.size.y; ++y)
+        {
+            for (uint x = 0; x < error.size.x; ++x)
+            {
+                float e      = error.pixel<float>(uint2(x, y));
+                double ae    = std::abs(e);
+                rmsError    += e * e;
+                sumAbsError += ae;
+                maxError     = std::max(maxError, ae);
+            }
+        }
+
+        rmsError = std::sqrt(rmsError);
+
+        log("Heightmap", "L2: %e, L1: %e, L_inf: %e, Calculated for %zu triangles in %.2f ms\n",
+            rmsError,
+            sumAbsError,
             maxError,
             indices.size() / 3,
             timer.milliseconds());
-
-        return squaredError;
     }
 
     using Vert = Vector<int64_t, 3>;
@@ -474,8 +493,7 @@ struct HeightmapRenderer
 
     Vert vertex(float2 uv) const
     {
-        float2 unnormalized = uv * float2(heightmap->size);
-        return vertex(int2(unnormalized));
+        return vertex(int2(heightData.unnormalized(uv)));
     }
 
     Vert vertex(Rect area, float2 uv)
@@ -486,6 +504,7 @@ struct HeightmapRenderer
 
     void setBounds(Rect area)
     {
+        this->area = area;
         float2 texels = float2(area.size());
         float2 size   = texels * heightmap->texelSize;
         float2 extent = size / 2.f;
@@ -794,11 +813,15 @@ struct HeightmapRenderer
 		if (mode == VisualizationMode::OnlyError || mode == VisualizationMode::WireframeError)
 			cmd.bind(visualizeTriangulation.variant()
 					 .pixelShader(info::SameShader {}, { { "SHOW_ERROR" } }));
+        else if (mode == VisualizationMode::CPUError)
+			cmd.bind(visualizeTriangulation.variant()
+					 .pixelShader(info::SameShader {}, { { "CPU_ERROR" } }));
 		else
 			cmd.bind(visualizeTriangulation);
 
 		cmd.setConstants(vtConstants);
-		cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->srv);
+		cmd.setShaderView(VisualizeTriangulation::heightMap,          heightmap->srv);
+		cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, cpuError);
 		cmd.drawIndexed(mesh.numIndices());
 
 		if (mode == VisualizationMode::WireframeHeight || mode == VisualizationMode::WireframeError)
@@ -808,10 +831,10 @@ struct HeightmapRenderer
 					 .fill(D3D12_FILL_MODE_WIREFRAME));
 			cmd.setConstants(vtConstants);
 			cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->srv);
+            cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, cpuError);
 			cmd.drawIndexed(mesh.numIndices());
 		}
 	}
-
 };
 
 class Terrain : public Window
@@ -887,7 +910,7 @@ public:
             break;
         }
 
-        heightmapRenderer.calculateMeshSquaredError();
+        heightmapRenderer.calculateMeshError();
 
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
     }
@@ -924,7 +947,8 @@ public:
 						 "WireframeHeight\0"
 						 "OnlyHeight\0"
 						 "WireframeError\0"
-						 "OnlyError\0");
+						 "OnlyError\0"
+						 "CPUError\0");
             ImGui::Checkbox("Large visualization", &largeVisualization);
             ImGui::SliderFloat("Error magnitude", &heightmapRenderer.maxErrorCoeff, 0, .25f);
 

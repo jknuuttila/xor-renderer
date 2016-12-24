@@ -456,11 +456,11 @@ namespace xor
         {
             if (sizeof(T) == 1)
             {
-                memset(m_data.get(), value, size);
+                memset(m_data.get(), value, m_size);
             }
             else
             {
-                for (size_t i = 0; i < size; ++i)
+                for (size_t i = 0; i < m_size; ++i)
                     m_data[i] = value;
             }
         }
