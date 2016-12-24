@@ -441,7 +441,9 @@ struct HeightmapRenderer
                 float z_p             = heightData.pixel<float>(p);
                 float z_interpolated  = interpolateBarycentric(z_a, z_b, z_c, bary);
                 double dz             = z_p - z_interpolated;
-                error.pixel<float>(p - area.leftTop) = float(dz);
+                //error.pixel<float>(p - area.leftTop) = float(dz);
+                // error.pixel<float>(p - area.leftTop) = z_p;
+                error.pixel<float>(p - area.leftTop) = z_interpolated;
             });
 #if 0
             print("Rasterized (%d %d)-(%d %d)-(%d %d), %d pixels in %.4f ms\n",
