@@ -22,9 +22,7 @@ float4 main(PSInput i) : SV_Target
 #if defined(SHOW_ERROR)
 	color.rgb = signedColor(approxHeight - height, maxError);
 #elif defined(CPU_ERROR)
-    //color.rgb = signedColor(cpuCalculatedError.Sample(pointSampler, i.areaUv.xy), maxError);
-    //color.rgb = signedColor(, maxError);
-	color.r = remap(minHeight, maxHeight, 0, 1, cpuCalculatedError.Sample(pointSampler, i.areaUv.xy));
+    color.rgb = signedColor(cpuCalculatedError.Sample(pointSampler, i.areaUv.xy), maxError);
 #else
 	color.r = v;
 #endif

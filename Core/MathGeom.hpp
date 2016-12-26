@@ -62,9 +62,9 @@ namespace xor
     template <typename T>
     inline float3 barycentric(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p, T doubleSignedArea)
     {
-        return float3(Vector<T, 3>(edgeFunction01(a, b, c, p),
-                                   edgeFunction12(a, b, c, p),
-                                   edgeFunction20(a, b, c, p))) / float(doubleSignedArea);
+        return float3(Vector<T, 3>(edgeFunction12(a, b, c, p),
+                                   edgeFunction20(a, b, c, p),
+                                   edgeFunction01(a, b, c, p))) / float(doubleSignedArea);
     }
     template <typename T>
     inline float3 barycentric(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c, Vector<T, 2> p)
