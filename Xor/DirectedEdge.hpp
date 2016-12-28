@@ -128,6 +128,15 @@ namespace xor
             return ps;
         }
 
+        // Return true if the given vertex is valid and connected to the mesh.
+        bool vertexIsValid(int v) const
+        {
+            if (v < 0 || v >= numVertices())
+                return false;
+            else
+                return vertexEdge(v) >= 0;
+        }
+
         // Return true if the given triangle is a valid triangle in the mesh.
         bool triangleIsValid(int t) const
         {
@@ -249,6 +258,21 @@ namespace xor
             });
         }
 
+        int vertexRemoveUnconnected()
+        {
+            int removed = 0;
+            for (int v = 0; v < numVertices(); ++v)
+            {
+                if (!vertexIsValid(v))
+                {
+                    removeVertex(v);
+                    ++removed;
+                }
+            }
+
+            return removed;
+        }
+
         void clear()
         {
             m_vertices.clear();
@@ -259,6 +283,22 @@ namespace xor
         int numVertices()  const { return static_cast<int>(m_vertices.size()); }
         int numTriangles() const { return static_cast<int>(m_triangles.size()); }
         int numEdges()     const { return static_cast<int>(m_edges.size()); }
+
+        int numValidVertices() const
+        {
+            int valid = 0;
+            for (int v = 0; v < numVertices(); ++v)
+                valid += static_cast<int>(vertexIsValid(v));
+            return valid;
+        }
+
+        int numValidTriangles() const
+        {
+            int valid = 0;
+            for (int t = 0; t < numTriangles(); ++t)
+                valid += static_cast<int>(triangleIsValid(t));
+            return valid;
+        }
 
         Span<const Vertex> vertices() const { return m_vertices; }
         // Construct an index buffer for the mesh
@@ -289,6 +329,13 @@ namespace xor
             int v = addData(m_freeVertices, m_vertices);
             V(v) = Vertex(pos);
             return v;
+        }
+
+        void removeVertex(int v)
+        {
+            XOR_ASSERT(!vertexIsValid(v), "Tried to remove a connected vertex");
+            V(v) = Vertex();
+            removeData(v, m_freeVertices, m_vertices);
         }
 
         // Add a new unconnected triangle

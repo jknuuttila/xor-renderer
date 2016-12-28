@@ -13,12 +13,20 @@
 #include <random>
 #include <unordered_set>
 
+// 
 
 using namespace xor;
 
 static const float ArcSecond = 30.87f;
 
 static const float NearPlane = 1.f;
+
+struct ErrorMetrics
+{
+    double l2    = 0;
+    double l1    = 0;
+    double l_inf = 0;
+};
 
 struct Heightmap
 {
@@ -63,7 +71,7 @@ struct Heightmap
 enum class TriangulationMode
 {
     UniformGrid,
-    IncMinError,
+    IncMaxError,
 };
 
 enum class VisualizationMode
@@ -389,7 +397,7 @@ struct HeightmapRenderer
             timer.milliseconds());
 	}
 
-    void calculateMeshError()
+    ErrorMetrics calculateMeshError()
     {
         Timer timer;
 
@@ -432,10 +440,6 @@ struct HeightmapRenderer
             float z_b = heightData.pixel<float>(uv_b);
             float z_c = heightData.pixel<float>(uv_c);
 
-#if 0
-            Timer rt;
-            int pixels = 0;
-#endif
             rasterizeTriangleCCWBarycentric(p_a, p_b, p_c, [&] (int2 p, float3 bary)
             {
                 float z_p             = heightData.pixel<float>(p);
@@ -443,16 +447,6 @@ struct HeightmapRenderer
                 double dz             = z_p - z_interpolated;
                 error.pixel<float>(p - area.leftTop) = float(dz);
             });
-#if 0
-            print("Rasterized (%d %d)-(%d %d)-(%d %d), %d pixels in %.4f ms\n",
-                  p_a.x,
-                  p_a.y,
-                  p_b.x,
-                  p_b.y,
-                  p_c.x,
-                  p_c.y,
-                  pixels, rt.milliseconds());
-#endif
         }
 
         double rmsError = 0;
@@ -475,12 +469,19 @@ struct HeightmapRenderer
 
         rmsError = std::sqrt(rmsError);
 
+        ErrorMetrics metrics;
+        metrics.l2    = rmsError;
+        metrics.l1    = sumAbsError;
+        metrics.l_inf = maxError;
+
         log("Heightmap", "L2: %e, L1: %e, L_inf: %e, Calculated for %zu triangles in %.2f ms\n",
-            rmsError,
-            sumAbsError,
-            maxError,
+            metrics.l2,
+            metrics.l1,
+            metrics.l_inf,
             indices.size() / 3,
             timer.milliseconds());
+
+        return metrics;
     }
 
     using Vert = Vector<int64_t, 3>;
@@ -512,11 +513,8 @@ struct HeightmapRenderer
         maxWorld =  extent;
     }
 
-    // TODO: Rename "vertices", since this will actually use more
-    void uniformGrid(Rect area, uint vertices)
+    void uniformGrid(Rect area, uint quadsPerDim)
     {
-        int density = static_cast<int>(round(sqrt(static_cast<double>(vertices))));
-
         Timer t;
 
         area.rightBottom = min(area.rightBottom, heightmap->size);
@@ -527,7 +525,7 @@ struct HeightmapRenderer
         float2 szWorld = float2(sz) * heightmap->texelSize;
 
         int minDim = std::min(sz.x, sz.y);
-        int vertexDistance = minDim / density;
+        int vertexDistance = minDim / static_cast<int>(quadsPerDim);
         vertexDistance = std::max(1, vertexDistance);
 
         int2 verts = sz / vertexDistance;
@@ -600,7 +598,7 @@ struct HeightmapRenderer
         this->mesh = Mesh::generate(device, attrs, indices);
     }
 
-	void incrementalMinError(Rect area, uint vertices, bool tipsify = true)
+	void incrementalMaxError(Rect area, uint vertices, bool tipsify = true)
 	{
 		Timer timer;
 
@@ -688,7 +686,21 @@ struct HeightmapRenderer
                 int2 largestErrorCoords;
                 float largestErrorFound = -1;
 
-                constexpr int InteriorSamples = 20;
+                // InteriorSamples == 1
+                // [Heightmap]: L2: 4.532414e+05, L1: 6.876323e+08, L_inf: 7.701329e+02, Calculated for 152 triangles in 544.34 ms
+                // [Heightmap]: L2: 1.928656e+05, L1: 2.663657e+08, L_inf: 7.379893e+02, Calculated for 1129 triangles in 556.19 ms
+                // [Heightmap]: L2: 8.425315e+04, L1: 1.159352e+08, L_inf: 6.299168e+02, Calculated for 8413 triangles in 568.50 ms
+
+                // InteriorSamples == 10
+                // [Heightmap]: L2: 3.808483e+05, L1: 6.012014e+08, L_inf: 8.759630e+02, Calculated for 151 triangles in 544.98 ms
+                // [Heightmap]: L2: 1.611922e+05, L1: 2.331848e+08, L_inf: 6.007446e+02, Calculated for 1123 triangles in 529.35 ms
+                // [Heightmap]: L2: 6.603029e+04, L1: 1.004696e+08, L_inf: 3.462271e+02, Calculated for 8391 triangles in 560.90 ms
+
+                // InteriorSamples == 100
+                // [Heightmap]: L2: 4.335434e+05, L1: 6.780714e+08, L_inf: 7.855012e+02, Calculated for 151 triangles in 549.67 ms
+                // [Heightmap]: L2: 1.692659e+05, L1: 2.508276e+08, L_inf: 3.902838e+02, Calculated for 1114 triangles in 557.31 ms
+                // [Heightmap]: L2: 6.706991e+04, L1: 1.014288e+08, L_inf: 1.513256e+02, Calculated for 8383 triangles in 570.01 ms
+                constexpr int InteriorSamples = 30;
                 constexpr int EdgeSamples     = 0;
 
                 auto errorAt = [&] (float3 bary)
@@ -742,9 +754,11 @@ struct HeightmapRenderer
 
         delaunay.removeSuperTriangle();
 
-        log("Heightmap", "Generated incremental min error triangulation with %d vertices and %d triangles in %.2f ms\n",
-            mesh.numVertices(),
-            mesh.numTriangles(),
+        mesh.vertexRemoveUnconnected();
+
+        log("Heightmap", "Generated incremental max error triangulation with %d vertices and %d triangles in %.2f ms\n",
+            mesh.numValidVertices(),
+            mesh.numValidTriangles(),
             timer.milliseconds());
 
         setBounds(area);
@@ -852,8 +866,7 @@ class Terrain : public Window
     int2 areaStart = { 2000, 0 };
     int areaSize  = 2048;
 	int triangulationDensity = 6;
-    TriangulationMode triangulationMode = TriangulationMode::IncMinError;//TriangulationMode::UniformGrid;
-    int vertexCount = -1;
+    TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
     bool blitArea  = true;
     bool wireframe = false;
@@ -896,23 +909,62 @@ public:
     void updateTerrain()
     {
         auto area = Rect::withSize(areaStart, areaSize);
-        vertexCount = 1 << triangulationDensity;
-        int dim = static_cast<int>(round(sqrt(double(vertexCount))));
 
         switch (triangulationMode)
         {
         case TriangulationMode::UniformGrid:
         default:
-            heightmapRenderer.uniformGrid(area, dim * dim);
+            heightmapRenderer.uniformGrid(area, quadsPerDim());
             break;
-        case TriangulationMode::IncMinError:
-            heightmapRenderer.incrementalMinError(area, (dim + 1) * (dim + 1), tipsifyMesh);
+        case TriangulationMode::IncMaxError:
+            heightmapRenderer.incrementalMaxError(area, vertexCount(), tipsifyMesh);
             break;
         }
 
         heightmapRenderer.calculateMeshError();
 
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
+    }
+
+    void measureTerrain()
+    {
+        auto area = Rect::withSize(areaStart, areaSize);
+
+        constexpr int N = 18;
+        std::vector<ErrorMetrics> uni(N);
+        std::vector<ErrorMetrics> inc(N);
+
+        for (int d = 2; d < N; ++d)
+        {
+            heightmapRenderer.uniformGrid(area, quadsPerDim(d));
+            uni[d] = heightmapRenderer.calculateMeshError();
+            heightmapRenderer.incrementalMaxError(area, vertexCount(d), true);
+            inc[d] = heightmapRenderer.calculateMeshError();
+        }
+
+        print("%20s;%20s;%20s;%20s\n", "Vertices", "Uniform", "IncrementalMaxError", "Ratio");
+        for (int d = 2; d < N; ++d)
+        {
+            print("%20d;%20e;%20e;%20f\n",
+                  vertexCount(d),
+                  uni[d].l2,
+                  inc[d].l2,
+                  uni[d].l2 / inc[d].l2);
+        }
+
+        updateTerrain();
+    }
+
+    int quadsPerDim(int density = 0) const
+    {
+        if (density == 0) density = triangulationDensity;
+        return static_cast<int>(std::round(std::pow(std::sqrt(2), static_cast<float>(density))));
+    }
+
+    int vertexCount(int density = 0) const
+    {
+        int qpd = quadsPerDim(density);
+        return (qpd + 1) * (qpd + 1);
     }
 
     void mainLoop(double deltaTime) override
@@ -931,13 +983,12 @@ public:
                 areaSize = roundUpToPow2(areaSize);
 
             ImGui::SliderInt2("Start", areaStart.data(), 0, heightmap.size.x - areaSize);
-            ImGui::SliderInt("Density", &triangulationDensity, 5, 16);
-            vertexCount = 1 << triangulationDensity;
-            ImGui::Text("Vertex count: %d", vertexCount);
+            ImGui::SliderInt("Density", &triangulationDensity, 5, 18);
+            ImGui::Text("Vertex count: %d", vertexCount());
             ImGui::Combo("Triangulation mode",
                          reinterpret_cast<int *>(&triangulationMode),
                          "Uniform grid\0"
-                         "Incremental min error\0");
+                         "Incremental max error\0");
             ImGui::Checkbox("Tipsify vertex cache optimization", &tipsifyMesh);
             ImGui::Checkbox("Show area", &blitArea);
             ImGui::Checkbox("Wireframe", &wireframe);
@@ -955,13 +1006,16 @@ public:
             if (ImGui::Button("Update"))
                 updateTerrain();
 
+            if (ImGui::Button("Measurement"))
+                measureTerrain();
+
             ImGui::End();
         }
 
         if (0) {
             auto area = Rect::withSize(areaStart, areaSize);
             static int V = 4;
-            heightmapRenderer.incrementalMinError(area, V++);
+            heightmapRenderer.incrementalMaxError(area, V++);
         }
 
         {
