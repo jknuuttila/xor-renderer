@@ -26,6 +26,7 @@
 
 # VS stuff
 *.vspx
+*.vcxproj.user
 *.db
 *.opendb
 *.user
