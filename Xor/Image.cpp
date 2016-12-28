@@ -59,6 +59,8 @@ namespace xor
             auto bpp = FreeImage_GetBPP(bmp);
             switch (bpp)
             {
+            case 16:
+                return Format(DXGI_FORMAT_R16_UNORM);
             case 24:
             case 32:
                 return Format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
@@ -203,6 +205,22 @@ namespace xor
             loadFromFile(info);
         else
             XOR_CHECK(false, "Invalid Image creation parameters");
+    }
+
+    Image::Image(const ImageData & sourceData)
+    {
+        m_state = std::make_shared<State>();
+        m_state->arraySize = 1;
+        m_state->mipLevels = 1;
+        m_state->subresources.resize(1);
+
+        auto &sr = m_state->subresources[0];
+        sr.data.resize(sourceData.data.sizeBytes());
+        sr.format = sourceData.format;
+        sr.size   = sourceData.size;
+        sr.pitch  = sourceData.pitch;
+
+        memcpy(sr.data.data(), sourceData.data.data(), sr.data.sizeBytes());
     }
 
     uint2 Image::size() const
@@ -648,15 +666,25 @@ namespace xor
 
         auto bpp = FreeImage_GetBPP(fiBmp);
 
+        auto fiScanline = [&] (uint y)
+        {
+            return FreeImage_GetScanLine(fiBmp, size.y - y - 1);
+        };
+
         if (bpp == 24)
         {
             for (uint y = 0; y < size.y; ++y)
-                copyAndSwizzle<4, 3, 3, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(fiBmp, size.y - y - 1), size.x);
+                copyAndSwizzle<4, 3, 3, uint8_t, uint8_t>(scanline(y).data(), fiScanline(y), size.x);
         }
         else if (bpp == 32)
         {
             for (uint y = 0; y < size.y; ++y)
-                copyAndSwizzle<4, 4, 4, uint8_t, uint8_t>(scanline(y).data(), FreeImage_GetScanLine(fiBmp, size.y - y - 1), size.x);
+                copyAndSwizzle<4, 4, 4, uint8_t, uint8_t>(scanline(y).data(), fiScanline(y), size.x);
+        }
+        else if (bpp == 16)
+        {
+            for (uint y = 0; y < size.y; ++y)
+                memcpy(scanline(y).data(), fiScanline(y), size.x * sizeof(uint16_t));
         }
         else
         {

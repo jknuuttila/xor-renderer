@@ -39,10 +39,38 @@ struct Heightmap
     float maxHeight = -1e10;
 
     Heightmap() = default;
-    Heightmap(Device &device, StringView file, float texelSize = ArcSecond / 3.f)
+    Heightmap(Device &device,
+              StringView file,
+              float texelSize = ArcSecond / 3.f,
+              float heightMultiplier = 1)
     {
         image = Image(Image::Builder().filename(file));
-        srv   = device.createTextureSRV(Texture::Info(image));
+
+        if (image.format() == DXGI_FORMAT_R16_UNORM)
+        {
+            ImageData sourceHeight = image.imageData();
+            RWImageData scaledHeight;
+            auto scaledBytes = scaledHeight.createNewImage(image.size(), DXGI_FORMAT_R32_FLOAT);
+
+            float heightCoeff = heightMultiplier / static_cast<float>(std::numeric_limits<uint16_t>::max());
+
+            for (uint y = 0; y < scaledHeight.size.y; ++y)
+            {
+                for (uint x = 0; x < scaledHeight.size.x; ++x)
+                {
+                    uint16_t intHeight = sourceHeight.pixel<uint16_t>(uint2(x, y));
+                    float fHeight = static_cast<float>(intHeight) * heightCoeff;
+                    scaledHeight.pixel<float>(uint2(x, y)) = fHeight;
+                }
+            }
+
+            image = Image(scaledHeight);
+        }
+
+        XOR_ASSERT(image.format() == DXGI_FORMAT_R32_FLOAT, "Expected a float heightmap");
+
+        srv = device.createTextureSRV(Texture::Info(image));
+
         size  = int2(image.size());
         this->texelSize = texelSize;
         worldSize = texelSize * float2(size);
@@ -1000,7 +1028,13 @@ public:
 
         Timer loadingTime;
 
+#if 0
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
+#else
+        heightmap = Heightmap(device, XOR_DATA "/heightmaps/test/height.png",
+                              0.5f, 440.f);
+#endif
+
 		heightmapRenderer = HeightmapRenderer(device, heightmap);
 
         updateTerrain();

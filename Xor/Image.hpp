@@ -261,6 +261,7 @@ namespace xor
 
         Image() = default;
         Image(const Info &info);
+        Image(const ImageData &sourceData);
 
         explicit operator bool() const { return !!m_state; }
 

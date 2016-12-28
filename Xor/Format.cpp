@@ -18,6 +18,13 @@ namespace xor
         case DXGI_FORMAT_R8_UINT:
         case DXGI_FORMAT_R8_UNORM:
             return 1;
+        case DXGI_FORMAT_R16_SINT:
+        case DXGI_FORMAT_R16_SNORM:
+        case DXGI_FORMAT_R16_TYPELESS:
+        case DXGI_FORMAT_R16_UINT:
+        case DXGI_FORMAT_R16_UNORM:
+        case DXGI_FORMAT_R16_FLOAT:
+            return 2;
         case DXGI_FORMAT_R8G8B8A8_SINT:
         case DXGI_FORMAT_R8G8B8A8_SNORM:
         case DXGI_FORMAT_R8G8B8A8_TYPELESS:
