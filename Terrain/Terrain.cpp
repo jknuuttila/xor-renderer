@@ -4,8 +4,8 @@
 #include "Xor/FPSCamera.hpp"
 #include "Xor/Blit.hpp"
 #include "Xor/Mesh.hpp"
-#include "Xor/ProcessingMesh.hpp"
 #include "Xor/DirectedEdge.hpp"
+#include "Xor/Quadric.hpp"
 
 #include "RenderTerrain.sig.h"
 #include "VisualizeTriangulation.sig.h"
@@ -72,6 +72,7 @@ enum class TriangulationMode
 {
     UniformGrid,
     IncMaxError,
+    Quadric,
 };
 
 enum class VisualizationMode
@@ -777,6 +778,119 @@ struct HeightmapRenderer
         }
 	}
 
+	void quadricSimplification(Rect area, uint vertices, bool tipsify = true)
+    {
+        Timer timer;
+
+        setBounds(area);
+
+        float2 areaSize = maxWorld - minWorld;
+
+        float heightNormalization = 1.f / std::max(areaSize.x, areaSize.y);
+
+        SimpleMesh groundTruth;
+
+        int2 size = int2(area.size());
+        float2 sizeF = float2(size);
+
+        for (int y = area.leftTop.y; y <= area.rightBottom.y; ++y)
+        {
+            for (int x = area.leftTop.x; x <= area.rightBottom.x; ++x)
+            {
+                float z = heightData.pixel<float>(int2(x, y));
+                float xNorm = static_cast<float>(x - area.leftTop.x) / sizeF.x;
+                float yNorm = static_cast<float>(y - area.leftTop.y) / sizeF.y;
+                float zNorm = z * heightNormalization;
+
+                groundTruth.vertices.emplace_back(xNorm, yNorm, zNorm);
+            }
+        }
+
+        int vertsPerRow = size.x + 1;
+        for (int y = 0; y < size.y; ++y)
+        {
+            for (int x = 0; x < size.x; ++x)
+            {
+                int2 a = int2(x,     y);
+                int2 b = int2(x,     y + 1);
+                int2 c = int2(x + 1, y);
+                int2 d = int2(x + 1, y + 1);
+
+                int ia = a.y * vertsPerRow + a.x;
+                int ib = b.y * vertsPerRow + b.x;
+                int ic = c.y * vertsPerRow + c.x;
+                int id = d.y * vertsPerRow + d.x;
+
+                groundTruth.indices.emplace_back(ia);
+                groundTruth.indices.emplace_back(ib);
+                groundTruth.indices.emplace_back(ic);
+
+                groundTruth.indices.emplace_back(ib);
+                groundTruth.indices.emplace_back(id);
+                groundTruth.indices.emplace_back(ic);
+            }
+        }
+
+        log("Heightmap", "Ground truth mesh generated with %zu vertices and %zu triangles in %.2f ms\n",
+            groundTruth.vertices.size(),
+            groundTruth.indices.size() / 3,
+            timer.milliseconds());
+
+        SimpleMesh simplifiedMesh = quadricMeshSimplification(groundTruth,
+                                                              vertices * 2);
+
+        std::vector<float2> normalizedPos;
+        std::vector<float>  heights;
+        std::vector<float2> uvs;
+        std::vector<uint>   indices;
+
+        float2 minUV = float2(area.leftTop) / float2(heightmap->size);
+        float2 maxUV = float2(area.rightBottom) / float2(heightmap->size);
+
+        heightNormalization = 1.f / heightNormalization;
+
+        for (auto &v : simplifiedMesh.vertices)
+        {
+            normalizedPos.emplace_back();
+            auto &pos = normalizedPos.back();
+            pos = float2(v);
+            heights.emplace_back(v.z * heightNormalization);
+            uvs.emplace_back(lerp(minUV, maxUV, pos));
+        }
+
+        indices = std::move(simplifiedMesh.indices);
+
+        for (uint i = 0; i < indices.size(); i += 3)
+        {
+            uint a = indices[i];
+            uint b = indices[i + 1];
+            uint c = indices[i + 2];
+
+            float2 pa = normalizedPos[a];
+            float2 pb = normalizedPos[b];
+            float2 pc = normalizedPos[c];
+
+			bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
+
+            if (!ccw)
+                std::swap(indices[i + 1], indices[i + 2]);
+        }
+
+        log("Heightmap", "Generated quadric simplified triangulation with %zu vertices and %zu triangles in %.2f ms\n",
+            normalizedPos.size(),
+            indices.size() / 3,
+            timer.milliseconds());
+
+		VertexAttribute attrs[] =
+		{
+			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
+			{ "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uvs) },
+		};
+
+		this->mesh = Mesh::generate(device, attrs, indices);
+    }
+
 	void render(CommandList &cmd, const Matrix &viewProj, bool wireframe = false)
 	{
         cmd.bind(renderTerrain);
@@ -919,6 +1033,9 @@ public:
         case TriangulationMode::IncMaxError:
             heightmapRenderer.incrementalMaxError(area, vertexCount(), tipsifyMesh);
             break;
+        case TriangulationMode::Quadric:
+            heightmapRenderer.quadricSimplification(area, vertexCount(), tipsifyMesh);
+            break;
         }
 
         heightmapRenderer.calculateMeshError();
@@ -988,7 +1105,8 @@ public:
             ImGui::Combo("Triangulation mode",
                          reinterpret_cast<int *>(&triangulationMode),
                          "Uniform grid\0"
-                         "Incremental max error\0");
+                         "Incremental max error\0"
+                         "Quadric\0");
             ImGui::Checkbox("Tipsify vertex cache optimization", &tipsifyMesh);
             ImGui::Checkbox("Show area", &blitArea);
             ImGui::Checkbox("Wireframe", &wireframe);

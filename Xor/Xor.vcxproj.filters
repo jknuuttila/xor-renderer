@@ -18,8 +18,8 @@
     <ClInclude Include="FPSCamera.hpp" />
     <ClInclude Include="Blit.hpp" />
     <ClInclude Include="Blit.sig.h" />
-    <ClInclude Include="ProcessingMesh.hpp" />
     <ClInclude Include="DirectedEdge.hpp" />
+    <ClInclude Include="Quadric.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
@@ -34,7 +34,7 @@
     <ClCompile Include="XorDeviceState.cpp" />
     <ClCompile Include="XorPCH.cpp" />
     <ClCompile Include="Blit.cpp" />
-    <ClCompile Include="ProcessingMesh.cpp" />
+    <ClCompile Include="Quadric.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\external\FreeImage\FreeImage.dll" />

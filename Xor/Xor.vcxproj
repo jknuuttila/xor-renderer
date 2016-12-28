@@ -20,7 +20,7 @@
     <ClInclude Include="ImguiRenderer.sig.h" />
     <ClInclude Include="Material.hpp" />
     <ClInclude Include="Mesh.hpp" />
-    <ClInclude Include="ProcessingMesh.hpp" />
+    <ClInclude Include="Quadric.hpp" />
     <ClInclude Include="Xor.hpp" />
     <ClInclude Include="XorBackend.hpp" />
     <ClInclude Include="XorCommandList.hpp" />
@@ -35,7 +35,7 @@
     <ClCompile Include="Image.cpp" />
     <ClCompile Include="Material.cpp" />
     <ClCompile Include="Mesh.cpp" />
-    <ClCompile Include="ProcessingMesh.cpp" />
+    <ClCompile Include="Quadric.cpp" />
     <ClCompile Include="Xor.cpp" />
     <ClCompile Include="XorBackend.cpp" />
     <ClCompile Include="XorCommandList.cpp" />
