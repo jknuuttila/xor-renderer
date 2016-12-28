@@ -29,3 +29,7 @@ license notification can be found in external/SpookyHash/SpookyV2.h.
 This software uses the Zstandard compression library. The Zstandard
 license can be found in external/zstd-1.0.0/LICENSE.
 
+This software uses the Fast Quadric Mesh Simplification library from 
+https://github.com/sp4cerat/Fast-Quadric-Mesh-Simplification . The
+library is used under the MIT license.
+
