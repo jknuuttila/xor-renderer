@@ -642,6 +642,8 @@ namespace xor
                                                 Angle verticalFov = DefaultFov,
                                                 float depth1Plane = DefaultDepth1Plane,
                                                 float depth0Plane = DefaultDepth0Plane);
+
+            static Matrix azimuthElevation(Angle azimuth, Angle elevation);
         };
 
         inline float4 operator*(const Matrix &m, float4 v)

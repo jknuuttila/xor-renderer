@@ -61,9 +61,7 @@ namespace xor
 
         Matrix orientation() const
         {
-            Matrix A = Matrix::axisAngle({ 0, 1, 0 }, azimuth);
-            Matrix E = Matrix::axisAngle({ 1, 0, 0 }, elevation);
-            return A * E;
+            return Matrix::azimuthElevation(azimuth, elevation);
         }
 
         Matrix viewMatrix() const

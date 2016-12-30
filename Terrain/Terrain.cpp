@@ -13,8 +13,6 @@
 #include <random>
 #include <unordered_set>
 
-// 
-
 using namespace xor;
 
 static const float ArcSecond = 30.87f;
@@ -30,8 +28,11 @@ struct ErrorMetrics
 
 struct Heightmap
 {
-    Image image;
-    TextureSRV srv;
+    Device *device = nullptr;
+    Image height;
+    TextureSRV heightSRV;
+    Image color;
+    TextureSRV colorSRV;
     int2 size;
     float2 worldSize;
     float texelSize;
@@ -44,12 +45,13 @@ struct Heightmap
               float texelSize = ArcSecond / 3.f,
               float heightMultiplier = 1)
     {
-        image = Image(Image::Builder().filename(file));
+        this->device = &device;
+        height = Image(Image::Builder().filename(file));
 
-        if (image.format() == DXGI_FORMAT_R16_UNORM)
+        if (height.format() == DXGI_FORMAT_R16_UNORM)
         {
-            ImageData sourceHeight = image.imageData();
-            RWImageData scaledHeight(image.size(), DXGI_FORMAT_R32_FLOAT);
+            ImageData sourceHeight = height.imageData();
+            RWImageData scaledHeight(height.size(), DXGI_FORMAT_R32_FLOAT);
 
             float heightCoeff = heightMultiplier / static_cast<float>(std::numeric_limits<uint16_t>::max());
 
@@ -63,14 +65,14 @@ struct Heightmap
                 }
             }
 
-            image = Image(scaledHeight);
+            height = Image(scaledHeight);
         }
 
-        XOR_ASSERT(image.format() == DXGI_FORMAT_R32_FLOAT, "Expected a float heightmap");
+        XOR_ASSERT(height.format() == DXGI_FORMAT_R32_FLOAT, "Expected a float heightmap");
 
-        srv = device.createTextureSRV(Texture::Info(image));
+        heightSRV = device.createTextureSRV(Texture::Info(height));
 
-        size  = int2(image.size());
+        size  = int2(height.size());
         this->texelSize = texelSize;
         worldSize = texelSize * float2(size);
 
@@ -79,8 +81,8 @@ struct Heightmap
         maxHeight = 2600.f;
 #else
         Timer t;
-        auto size = image.size();
-        auto sr   = image.imageData();
+        auto size = height.size();
+        auto sr   = height.imageData();
         for (uint y = 0; y < size.y; ++y)
         {
             for (float f : sr.scanline<float>(y))
@@ -93,6 +95,11 @@ struct Heightmap
 #endif
     }
 
+    void setColor(Image colorMap)
+    {
+        color    = std::move(colorMap);
+        colorSRV = device->createTextureSRV(info::TextureInfo(color));
+    }
 };
 
 enum class TriangulationMode
@@ -128,13 +135,20 @@ struct HeightmapRenderer
 	float  maxErrorCoeff = .05f;
 	VisualizationMode mode = VisualizationMode::WireframeHeight;
     TextureSRV cpuError;
+    struct LightingProperties
+    {
+        float3 sunDirection;
+        float3 sunColor;
+    };
+    LightingProperties lighting;
+    std::vector<info::ShaderDefine> lightingDefines;
 
 	HeightmapRenderer() = default;
 	HeightmapRenderer(Device device, Heightmap &hmap)
 	{
 		this->device = device;
 		heightmap = &hmap;
-        heightData = heightmap->image.imageData();
+        heightData = heightmap->height.imageData();
 
 		uniformGrid(Rect::withSize(heightmap->size), 100);
 
@@ -153,6 +167,24 @@ struct HeightmapRenderer
 			.pixelShader("VisualizeTriangulation.ps")
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
 			.inputLayout(mesh.inputLayout()));
+    }
+
+    void setLightingProperties(LightingProperties *props = nullptr)
+    {
+        lightingDefines.clear();
+
+        if (props)
+        {
+            lighting = *props;
+            if (heightmap->colorSRV)
+                lightingDefines.emplace_back("TEXTURED");
+
+            lightingDefines.emplace_back("LIGHTING");
+        }
+        else
+        {
+            memset(&lighting, 0, sizeof(lighting));
+        }
     }
 
     template <typename DEMesh>
@@ -911,7 +943,7 @@ struct HeightmapRenderer
 
 	void render(CommandList &cmd, const Matrix &viewProj, bool wireframe = false)
 	{
-        cmd.bind(renderTerrain);
+        cmd.bind(renderTerrain.variant().pixelShader(info::SameShader {}, lightingDefines));
 
 		RenderTerrain::Constants constants;
 		constants.viewProj  = viewProj;
@@ -920,8 +952,14 @@ struct HeightmapRenderer
         constants.heightMin = heightmap->minHeight;
         constants.heightMax = heightmap->maxHeight;
 
+        RenderTerrain::LightingConstants lightingConstants;
+        lightingConstants.sunDirection = lighting.sunDirection.s_xyz0;
+        lightingConstants.sunColor     = lighting.sunColor.s_xyz0;
+
         cmd.setConstants(constants);
+        cmd.setConstants(lightingConstants);
         mesh.setForRendering(cmd);
+        cmd.setShaderView(RenderTerrain::terrainColor, heightmap->colorSRV);
         {
             auto p = cmd.profilingEvent("Draw opaque");
             cmd.drawIndexed(mesh.numIndices());
@@ -935,7 +973,9 @@ struct HeightmapRenderer
                      .depthMode(info::DepthMode::ReadOnly)
                      .depthBias(10000)
                      .fill(D3D12_FILL_MODE_WIREFRAME));
+            cmd.setShaderView(RenderTerrain::terrainColor, heightmap->colorSRV);
             cmd.setConstants(constants);
+            cmd.setConstants(lightingConstants);
             cmd.drawIndexed(mesh.numIndices());
         }
 	}
@@ -966,7 +1006,7 @@ struct HeightmapRenderer
 			cmd.bind(visualizeTriangulation);
 
 		cmd.setConstants(vtConstants);
-		cmd.setShaderView(VisualizeTriangulation::heightMap,          heightmap->srv);
+		cmd.setShaderView(VisualizeTriangulation::heightMap,          heightmap->heightSRV);
 		cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, cpuError);
 		cmd.drawIndexed(mesh.numIndices());
 
@@ -976,7 +1016,7 @@ struct HeightmapRenderer
 					 .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
 					 .fill(D3D12_FILL_MODE_WIREFRAME));
 			cmd.setConstants(vtConstants);
-			cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->srv);
+			cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->heightSRV);
             cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, cpuError);
 			cmd.drawIndexed(mesh.numIndices());
 		}
@@ -1002,6 +1042,13 @@ class Terrain : public Window
     int areaSize  = 2048;
 #endif
 	int triangulationDensity = 6;
+    struct Lighting
+    {
+        bool enabled = false;
+        Angle sunAzimuth   = Angle::degrees(45.f);
+        Angle sunElevation = Angle::degrees(45.f);
+        float sunIntensity = 1.f;
+    } lighting;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
     bool blitArea  = true;
@@ -1022,11 +1069,14 @@ public:
 
         Timer loadingTime;
 
-#if 1
+#if defined(_DEBUG) || 0
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
 #else
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/test/height.png",
                               0.5f, 440.f);
+        heightmap.setColor(info::ImageInfo(XOR_DATA "/heightmaps/test/color.png"));
+        areaStart = { 1024, 1024 };
+        areaSize  = 4096;
 #endif
 
 		heightmapRenderer = HeightmapRenderer(device, heightmap);
@@ -1069,6 +1119,23 @@ public:
         heightmapRenderer.calculateMeshError();
 
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
+    }
+
+    void updateLighting()
+    {
+        if (lighting.enabled)
+        {
+            HeightmapRenderer::LightingProperties props = {};
+            auto M = Matrix::azimuthElevation(lighting.sunAzimuth, lighting.sunElevation);
+            props.sunDirection = normalize(float3(M.transform(float3(0, 0, -1))));
+            props.sunColor     = float3(1) * lighting.sunIntensity;
+
+            heightmapRenderer.setLightingProperties(&props);
+        }
+        else
+        {
+            heightmapRenderer.setLightingProperties();
+        }
     }
 
     void measureTerrain()
@@ -1130,6 +1197,14 @@ public:
             ImGui::SliderInt2("Start", areaStart.data(), 0, heightmap.size.x - areaSize);
             ImGui::SliderInt("Density", &triangulationDensity, 5, 18);
             ImGui::Text("Vertex count: %d", vertexCount());
+
+            if (ImGui::Checkbox("Lighting", &lighting.enabled))
+                updateLighting();
+            if (ImGui::SliderFloat("Sun azimuth",   &lighting.sunAzimuth.radians, 0, 2 * Pi))
+                updateLighting();
+            if (ImGui::SliderFloat("Sun elevation", &lighting.sunElevation.radians, 0, Pi / 2.f))
+                updateLighting();
+
             ImGui::Combo("Triangulation mode",
                          reinterpret_cast<int *>(&triangulationMode),
                          "Uniform grid\0"
@@ -1200,7 +1275,7 @@ public:
 
             blit.blit(cmd,
                       backbuffer, Rect::withSize(int2(backbuffer.texture()->size - 300).s_x0, 300),
-                      heightmap.srv, Rect::withSize(areaStart, areaSize),
+                      heightmap.heightSRV, Rect::withSize(areaStart, areaSize),
                       norm.s_x000, norm.s_y001);
         }
 

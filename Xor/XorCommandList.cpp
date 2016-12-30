@@ -394,7 +394,10 @@ namespace xor
                    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         auto &srvs = S().srvs;
-        srvs[slot] = srv.S().descriptor.staging;
+        if (srv)
+            srvs[slot] = srv.S().descriptor.staging;
+        else
+            srvs[slot] = device().S().nullTextureSRV.staging;
     }
 
     void CommandList::setConstantBuffer(unsigned slot, Span<const uint8_t> bytes)

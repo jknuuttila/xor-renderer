@@ -96,6 +96,13 @@ namespace xor
             return projectionPerspective(fres.x / fres.y, verticalFov, depth1Plane, depth0Plane);
         }
 
+        Matrix Matrix::azimuthElevation(Angle azimuth, Angle elevation)
+        {
+            Matrix A = Matrix::axisAngle({ 0, 1, 0 }, azimuth);
+            Matrix E = Matrix::axisAngle({ 1, 0, 0 }, elevation);
+            return A * E;
+        }
+
         // Determinant and inverse formulas from
         // http://www.euclideanspace.com/maths/algebra/matrix/functions/inverse/fourD/index.htm
         float Matrix::determinant() const
