@@ -95,6 +95,8 @@ namespace xor
         {}
     };
 
+    uint computePitch(Format format, uint2 size);
+
     struct ImageData
     {
         Span<const uint8_t> data;
@@ -105,7 +107,7 @@ namespace xor
 
         ImageData &setDefaultSizes()
         {
-            pitch     = format.areaSizeBytes(size.x);
+            pitch     = computePitch(format, size);
             pixelSize = format.size();
             return *this;
         }
@@ -171,16 +173,16 @@ namespace xor
     struct RWImageData : ImageData
     {
         Span<uint8_t> mutableData;
+        DynamicBuffer<uint8_t> ownedData;
 
-        DynamicBuffer<uint8_t> createNewImage(uint2 size, Format format)
+        RWImageData(uint2 size, Format format)
         {
             this->size = size;
             this->format = format;
             setDefaultSizes();
-            DynamicBuffer<uint8_t> bytes(sizeBytes());
-            mutableData = bytes;
-            data = bytes;
-            return bytes;
+            ownedData   = DynamicBuffer<uint8_t>(sizeBytes());
+            mutableData = ownedData;
+            data        = mutableData;
         }
 
         template <typename T>

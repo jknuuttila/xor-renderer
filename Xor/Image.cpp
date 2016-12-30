@@ -102,7 +102,7 @@ namespace xor
         }
     }
 
-    static uint computePitch(Format format, uint2 size)
+    uint computePitch(Format format, uint2 size)
     {
         auto rowLength = format.areaSizeBytes(size.x);
         auto pitch     = roundUpToMultiple<uint>(rowLength, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);

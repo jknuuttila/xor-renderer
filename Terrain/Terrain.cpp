@@ -49,8 +49,7 @@ struct Heightmap
         if (image.format() == DXGI_FORMAT_R16_UNORM)
         {
             ImageData sourceHeight = image.imageData();
-            RWImageData scaledHeight;
-            auto scaledBytes = scaledHeight.createNewImage(image.size(), DXGI_FORMAT_R32_FLOAT);
+            RWImageData scaledHeight(image.size(), DXGI_FORMAT_R32_FLOAT);
 
             float heightCoeff = heightMultiplier / static_cast<float>(std::numeric_limits<uint16_t>::max());
 
@@ -138,14 +137,6 @@ struct HeightmapRenderer
         heightData = heightmap->image.imageData();
 
 		uniformGrid(Rect::withSize(heightmap->size), 100);
-		// randomTriangulation(Rect::withSize(heightmap->size), 500);
-
-#if 0
-        auto il = info::InputLayoutInfoBuilder()
-            .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT)
-            .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT)
-            .element("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT);
-#endif
 
         renderTerrain  = device.createGraphicsPipeline(
 			GraphicsPipeline::Info()
@@ -430,9 +421,8 @@ struct HeightmapRenderer
     {
         Timer timer;
 
-        RWImageData error;
-        auto errorBytes = error.createNewImage(area.size(), DXGI_FORMAT_R32_FLOAT);
-        errorBytes.fill(0);
+        RWImageData error(area.size(), DXGI_FORMAT_R32_FLOAT);
+        error.ownedData.fill(0);
 
         auto &uvAttr = mesh.vertexAttribute(2);
         XOR_ASSERT(uvAttr.format == DXGI_FORMAT_R32G32_FLOAT, "Unexpected format");
@@ -1006,7 +996,11 @@ class Terrain : public Window
 
     Heightmap heightmap;
     int2 areaStart = { 2000, 0 };
+#if defined(_DEBUG)
+    int areaSize  = 512;
+#else
     int areaSize  = 2048;
+#endif
 	int triangulationDensity = 6;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
@@ -1028,7 +1022,7 @@ public:
 
         Timer loadingTime;
 
-#if 0
+#if 1
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
 #else
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/test/height.png",
