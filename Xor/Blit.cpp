@@ -28,6 +28,12 @@ namespace xor
         float2 dstTexSize = float2(dst.texture()->size);
         float2 srcTexSize = float2(src.texture()->size);
 
+        if (srcRect.empty())
+        {
+            srcRect.leftTop     = 0;
+            srcRect.rightBottom = int2(src.texture()->size);
+        }
+
         float2 topLeft = float2(-1, 1);
         float2 pixel = 2.f / dstTexSize * float2(1, -1);
 

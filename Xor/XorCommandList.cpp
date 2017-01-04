@@ -128,7 +128,20 @@ namespace xor
         auto &s = resource.S().state;
 
         if (s == newState)
+        {
+            if (newState == D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+            {
+                D3D12_RESOURCE_BARRIER barrier;
+
+                barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+                barrier.Flags                  = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+                barrier.UAV.pResource          = resource.get();
+
+                cmd()->ResourceBarrier(1, &barrier);
+            }
+
             return;
+        }
 
         D3D12_RESOURCE_BARRIER barrier;
 
@@ -144,7 +157,7 @@ namespace xor
         s = newState;
     }
 
-    void CommandList::setupRootArguments()
+    void CommandList::setupRootArguments(bool compute)
     {
         auto &cbvs = S().cbvs;
         auto &srvs = S().srvs;
@@ -192,7 +205,10 @@ namespace xor
                     D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
             }
 
-            cmd()->SetGraphicsRootDescriptorTable(0, table);
+            if (compute)
+                cmd()->SetComputeRootDescriptorTable(0, table);
+            else
+                cmd()->SetGraphicsRootDescriptorTable(0, table);
         }
     }
 
@@ -248,6 +264,26 @@ namespace xor
     void CommandList::bind(const info::GraphicsPipelineInfo & pipelineInfo)
     {
         GraphicsPipeline pipeline = device().createGraphicsPipeline(pipelineInfo);
+        bind(pipeline);
+    }
+
+    void CommandList::bind(ComputePipeline & pipeline)
+    {
+        cmd()->SetComputeRootSignature(pipeline.S().rootSignature.rs.Get());
+        cmd()->SetPipelineState(pipeline.S().pso.Get());
+
+        S().cbvs.clear();
+        S().srvs.clear();
+        S().uavs.clear();
+
+        S().cbvs.resize(pipeline.S().rootSignature.numCBVs);
+        S().srvs.resize(pipeline.S().rootSignature.numSRVs);
+        S().uavs.resize(pipeline.S().rootSignature.numUAVs);
+    }
+
+    void CommandList::bind(const info::ComputePipelineInfo & pipelineInfo)
+    {
+        ComputePipeline pipeline = device().createComputePipeline(pipelineInfo);
         bind(pipeline);
     }
 
@@ -400,6 +436,18 @@ namespace xor
             srvs[slot] = device().S().nullTextureSRV.staging;
     }
 
+    void CommandList::setShaderView(unsigned slot, TextureUAV & uav)
+    {
+        transition(uav.m_texture,
+                   D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+        auto &uavs = S().uavs;
+        if (uav)
+            uavs[slot] = uav.S().descriptor.staging;
+        else
+            uavs[slot] = device().S().nullTextureUAV.staging;
+    }
+
     void CommandList::setConstantBuffer(unsigned slot, Span<const uint8_t> bytes)
     {
         auto block = uploadBytes(bytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
@@ -418,15 +466,22 @@ namespace xor
     void CommandList::draw(uint vertices, uint startVertex)
     {
         transition(S().activeRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET);
-        setupRootArguments();
+        setupRootArguments(false);
         cmd()->DrawInstanced(vertices, 1, startVertex, 0);
     }
 
     void CommandList::drawIndexed(uint indices, uint startIndex)
     {
         transition(S().activeRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET);
-        setupRootArguments();
+        setupRootArguments(false);
         cmd()->DrawIndexedInstanced(indices, 1, startIndex, 0, 0); 
+    }
+
+    void CommandList::dispatch(uint3 threadGroups)
+    {
+        threadGroups = max(uint3(1), threadGroups);
+        setupRootArguments(true);
+        cmd()->Dispatch(threadGroups.x, threadGroups.y, threadGroups.z);
     }
 
     void CommandList::updateBuffer(Buffer & buffer,

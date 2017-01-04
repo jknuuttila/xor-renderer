@@ -89,7 +89,7 @@ namespace xor
 
         // FIXME: This is horribly inefficient and bad
         void transition(const backend::Resource &resource, D3D12_RESOURCE_STATES state);
-        void setupRootArguments();
+        void setupRootArguments(bool compute);
         backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment = DefaultAlignment);
     public:
         CommandList() = default;
@@ -108,6 +108,8 @@ namespace xor
 
         void bind(GraphicsPipeline &pipeline);
         void bind(const info::GraphicsPipelineInfo &pipelineInfo);
+        void bind(ComputePipeline &pipeline);
+        void bind(const info::ComputePipelineInfo &pipelineInfo);
 
         void clearRTV(TextureRTV &rtv, float4 color = 0);
         void clearDSV(TextureDSV &dsv, float depth = 0);
@@ -132,6 +134,7 @@ namespace xor
         void setIBV(const BufferIBV &ibv);
 
         void setShaderView(unsigned slot, const TextureSRV &srv);
+        void setShaderView(unsigned slot, TextureUAV &uav);
 
         void setConstantBuffer(unsigned slot, Span<const uint8_t> bytes);
         template <typename T>
@@ -151,6 +154,13 @@ namespace xor
 
         void draw(uint vertices, uint startVertex = 0);
         void drawIndexed(uint indices, uint startIndex = 0);
+
+        void dispatch(uint3 threadGroups);
+        template <unsigned SX, unsigned SY, unsigned SZ>
+        void dispatchThreads(const backend::ThreadGroupSize<SX, SY, SZ> &, uint3 threads)
+        {
+            dispatch(max(uint3(1), divRoundUp(threads, uint3(SX, SY, SZ))));
+        }
 
         void updateBuffer(Buffer &buffer,
                           Span<const uint8_t> data,

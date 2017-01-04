@@ -73,6 +73,7 @@ namespace xor
 
         SwapChain createSwapChain(Window &window);
         GraphicsPipeline createGraphicsPipeline(const GraphicsPipeline::Info &info);
+        ComputePipeline createComputePipeline(const ComputePipeline::Info &info);
 
         Buffer    createBuffer(const Buffer::Info &info);
         BufferVBV createBufferVBV(Buffer buffer                 , const BufferVBV::Info &viewInfo = BufferVBV::Info());
@@ -85,6 +86,8 @@ namespace xor
         TextureSRV createTextureSRV(const Texture::Info &textureInfo, const TextureSRV::Info &viewInfo = TextureSRV::Info());
         TextureDSV createTextureDSV(Texture texture                 , const TextureDSV::Info &viewInfo = TextureDSV::Info());
         TextureDSV createTextureDSV(const Texture::Info &textureInfo, const TextureDSV::Info &viewInfo = TextureDSV::Info());
+        TextureUAV createTextureUAV(Texture texture                 , const TextureUAV::Info &viewInfo = TextureUAV::Info());
+        TextureUAV createTextureUAV(const Texture::Info &textureInfo, const TextureUAV::Info &viewInfo = TextureUAV::Info());
 
         CommandList graphicsCommandList(const char *cmdListName = nullptr);
 

@@ -437,6 +437,7 @@ namespace xor
             ViewHeap dsvs;
             ViewHeap shaderViews;
             Descriptor nullTextureSRV;
+            Descriptor nullTextureUAV;
 
             std::shared_ptr<ShaderLoader> shaderLoader;
             std::unordered_map<info::PipelineKey, std::shared_ptr<PipelineState>> pipelines;

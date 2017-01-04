@@ -50,6 +50,8 @@ namespace xor
 			queryHeap = std::make_shared<QueryHeap>(device.Get(), QueryHeapSize);
 
             nullTextureSRV = shaderViews.allocateFromHeap();
+            nullTextureUAV = shaderViews.allocateFromHeap();
+
             {
                 D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
                 desc.Format                        = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -63,6 +65,18 @@ namespace xor
                     nullptr,
                     &desc,
                     nullTextureSRV.cpu);
+            }
+
+            {
+                D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {};
+                desc.Format                           = DXGI_FORMAT_R8G8B8A8_UNORM;
+                desc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
+                desc.Texture2D.MipSlice               = 0;
+                desc.Texture2D.PlaneSlice             = 0;
+                device->CreateUnorderedAccessView(
+                    nullptr, nullptr,
+                    &desc,
+                    nullTextureUAV.cpu);
             }
         }
 

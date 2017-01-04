@@ -113,6 +113,9 @@ namespace xor
             uint2 size;
             Format format;
             uint mipLevels = 1;
+            bool allowRenderTarget = false;
+            bool allowDepthStencil = false;
+            bool allowUAV          = false;
 
             TextureInfo() = default;
             TextureInfo(uint2 size, Format format)
@@ -133,6 +136,13 @@ namespace xor
 
             TextureInfoBuilder() = default;
             TextureInfoBuilder(const TextureInfo &info) : TextureInfo(info) {}
+
+            TextureInfoBuilder &size(uint2 sz)    { TextureInfo::size = sz; return *this; }
+            TextureInfoBuilder &format(Format fmt) { TextureInfo::format = fmt; return *this; }
+            TextureInfoBuilder &mipLevels(uint mips) { TextureInfo::mipLevels = mips; return *this; }
+            TextureInfoBuilder &renderTarget(bool allowRTV = true) { TextureInfo::allowRenderTarget = allowRTV; return *this; }
+            TextureInfoBuilder &depthStencil(bool allowDSV = true) { TextureInfo::allowDepthStencil = allowDSV; return *this; }
+            TextureInfoBuilder &uav(bool allowUAV = true) { TextureInfo::allowUAV = allowUAV; return *this; }
         };
 
         class TextureViewInfo
@@ -252,6 +262,22 @@ namespace xor
             D3D12_GRAPHICS_PIPELINE_STATE_DESC desc() const;
             PipelineKey key() const;
         };
+
+        class ComputePipelineInfo
+        {
+            friend class Device;
+            friend class ComputePipeline;
+            friend struct backend::PipelineState;
+            ShaderDesc                             m_cs;
+        public:
+            ComputePipelineInfo();
+            ComputePipelineInfo(const String &csName, Span<const ShaderDefine> defines = {});
+
+            ComputePipelineInfo &computeShader(const String &csName, Span<const ShaderDefine> defines = {});
+            ComputePipelineInfo &computeShader(SameShader, Span<const ShaderDefine> defines = {});
+
+            PipelineKey key() const;
+        };
     }
 
     namespace backend
@@ -313,6 +339,7 @@ namespace xor
             , DeviceChild
         {
             std::shared_ptr<info::GraphicsPipelineInfo> graphicsInfo;
+            std::shared_ptr<info::ComputePipelineInfo> computeInfo;
             ComPtr<ID3D12PipelineState> pso;
             RootSignature rootSignature;
 
@@ -338,16 +365,34 @@ namespace xor
         Info variant() const;
     };
 
+    class ComputePipeline : private backend::SharedState<backend::PipelineState>
+    {
+        friend class Device;
+        friend class CommandList;
+    public:
+        ComputePipeline() = default;
+
+        using Info = info::ComputePipelineInfo;
+
+        Info variant() const;
+    };
+
     class Buffer : public backend::ResourceWithInfo<info::BufferInfoBuilder>
     {
     public:
         Buffer() = default;
+
+        using Info    = info::BufferInfo;
+        using Builder = info::BufferInfoBuilder;
     };
 
     class Texture : public backend::ResourceWithInfo<info::TextureInfoBuilder>
     {
     public:
         Texture() = default;
+
+        using Info    = info::TextureInfo;
+        using Builder = info::TextureInfoBuilder;
     };
 
     class DescriptorView : private backend::SharedState<backend::DescriptorViewState>
@@ -383,6 +428,11 @@ namespace xor
     };
 
     class TextureSRV : public TextureView
+    {
+    public:
+    };
+
+    class TextureUAV : public TextureView
     {
     public:
     };

@@ -364,6 +364,34 @@ namespace xor
             else
                 return shader + ShaderFileExtension;
         }
+
+        ComputePipelineInfo::ComputePipelineInfo()
+        {} 
+
+        ComputePipelineInfo::ComputePipelineInfo(const String & csName, Span<const ShaderDefine> defines)
+        {
+            computeShader(csName, defines);
+        }
+
+        ComputePipelineInfo & ComputePipelineInfo::computeShader(const String & csName, Span<const ShaderDefine> defines)
+        {
+            m_cs.shader = csName;
+            return computeShader(SameShader{}, defines);
+        }
+
+        ComputePipelineInfo & ComputePipelineInfo::computeShader(SameShader, Span<const ShaderDefine> defines)
+        {
+            m_cs.defines.clear();
+            m_cs.defines.insert(m_cs.defines.begin(), defines.begin(), defines.end());
+            return *this;
+        }
+
+        PipelineKey ComputePipelineInfo::key() const
+        {
+            Hash h;
+            m_cs.hash(h);
+            return h.done();
+        }
     }
 
     namespace backend
@@ -549,39 +577,71 @@ namespace xor
         {
             auto dev = device();
 
-            log("Pipeline", "Rebuilding PSO.\n");
+            XOR_CHECK(static_cast<int>(!!graphicsInfo) + static_cast<int>(!!computeInfo) == 1,
+                      "Pipeline must be either a GraphicsPipeline or a ComputePipeline");
 
-            D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = graphicsInfo->desc();
-
-            ShaderBinary vs = loadShader(dev.shaderLoader(), graphicsInfo->m_vs);
-            ShaderBinary ps = loadShader(dev.shaderLoader(), graphicsInfo->m_ps);
-
-            if (graphicsInfo->m_vs)
+            if (graphicsInfo)
             {
-                rootSignature = dev.collectRootSignature(vs);
-                desc.VS = vs;
-            }
-            else
-            {
-                zero(desc.VS);
-            }
+                log("Pipeline", "Rebuilding Graphics PSO.\n");
 
-            if (graphicsInfo->m_ps)
-            {
-                rootSignature = dev.collectRootSignature(vs);
-                desc.PS = ps;
-            }
-            else
-            {
-                zero(desc.PS);
-            }
+                D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = graphicsInfo->desc();
 
-            releasePSO();
+                ShaderBinary vs = loadShader(dev.shaderLoader(), graphicsInfo->m_vs);
+                ShaderBinary ps = loadShader(dev.shaderLoader(), graphicsInfo->m_ps);
 
-            XOR_CHECK_HR(dev.device()->CreateGraphicsPipelineState(
-                &desc,
-                __uuidof(ID3D12PipelineState),
-                &pso));
+                if (graphicsInfo->m_vs)
+                {
+                    rootSignature = dev.collectRootSignature(vs);
+                    desc.VS = vs;
+                }
+                else
+                {
+                    zero(desc.VS);
+                }
+
+                if (graphicsInfo->m_ps)
+                {
+                    rootSignature = dev.collectRootSignature(vs);
+                    desc.PS = ps;
+                }
+                else
+                {
+                    zero(desc.PS);
+                }
+
+                releasePSO();
+
+                XOR_CHECK_HR(dev.device()->CreateGraphicsPipelineState(
+                    &desc,
+                    __uuidof(ID3D12PipelineState),
+                    &pso));
+            }
+            else if (computeInfo)
+            {
+                log("Pipeline", "Rebuilding Compute PSO.\n");
+
+                D3D12_COMPUTE_PIPELINE_STATE_DESC desc = {};
+                zero(desc);
+
+                ShaderBinary cs = loadShader(dev.shaderLoader(), computeInfo->m_cs);
+
+                if (computeInfo->m_cs)
+                {
+                    rootSignature = dev.collectRootSignature(cs);
+                    desc.CS = cs;
+                }
+                else
+                {
+                    zero(desc.CS);
+                }
+
+                releasePSO();
+
+                XOR_CHECK_HR(dev.device()->CreateComputePipelineState(
+                    &desc,
+                    __uuidof(ID3D12PipelineState),
+                    &pso));
+            }
         }
 
         void PipelineState::releasePSO()
@@ -607,5 +667,10 @@ namespace xor
     GraphicsPipeline::Info GraphicsPipeline::variant() const
     {
         return *S().graphicsInfo;
+    }
+
+    ComputePipeline::Info ComputePipeline::variant() const
+    {
+        return *S().computeInfo;
     }
 }

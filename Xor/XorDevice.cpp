@@ -114,6 +114,11 @@ namespace xor
     {
         for (auto &adapter : m_adapters)
         {
+#if 0
+            // WARP
+            return m_adapters.back().createDevice();
+#endif
+
             if (Device device = adapter.createDevice())
                 return device;
         }
@@ -328,7 +333,6 @@ namespace xor
 
     GraphicsPipeline Device::createGraphicsPipeline(const GraphicsPipeline::Info &info)
     {
-
         GraphicsPipeline pipeline;
 
         auto key = info.key();
@@ -346,6 +350,28 @@ namespace xor
         }
 
         return pipeline;
+    }
+
+    ComputePipeline Device::createComputePipeline(const ComputePipeline::Info & info)
+    {
+        ComputePipeline pipeline;
+
+        auto key = info.key();
+        auto it = S().pipelines.find(key);
+        if (it == S().pipelines.end())
+        {
+            pipeline.makeState().setParent(this);
+            pipeline.S().computeInfo = std::make_shared<ComputePipeline::Info>(info);
+            pipeline.S().reload();
+            S().pipelines.emplace(key, pipeline.m_state);
+        }
+        else
+        {
+            pipeline.m_state = it->second;
+        }
+
+        return pipeline;
+        return ComputePipeline();
     }
 
     RootSignature Device::collectRootSignature(const D3D12_SHADER_BYTECODE &shader)
@@ -676,8 +702,14 @@ namespace xor
     {
         D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
 
-        if (info.format.isDepthFormat())
+        if (info.allowRenderTarget)
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+        if (info.allowDepthStencil || info.format.isDepthFormat())
             flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+        if (info.allowUAV)
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
         return flags;
     }
@@ -808,6 +840,35 @@ namespace xor
     TextureDSV Device::createTextureDSV(const Texture::Info & textureInfo, const TextureDSV::Info & viewInfo)
     {
         return createTextureDSV(createTexture(textureInfo), viewInfo);
+    }
+
+    TextureUAV Device::createTextureUAV(Texture texture, const TextureUAV::Info & viewInfo)
+    {
+        auto info = viewInfo.defaults(texture.info());
+
+        TextureUAV uav;
+        uav.m_texture = texture;
+        uav.makeState().setParent(this);
+        uav.S().descriptor = S().shaderViews.allocateFromHeap();
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {};
+        desc.Format                           = viewInfo.format;
+        desc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
+        desc.Texture2D.MipSlice               = 0;
+        desc.Texture2D.PlaneSlice             = 0;
+
+        device()->CreateUnorderedAccessView(
+            texture.get(),
+            nullptr,
+            &desc,
+            uav.S().descriptor.cpu);
+
+        return uav;
+    }
+
+    TextureUAV Device::createTextureUAV(const Texture::Info & textureInfo, const TextureUAV::Info & viewInfo)
+    {
+        return createTextureUAV(createTexture(textureInfo), viewInfo);
     }
 
     CommandList Device::graphicsCommandList(const char *cmdListName)

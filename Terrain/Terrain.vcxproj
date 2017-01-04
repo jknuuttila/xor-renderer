@@ -90,6 +90,10 @@
     <ClCompile Include="Terrain.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="ComputeNormalMap.cs.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+    </FxCompile>
     <FxCompile Include="RenderTerrain.ps.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
@@ -112,6 +116,7 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ComputeNormalMap.sig.h" />
     <ClInclude Include="RenderTerrain.sig.h" />
     <ClInclude Include="VisualizeTriangulation.sig.h">
       <SubType>

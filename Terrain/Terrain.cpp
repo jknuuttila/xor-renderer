@@ -9,6 +9,7 @@
 
 #include "RenderTerrain.sig.h"
 #include "VisualizeTriangulation.sig.h"
+#include "ComputeNormalMap.sig.h"
 
 #include <random>
 #include <unordered_set>
@@ -126,6 +127,7 @@ struct HeightmapRenderer
 	Device device;
     GraphicsPipeline renderTerrain;
     GraphicsPipeline visualizeTriangulation;
+    ComputePipeline computeNormalMap;
 	Mesh mesh;
 	Heightmap *heightmap = nullptr;
     ImageData heightData;
@@ -135,6 +137,8 @@ struct HeightmapRenderer
 	float  maxErrorCoeff = .05f;
 	VisualizationMode mode = VisualizationMode::WireframeHeight;
     TextureSRV cpuError;
+    TextureSRV normalMap;
+    TextureUAV normalMapUAV;
     struct LightingProperties
     {
         float3 sunDirection;
@@ -167,6 +171,34 @@ struct HeightmapRenderer
 			.pixelShader("VisualizeTriangulation.ps")
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
 			.inputLayout(mesh.inputLayout()));
+
+        computeNormalMap = device.createComputePipeline(
+            ComputePipeline::Info("ComputeNormalMap.cs"));
+        {
+            normalMap = device.createTextureSRV(info::TextureInfoBuilder()
+                                                //.size(uint2(heightmap->size))
+                                                //.format(DXGI_FORMAT_R16G16B16A16_FLOAT)
+                                                .size(uint2(128, 128))
+                                                .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
+                                                .uav());
+
+            normalMapUAV = device.createTextureUAV(normalMap.texture());
+
+            auto cmd = device.graphicsCommandList();
+            cmd.bind(computeNormalMap);
+
+            ComputeNormalMap::Constants constants;
+            constants.size             = normalMap.texture()->size;
+            constants.axisMultiplier   = float2(heightmap->texelSize);
+            constants.heightMultiplier = 1.f;
+
+            cmd.setConstants(constants);
+            cmd.setShaderView(ComputeNormalMap::heightMap, heightmap->heightSRV);
+            cmd.setShaderView(ComputeNormalMap::normalMap, normalMapUAV);
+
+            cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
+            device.execute(cmd);
+        }
     }
 
     void setLightingProperties(LightingProperties *props = nullptr)
@@ -978,6 +1010,34 @@ struct HeightmapRenderer
             cmd.setConstants(lightingConstants);
             cmd.drawIndexed(mesh.numIndices());
         }
+
+        {
+#if 0
+            normalMap = device.createTextureSRV(info::TextureInfoBuilder()
+                                                //.size(uint2(heightmap->size))
+                                                //.format(DXGI_FORMAT_R16G16B16A16_FLOAT)
+                                                .size(uint2(128, 128))
+                                                .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
+                                                .uav());
+
+            normalMapUAV = device.createTextureUAV(normalMap.texture());
+
+#endif
+            //auto cmd = device.graphicsCommandList();
+            cmd.bind(computeNormalMap);
+
+            ComputeNormalMap::Constants constants;
+            constants.size             = normalMap.texture()->size;
+            constants.axisMultiplier   = float2(heightmap->texelSize);
+            constants.heightMultiplier = 1.f;
+
+            cmd.setConstants(constants);
+            cmd.setShaderView(ComputeNormalMap::heightMap, heightmap->heightSRV);
+            cmd.setShaderView(ComputeNormalMap::normalMap, normalMapUAV);
+
+            cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
+            //device.execute(cmd);
+        }
 	}
 
 	void visualize(CommandList &cmd, float2 minCorner, float2 maxCorner)
@@ -1278,6 +1338,12 @@ public:
                       heightmap.heightSRV, Rect::withSize(areaStart, areaSize),
                       norm.s_x000, norm.s_y001);
         }
+
+        blit.blit(cmd,
+                  backbuffer, Rect::withSize(int2(100), int2(800)),
+                  heightmapRenderer.normalMap,
+                  Rect::withSize(int2(heightmapRenderer.normalMap.texture()->size)),
+                  1, float4(0, 0, 0, 1));
 
         cmd.imguiEndFrame(swapChain);
 

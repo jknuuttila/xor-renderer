@@ -8,9 +8,11 @@
     <FxCompile Include="RenderTerrain.ps.hlsl" />
     <FxCompile Include="VisualizeTriangulation.vs.hlsl" />
     <FxCompile Include="VisualizeTriangulation.ps.hlsl" />
+    <FxCompile Include="ComputeNormalMap.cs.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="RenderTerrain.sig.h" />
     <ClInclude Include="VisualizeTriangulation.sig.h" />
+    <ClInclude Include="ComputeNormalMap.sig.h" />
   </ItemGroup>
 </Project>
