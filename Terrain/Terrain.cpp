@@ -127,7 +127,7 @@ struct HeightmapRenderer
 	Device device;
     GraphicsPipeline renderTerrain;
     GraphicsPipeline visualizeTriangulation;
-    ComputePipeline computeNormalMap;
+    ComputePipeline computeNormalMapCS;
 	Mesh mesh;
 	Heightmap *heightmap = nullptr;
     ImageData heightData;
@@ -172,33 +172,38 @@ struct HeightmapRenderer
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
 			.inputLayout(mesh.inputLayout()));
 
-        computeNormalMap = device.createComputePipeline(
+        computeNormalMapCS = device.createComputePipeline(
             ComputePipeline::Info("ComputeNormalMap.cs"));
         {
             normalMap = device.createTextureSRV(info::TextureInfoBuilder()
-                                                //.size(uint2(heightmap->size))
-                                                //.format(DXGI_FORMAT_R16G16B16A16_FLOAT)
-                                                .size(uint2(128, 128))
-                                                .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
+                                                //.size(uint2(512))
+                                                .size(uint2(heightmap->size))
+                                                .format(DXGI_FORMAT_R16G16B16A16_FLOAT)
                                                 .uav());
 
             normalMapUAV = device.createTextureUAV(normalMap.texture());
 
             auto cmd = device.graphicsCommandList();
-            cmd.bind(computeNormalMap);
-
-            ComputeNormalMap::Constants constants;
-            constants.size             = normalMap.texture()->size;
-            constants.axisMultiplier   = float2(heightmap->texelSize);
-            constants.heightMultiplier = 1.f;
-
-            cmd.setConstants(constants);
-            cmd.setShaderView(ComputeNormalMap::heightMap, heightmap->heightSRV);
-            cmd.setShaderView(ComputeNormalMap::normalMap, normalMapUAV);
-
-            cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
+            computeNormalMap(cmd);
             device.execute(cmd);
         }
+    }
+
+    void computeNormalMap(CommandList &cmd)
+    {
+        cmd.bind(computeNormalMapCS);
+
+        ComputeNormalMap::Constants constants;
+        constants.size = normalMap.texture()->size;
+        //constants.size = uint2(512);
+        constants.axisMultiplier = float2(heightmap->texelSize);
+        constants.heightMultiplier = 1.f;
+
+        cmd.setConstants(constants);
+        cmd.setShaderView(ComputeNormalMap::heightMap, heightmap->heightSRV);
+        cmd.setShaderView(ComputeNormalMap::normalMap, normalMapUAV);
+
+        cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
     }
 
     void setLightingProperties(LightingProperties *props = nullptr)
@@ -991,7 +996,8 @@ struct HeightmapRenderer
         cmd.setConstants(constants);
         cmd.setConstants(lightingConstants);
         mesh.setForRendering(cmd);
-        cmd.setShaderView(RenderTerrain::terrainColor, heightmap->colorSRV);
+        cmd.setShaderView(RenderTerrain::terrainColor,  heightmap->colorSRV);
+        cmd.setShaderView(RenderTerrain::terrainNormal, normalMap);
         {
             auto p = cmd.profilingEvent("Draw opaque");
             cmd.drawIndexed(mesh.numIndices());
@@ -1006,37 +1012,10 @@ struct HeightmapRenderer
                      .depthBias(10000)
                      .fill(D3D12_FILL_MODE_WIREFRAME));
             cmd.setShaderView(RenderTerrain::terrainColor, heightmap->colorSRV);
+            cmd.setShaderView(RenderTerrain::terrainNormal, normalMap);
             cmd.setConstants(constants);
             cmd.setConstants(lightingConstants);
             cmd.drawIndexed(mesh.numIndices());
-        }
-
-        {
-#if 0
-            normalMap = device.createTextureSRV(info::TextureInfoBuilder()
-                                                //.size(uint2(heightmap->size))
-                                                //.format(DXGI_FORMAT_R16G16B16A16_FLOAT)
-                                                .size(uint2(128, 128))
-                                                .format(DXGI_FORMAT_R32G32B32A32_FLOAT)
-                                                .uav());
-
-            normalMapUAV = device.createTextureUAV(normalMap.texture());
-
-#endif
-            //auto cmd = device.graphicsCommandList();
-            cmd.bind(computeNormalMap);
-
-            ComputeNormalMap::Constants constants;
-            constants.size             = normalMap.texture()->size;
-            constants.axisMultiplier   = float2(heightmap->texelSize);
-            constants.heightMultiplier = 1.f;
-
-            cmd.setConstants(constants);
-            cmd.setShaderView(ComputeNormalMap::heightMap, heightmap->heightSRV);
-            cmd.setShaderView(ComputeNormalMap::normalMap, normalMapUAV);
-
-            cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
-            //device.execute(cmd);
         }
 	}
 
@@ -1111,7 +1090,8 @@ class Terrain : public Window
     } lighting;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
-    bool blitArea  = true;
+    bool blitArea    = true;
+    bool blitNormal  = false;
     bool wireframe = false;
     bool largeVisualization = false;
 
@@ -1122,14 +1102,18 @@ public:
     {
         xor.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
 
-        device    = xor.defaultDevice();
-        swapChain = device.createSwapChain(*this);
+#if 1
+        device      = xor.defaultDevice();
+#else
+        device      = xor.warpDevice();
+#endif
+        swapChain   = device.createSwapChain(*this);
         depthBuffer = device.createTextureDSV(Texture::Info(size(), DXGI_FORMAT_D32_FLOAT));
-        blit = Blit(device);
+        blit        = Blit(device);
 
         Timer loadingTime;
 
-#if defined(_DEBUG) || 0
+#if defined(_DEBUG) || 1
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
 #else
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/test/height.png",
@@ -1272,6 +1256,7 @@ public:
                          "Quadric\0");
             ImGui::Checkbox("Tipsify vertex cache optimization", &tipsifyMesh);
             ImGui::Checkbox("Show area", &blitArea);
+            ImGui::Checkbox("Show normals", &blitNormal);
             ImGui::Checkbox("Wireframe", &wireframe);
 			ImGui::Combo("Visualize triangulation",
 						 reinterpret_cast<int *>(&heightmapRenderer.mode),
@@ -1289,9 +1274,8 @@ public:
 
             if (ImGui::Button("Measurement"))
                 measureTerrain();
-
-            ImGui::End();
         }
+        ImGui::End();
 
         if (0) {
             auto area = Rect::withSize(areaStart, areaSize);
@@ -1328,7 +1312,7 @@ public:
 
         cmd.setRenderTargets();
 
-        if (blitArea && !largeVisualization)
+        if (blitArea && !blitNormal && !largeVisualization)
         {
             auto p = cmd.profilingEvent("Blit heightmap");
             float2 norm = normalizationMultiplyAdd(heightmap.minHeight, heightmap.maxHeight);
@@ -1339,11 +1323,21 @@ public:
                       norm.s_x000, norm.s_y001);
         }
 
+        if (blitNormal && !largeVisualization)
+        {
+            auto p = cmd.profilingEvent("Blit normal map");
+
+            blit.blit(cmd,
+                      backbuffer, Rect::withSize(int2(backbuffer.texture()->size - 300).s_x0, 300),
+                      heightmapRenderer.normalMap, Rect::withSize(areaStart, areaSize),
+                      float4(0.5f, 0.5f, 1, 1), float4(0.5f, 0.5f, 0, 1));
+        }
+
+#if 0
         blit.blit(cmd,
-                  backbuffer, Rect::withSize(int2(100), int2(800)),
-                  heightmapRenderer.normalMap,
-                  Rect::withSize(int2(heightmapRenderer.normalMap.texture()->size)),
-                  1, float4(0, 0, 0, 1));
+            backbuffer, Rect(int2(100), int2(800)),
+            heightmapRenderer.normalMap, Rect::withSize(areaStart, areaSize));
+#endif
 
         cmd.imguiEndFrame(swapChain);
 

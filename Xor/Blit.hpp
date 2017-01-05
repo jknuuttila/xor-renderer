@@ -14,6 +14,6 @@ namespace xor
         void blit(CommandList &cmd,
                   TextureRTV &dst, Rect dstRect,
                   TextureSRV src, ImageRect srcRect = {},
-                  float4 multiplier = 1, float4 bias = 0);
+                  float4 multiplier = 1, float4 bias = float4(0, 0, 0, 1));
     };
 }

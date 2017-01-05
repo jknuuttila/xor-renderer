@@ -143,7 +143,8 @@ namespace xor
 
         Span<Adapter> adapters();
         Adapter &defaultAdapter();
-        Device defaultDevice();
+        Device defaultDevice(bool createWarpDevice = false);
+        Device warpDevice();
 
         void registerShaderTlog(StringView projectName,
                                 StringView shaderTlogPath);

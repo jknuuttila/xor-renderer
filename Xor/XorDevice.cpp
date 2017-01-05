@@ -110,15 +110,13 @@ namespace xor
         return m_adapters.front();
     }
 
-    Device Xor::defaultDevice()
+    Device Xor::defaultDevice(bool createWarpDevice)
     {
+        if (createWarpDevice)
+            return warpDevice();
+
         for (auto &adapter : m_adapters)
         {
-#if 0
-            // WARP
-            return m_adapters.back().createDevice();
-#endif
-
             if (Device device = adapter.createDevice())
                 return device;
         }
@@ -126,6 +124,11 @@ namespace xor
         XOR_CHECK(false, "Failed to find a Direct3D 12 device.");
 
         return Device();
+    }
+
+    Device Xor::warpDevice()
+    {
+        return m_adapters.back().createDevice();
     }
 
     void Xor::registerShaderTlog(StringView projectName, StringView shaderTlogPath)
@@ -852,7 +855,7 @@ namespace xor
         uav.S().descriptor = S().shaderViews.allocateFromHeap();
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {};
-        desc.Format                           = viewInfo.format;
+        desc.Format                           = info.format;
         desc.ViewDimension                    = D3D12_UAV_DIMENSION_TEXTURE2D;
         desc.Texture2D.MipSlice               = 0;
         desc.Texture2D.PlaneSlice             = 0;
@@ -861,7 +864,7 @@ namespace xor
             texture.get(),
             nullptr,
             &desc,
-            uav.S().descriptor.cpu);
+            uav.S().descriptor.staging);
 
         return uav;
     }

@@ -59,6 +59,7 @@ namespace xor
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> srvs;
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> uavs;
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> viewDescriptorSrcs;
+            std::vector<uint> viewDescriptorAmounts;
 
 			std::shared_ptr<QueryHeap> queryHeap;
 			ProfilingEvent cmdListEvent;

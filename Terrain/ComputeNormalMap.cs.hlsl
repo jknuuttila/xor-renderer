@@ -12,8 +12,6 @@ void main(uint3 tid : SV_DispatchThreadID)
 {
     uint2 pos = tid.xy;
 
-    normalMap[pos] = float4(1, 0, 0, 1);
-
     if (any(pos > size))
         return;
 

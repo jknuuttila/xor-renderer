@@ -20,13 +20,14 @@ XOR_CBUFFER(LightingConstants, 1)
 	float4 sunColor;
 };
 
-XOR_SRV(Texture2D<float4>, terrainColor, 0)
+XOR_SRV(Texture2D<float4>, terrainColor,  0)
+XOR_SRV(Texture2D<float4>, terrainNormal, 1)
 
 XOR_SAMPLER_BILINEAR(bilinearSampler)
 
 XOR_END_SIGNATURE
 
-#define RENDERTERRAIN_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CS(2, 1)
+#define RENDERTERRAIN_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CS(2, 2)
 
 #endif
 

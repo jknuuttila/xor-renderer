@@ -131,6 +131,7 @@ namespace xor
                     block = allocate(amount, alignment, cmdList);
                 }
 
+
                 return block;
             }
 
@@ -161,9 +162,23 @@ namespace xor
             GPUMemoryRingbuffer          m_ring;
             uint                         m_ringStart = 0;
             D3D12_DESCRIPTOR_HEAP_TYPE   m_type      = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+
+            // We have two heaps and three types of descriptors:
+            // - Actual descriptor heap used by shaders
+            //    - CPU descriptors into it for some functions that write directly into it
+            //    - GPU descriptors into it for some other functions
+            //    - CPU cannot read this heap, only write
+            // - Staging heap to be used as a copy source
+            //    - Root argument setup copies view descriptors from there to the other heap
+            //
+            // - SRVs and UAVs are created in the staging heap, because they're only ever used
+            //   by copying them.
+            // - RTVs and DSVs are created in the shader heap, because they're never copied,
+            //   only used directly.
             D3D12_CPU_DESCRIPTOR_HANDLE  m_cpuStart  = { 0 };
             D3D12_GPU_DESCRIPTOR_HANDLE  m_gpuStart  = { 0 };
             D3D12_CPU_DESCRIPTOR_HANDLE  m_stagingStart = { 0 };
+
             uint                         m_increment = 0;
 
             static const size_t ViewMetadataEntries = 4096;
@@ -217,9 +232,10 @@ namespace xor
 
             Descriptor descriptorAtOffset(int64_t offset)
             {
-                offset *= m_increment;
-
                 Descriptor descriptor;
+                descriptor.offset = offset;
+
+                offset *= m_increment;
 
                 descriptor.staging = m_stagingStart;
                 descriptor.cpu     = m_cpuStart;

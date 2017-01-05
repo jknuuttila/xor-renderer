@@ -198,10 +198,16 @@ namespace xor
             if (!srcs.empty())
             {
                 auto dst = heap.descriptorAtOffset(start + numCBVs);
-                uint amount[] ={ static_cast<uint>(srcs.size()) };
+                uint amount = static_cast<uint>(srcs.size());
+                uint dstAmounts[1] = { amount };
+
+                auto &srcAmounts = S().viewDescriptorAmounts;
+                srcAmounts.clear();
+                srcAmounts.resize(srcs.size(), 1 );
+
                 dev.device()->CopyDescriptors(
-                    1, &dst.cpu, amount,
-                    amount[0], srcs.data(), nullptr,
+                    1,      &dst.cpu,    dstAmounts,
+                    amount, srcs.data(), srcAmounts.data(),
                     D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
             }
 
