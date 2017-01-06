@@ -76,22 +76,6 @@ namespace xor
         friend class ProfilingEvent;
         friend struct backend::DeviceState;
         friend struct backend::GPUProgressTracking;
-
-        ID3D12GraphicsCommandList *cmd();
-
-        void close();
-        void reset();
-
-        bool hasCompleted();
-        void waitUntilCompleted(DWORD timeout = INFINITE);
-
-        CommandList(StatePtr state);
-        void release();
-
-        // FIXME: This is horribly inefficient and bad
-        void transition(const backend::Resource &resource, D3D12_RESOURCE_STATES state);
-        void setupRootArguments(bool compute);
-        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment = DefaultAlignment);
     public:
         CommandList() = default;
 
@@ -114,6 +98,8 @@ namespace xor
 
         void clearRTV(TextureRTV &rtv, float4 color = 0);
         void clearDSV(TextureDSV &dsv, float depth = 0);
+        void clearUAV(TextureUAV &uav, uint4 clearValue = uint4(0));
+        void clearUAV(TextureUAV &uav, float4 clearValue);
 
         void setViewport(uint2 size);
         void setViewport(uint2 size, Rect scissor);
@@ -121,6 +107,7 @@ namespace xor
         void setRenderTargets();
         void setRenderTargets(TextureRTV &rtv);
         void setRenderTargets(TextureRTV &rtv, TextureDSV &dsv);
+        void setRenderTargets(TextureDSV &dsv);
 
         template <typename T>
         inline BufferVBV dynamicBufferVBV(Span<const T> vertices);
@@ -177,6 +164,26 @@ namespace xor
         void imguiEndFrame(SwapChain &swapChain);
 
         ProfilingEvent profilingEvent(const char *name);
+        ProfilingEvent profilingEventPrint(const char *name);
+
+    private:
+        ID3D12GraphicsCommandList *cmd();
+
+        void close();
+        void reset();
+
+        bool hasCompleted();
+        void waitUntilCompleted(DWORD timeout = INFINITE);
+
+        CommandList(StatePtr state);
+        void release();
+
+        // FIXME: This is horribly inefficient and bad
+        void transition(const backend::Resource &resource, D3D12_RESOURCE_STATES state);
+        void setupRootArguments(bool compute);
+        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment = DefaultAlignment);
+
+        ProfilingEvent profilingEventInternal(const char * name, bool print);
     };
 
     template<typename T>

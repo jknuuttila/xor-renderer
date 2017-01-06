@@ -10,6 +10,8 @@
 #include "RenderTerrain.sig.h"
 #include "VisualizeTriangulation.sig.h"
 #include "ComputeNormalMap.sig.h"
+#include "RenderTerrainAO.sig.h"
+#include "ResolveTerrainAO.sig.h"
 
 #include <random>
 #include <unordered_set>
@@ -174,7 +176,7 @@ struct HeightmapRenderer
     GraphicsPipeline renderAO;
     ComputePipeline resolveAO;
     RWTexture aoMap;
-    TextureUAV aoIntermediateMap;
+    RWTexture aoVisibilitySamples;
 
     struct LightingProperties
     {
@@ -234,6 +236,8 @@ struct HeightmapRenderer
 
     void computeNormalMap(CommandList &cmd)
     {
+        auto e = cmd.profilingEventPrint("computeNormalMap");
+
         cmd.bind(computeNormalMapCS);
 
         ComputeNormalMap::Constants constants;
@@ -248,15 +252,89 @@ struct HeightmapRenderer
         cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
     }
 
-    void computeAmbientOcclusion(CommandList &cmd, uint samples = 100)
+    void computeAmbientOcclusion(CommandList &cmd,
+                                 uint samples = 100,
+                                 uint aoMapResolution = 2048,
+                                 uint depthBufferResolution = 4096)
     {
+        auto e = cmd.profilingEventPrint("computeAmbientOcclusion");
+
         auto &renderAODepthPrepass         = renderAO;
         auto  renderAOAccumulateVisibility = renderAO.variant()
             .pixelShader("RenderTerrainAO.ps")
             .depthMode(info::DepthMode::ReadOnly)
             .depthFunction(D3D12_COMPARISON_FUNC_EQUAL);
 
+        aoMap = RWTexture(device, info::TextureInfoBuilder()
+                          .size(uint2(aoMapResolution))
+                          .format(DXGI_FORMAT_R16_FLOAT)
+                          .uav());
+        aoVisibilitySamples = RWTexture(device, info::TextureInfoBuilder()
+                                        .size(uint2(aoMapResolution))
+                                        .format(DXGI_FORMAT_R32_UINT)
+                                        .uav());
+
+        auto zBuffer = device.createTextureDSV(info::TextureInfoBuilder()
+                                               .size(uint2(depthBufferResolution))
+                                               .format(DXGI_FORMAT_D32_FLOAT));
+
         std::mt19937 gen(120495);
+
+        float2 worldSize = maxWorld - minWorld;
+        float height   = heightmap->maxHeight - heightmap->minHeight;
+        float diameter = sqrt(worldSize.lengthSqr() + height * height);
+        float radius   = diameter / 2;
+
+        cmd.clearUAV(aoVisibilitySamples.uav);
+
+        for (uint i = 0; i < samples; ++i)
+        {
+            float3 hemisphere      = uniformHemisphereGen(gen);
+            float3 sampleCameraPos = hemisphere.s_xzy * radius;
+            Matrix view            = Matrix::lookAt(sampleCameraPos, float3(0));
+            Matrix proj            = Matrix::projectionOrtho(diameter, diameter, 1.f, diameter);
+            Matrix viewProj        = proj * view;
+
+            cmd.clearDSV(zBuffer);
+            cmd.setRenderTargets(zBuffer);
+            cmd.bind(renderAODepthPrepass);
+
+            RenderTerrainAO::Constants constants;
+            constants.viewProj      = viewProj;
+            constants.worldMin      = minWorld;
+            constants.worldMax      = maxWorld;
+            constants.aoTextureSize = float2(aoMap.texture()->size);
+
+            cmd.setConstants(constants);
+            cmd.setShaderView(RenderTerrainAO::terrainAOVisibleSamples, aoVisibilitySamples.uav);
+            mesh.setForRendering(cmd);
+            cmd.drawIndexed(mesh.numIndices());
+
+            cmd.bind(renderAOAccumulateVisibility);
+            cmd.drawIndexed(mesh.numIndices());
+        }
+
+        float2 aoTexelWorldDim   = worldSize / float2(float(aoMapResolution));
+        float  rtPixelWorldDim   = diameter / float(depthBufferResolution);            
+        float2 aoTexelRTDim      = aoTexelWorldDim / float2(rtPixelWorldDim);
+        float  aoTexelRTArea     = aoTexelRTDim.x * aoTexelRTDim.y;
+        float  maxVisibleSamples = std::round(aoTexelRTArea * samples);
+
+        cmd.setRenderTargets();
+
+        {
+            cmd.bind(resolveAO);
+
+            ResolveTerrainAO::Constants constants;
+            constants.size              = aoMap.texture()->size;
+            constants.maxVisibleSamples = maxVisibleSamples;
+
+            cmd.setConstants(constants);
+            cmd.setShaderView(ResolveTerrainAO::terrainAO, aoMap.uav);
+            cmd.setShaderView(ResolveTerrainAO::terrainAOVisibleSamples, aoVisibilitySamples.srv);
+
+            cmd.dispatchThreads(ResolveTerrainAO::threadGroupSize, uint3(constants.size));
+        }
     }
 
     void setLightingProperties(LightingProperties *props = nullptr)

@@ -243,14 +243,14 @@ namespace xor
     }
 
 	template <typename RandomGen>
-	float2 uniformHemisphereGen(RandomGen &gen)
+	float3 uniformHemisphereGen(RandomGen &gen)
     {
 		std::uniform_real_distribution<float> U;
         return uniformHemisphere(float2(U(gen), U(gen)));
     }
 
 	template <typename RandomGen>
-	float2 cosineWeightedHemisphereGen(RandomGen &gen)
+	float3 cosineWeightedHemisphereGen(RandomGen &gen)
     {
 		std::uniform_real_distribution<float> U;
         return cosineWeightedHemisphere(float2(U(gen), U(gen)));

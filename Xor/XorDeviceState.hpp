@@ -357,6 +357,7 @@ namespace xor
 			const char *name;
 			uint64_t ticks;
 			int indent;
+            bool print;
 		};
 
         struct QueryHeap
@@ -368,6 +369,7 @@ namespace xor
                 const char *name     = nullptr;
                 int64_t parent       = -1;
                 SeqNum cmdListNumber = -1;
+                bool print           = false;
             };
             std::vector<Metadata> metadata;
             OffsetRing ringbuffer;
@@ -377,7 +379,9 @@ namespace xor
 
 			void resolve(ID3D12GraphicsCommandList *cmdList, int64_t first, int64_t last);
 
-			int64_t beginEvent(ID3D12GraphicsCommandList *cmdList, const char *name, SeqNum cmdListNumber);
+			int64_t beginEvent(ID3D12GraphicsCommandList *cmdList,
+                               const char *name, bool print,
+                               SeqNum cmdListNumber);
 			void endEvent(ID3D12GraphicsCommandList *cmdList, int64_t eventOffset);
 
             template <typename F>
@@ -419,7 +423,7 @@ namespace xor
                     uint64_t end   = queryData[i * 2 + 1];
                     uint64_t time  = (end < begin) ? 0 : end - begin;
 
-					f(ProfilingEventData { m.name, time, indent });
+					f(ProfilingEventData { m.name, time, indent, m.print });
 
                     ringbuffer.release(i);
                     i = ringbuffer.oldest();

@@ -341,6 +341,28 @@ namespace xor
                                      0, nullptr);
     }
 
+    void CommandList::clearUAV(TextureUAV & uav, uint4 clearValue)
+    {
+        transition(uav.m_texture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+        cmd()->ClearUnorderedAccessViewUint(uav.S().descriptor.gpu,
+                                            uav.S().descriptor.cpu,
+                                            uav.m_texture.get(),
+                                            clearValue.data(),
+                                            0, nullptr);
+    }
+
+    void CommandList::clearUAV(TextureUAV & uav, float4 clearValue)
+    {
+        transition(uav.m_texture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+        cmd()->ClearUnorderedAccessViewFloat(uav.S().descriptor.gpu,
+                                             uav.S().descriptor.cpu,
+                                             uav.m_texture.get(),
+                                             clearValue.data(),
+                                             0, nullptr);
+    }
+
     void CommandList::setViewport(uint2 size)
     {
         setViewport(size, { 0, int2(size) });
@@ -410,6 +432,20 @@ namespace xor
                                   &dsv.S().descriptor.cpu);
 
         setViewport(rtv.texture()->size);
+    }
+
+    void CommandList::setRenderTargets(TextureDSV & dsv)
+    {
+        transition(dsv.m_texture, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+        S().activeRenderTarget = Texture();
+
+        cmd()->OMSetRenderTargets(0,
+                                  nullptr,
+                                  FALSE,
+                                  &dsv.S().descriptor.cpu);
+
+        setViewport(dsv.texture()->size);
     }
 
     BufferVBV CommandList::dynamicBufferVBV(Span<const uint8_t> bytes, uint stride)
@@ -662,12 +698,12 @@ namespace xor
         setRenderTargets();
     }
 
-    ProfilingEvent CommandList::profilingEvent(const char * name)
+    ProfilingEvent CommandList::profilingEventInternal(const char * name, bool print)
     {
         ProfilingEvent e;
 		e.m_cmd       = cmd();
 		e.m_queryHeap = S().queryHeap.get();
-		e.m_offset    = e.m_queryHeap->beginEvent(e.m_cmd, name, number());
+		e.m_offset    = e.m_queryHeap->beginEvent(e.m_cmd, name, print, number());
 
 		if (S().firstProfilingEvent < 0)
 			S().firstProfilingEvent = e.m_offset;
@@ -675,6 +711,16 @@ namespace xor
 		S().lastProfilingEvent = e.m_offset;
 
 		return e;
+    }
+
+    ProfilingEvent CommandList::profilingEvent(const char * name)
+    {
+        return profilingEventInternal(name, false);
+    }
+
+    ProfilingEvent CommandList::profilingEventPrint(const char * name)
+    {
+        return profilingEventInternal(name, true);
     }
 
 	void ProfilingEvent::done()

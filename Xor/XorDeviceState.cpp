@@ -206,7 +206,9 @@ namespace xor
 				start * sizeof(uint64_t));
 		}
 
-		int64_t QueryHeap::beginEvent(ID3D12GraphicsCommandList * cmdList, const char * name, SeqNum cmdListNumber)
+		int64_t QueryHeap::beginEvent(ID3D12GraphicsCommandList * cmdList,
+                                      const char * name, bool print,
+                                      SeqNum cmdListNumber)
 		{
 			int64_t offset = ringbuffer.allocate();
 			XOR_CHECK(offset >= 0, "Out of ringbuffer space");
@@ -214,6 +216,7 @@ namespace xor
 			m.name          = name;
 			m.cmdListNumber = cmdListNumber;
 			m.parent        = top;
+            m.print         = print;
 
 			cmdList->EndQuery(timestamps.Get(),
 							  D3D12_QUERY_TYPE_TIMESTAMP,

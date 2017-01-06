@@ -96,6 +96,30 @@ namespace xor
             return projectionPerspective(fres.x / fres.y, verticalFov, depth1Plane, depth0Plane);
         }
 
+        Matrix Matrix::projectionOrtho(float width, float height, float depth1Plane, float depth0Plane)
+        {
+            return Matrix::projectionOrtho(float2(width, height), depth1Plane, depth0Plane);
+        }
+
+        Matrix Matrix::projectionOrtho(float2 dims, float depth1Plane, float depth0Plane)
+        {
+            // Right handed coordinates, so flip Z
+            depth1Plane = -depth1Plane;
+            depth0Plane = -depth0Plane;
+
+            float2 s = 2.f / dims;
+
+            float a = depth1Plane / (depth1Plane - depth0Plane);
+            float b = -a * depth0Plane;
+
+            return Matrix {
+                { s.x,   0,   0,   0 },
+                {   0, s.y,   0,   0 },
+                {   0,   0,  -a,  -b },
+                {   0,   0,   0,   1 },
+            };
+        }
+
         Matrix Matrix::azimuthElevation(Angle azimuth, Angle elevation)
         {
             Matrix A = Matrix::axisAngle({ 0, 1, 0 }, azimuth);
