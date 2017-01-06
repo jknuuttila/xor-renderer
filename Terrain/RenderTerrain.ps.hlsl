@@ -27,6 +27,7 @@ float4 main(PSInput i) : SV_Target
     N = N.xzy;
 
     float3 L = sunDirection.xyz;
+    // float3 color = saturate(dot(N, L)) / Pi * sunColor.rgb * albedo;
     float3 color = saturate(dot(N, L)) / Pi * sunColor.rgb;
 
 	return float4(color, 1);

@@ -14,6 +14,13 @@
 #include <random>
 #include <unordered_set>
 
+// TODO: Ambient occlusion
+// TODO: Helper visualizations (lines etc.)
+// TODO: Shadows
+// TODO: Tiled meshing
+// TODO: Continuous LOD
+// TODO: Superfluous vertex removal
+
 using namespace xor;
 
 static const float ArcSecond = 30.87f;
