@@ -248,6 +248,17 @@ struct HeightmapRenderer
         cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
     }
 
+    void computeAmbientOcclusion(CommandList &cmd, uint samples = 100)
+    {
+        auto &renderAODepthPrepass         = renderAO;
+        auto  renderAOAccumulateVisibility = renderAO.variant()
+            .pixelShader("RenderTerrainAO.ps")
+            .depthMode(info::DepthMode::ReadOnly)
+            .depthFunction(D3D12_COMPARISON_FUNC_EQUAL);
+
+        std::mt19937 gen(120495);
+    }
+
     void setLightingProperties(LightingProperties *props = nullptr)
     {
         lightingDefines.clear();
@@ -850,7 +861,7 @@ struct HeightmapRenderer
 
                 for (int i = 0; i < InteriorSamples; ++i)
                 {
-                    float3 bary = uniformBarycentric(gen);
+                    float3 bary = uniformBarycentricGen(gen);
                     errorAt(bary);
                 }
 
