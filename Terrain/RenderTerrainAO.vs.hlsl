@@ -1,4 +1,4 @@
-#include "RenderTerrain.sig.h"
+#include "RenderTerrainAO.sig.h"
 
 struct VSInput
 {
@@ -14,7 +14,7 @@ struct VSOutput
     float4 pos      : SV_Position;
 };
 
-[RootSignature(RENDERTERRAIN_ROOT_SIGNATURE)]
+[RootSignature(RENDERTERRAINAO_ROOT_SIGNATURE)]
 VSOutput main(VSInput i)
 {
     VSOutput o;

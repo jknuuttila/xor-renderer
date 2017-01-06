@@ -12,7 +12,7 @@ void main(uint3 tid : SV_DispatchThreadID)
 {
     uint2 pos = tid.xy;
 
-    if (any(pos > size))
+    if (any(pos >= size))
         return;
 
     float n = loadHeight(pos - uint2(0, 1));

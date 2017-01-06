@@ -258,13 +258,29 @@ namespace xor
         cmd()->SetGraphicsRootSignature(pipeline.S().rootSignature.rs.Get());
         cmd()->SetPipelineState(pipeline.S().pso.Get());
 
-        S().cbvs.clear();
-        S().srvs.clear();
-        S().uavs.clear();
+        auto &rs = pipeline.S().rootSignature;
+        auto &cbvs = S().cbvs;
+        auto &srvs = S().srvs;
+        auto &uavs = S().uavs;
 
-        S().cbvs.resize(pipeline.S().rootSignature.numCBVs);
-        S().srvs.resize(pipeline.S().rootSignature.numSRVs);
-        S().uavs.resize(pipeline.S().rootSignature.numUAVs);
+        // TODO: Better check: Leave if the new RS is the same as the old RS
+
+        // If the newly bound pipeline has exactly the same amounts of views,
+        // we leave the previously bound stuff still bound. Otherwise we unbind.
+        if (rs.numCBVs != cbvs.size()
+            || rs.numSRVs != srvs.size()
+            || rs.numUAVs != uavs.size())
+        {
+            S().cbvs.clear();
+            S().srvs.clear();
+            S().uavs.clear();
+
+            S().cbvs.resize(pipeline.S().rootSignature.numCBVs);
+            S().srvs.resize(pipeline.S().rootSignature.numSRVs);
+            S().uavs.resize(pipeline.S().rootSignature.numUAVs);
+        }
+
+        // FIXME: This does not issue UAV barriers if UAVs are left bound
     }
 
     void CommandList::bind(const info::GraphicsPipelineInfo & pipelineInfo)
@@ -278,13 +294,25 @@ namespace xor
         cmd()->SetComputeRootSignature(pipeline.S().rootSignature.rs.Get());
         cmd()->SetPipelineState(pipeline.S().pso.Get());
 
-        S().cbvs.clear();
-        S().srvs.clear();
-        S().uavs.clear();
+        auto &rs = pipeline.S().rootSignature;
+        auto &cbvs = S().cbvs;
+        auto &srvs = S().srvs;
+        auto &uavs = S().uavs;
 
-        S().cbvs.resize(pipeline.S().rootSignature.numCBVs);
-        S().srvs.resize(pipeline.S().rootSignature.numSRVs);
-        S().uavs.resize(pipeline.S().rootSignature.numUAVs);
+        // If the newly bound pipeline has exactly the same amounts of views,
+        // we leave the previously bound stuff still bound. Otherwise we unbind.
+        if (rs.numCBVs != cbvs.size()
+            || rs.numSRVs != srvs.size()
+            || rs.numUAVs != uavs.size())
+        {
+            S().cbvs.clear();
+            S().srvs.clear();
+            S().uavs.clear();
+
+            S().cbvs.resize(pipeline.S().rootSignature.numCBVs);
+            S().srvs.resize(pipeline.S().rootSignature.numSRVs);
+            S().uavs.resize(pipeline.S().rootSignature.numUAVs);
+        }
     }
 
     void CommandList::bind(const info::ComputePipelineInfo & pipelineInfo)

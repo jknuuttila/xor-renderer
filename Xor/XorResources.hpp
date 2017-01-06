@@ -402,6 +402,7 @@ namespace xor
     public:
         DescriptorView() = default;
 
+        bool valid() const { return backend::SharedState<backend::DescriptorViewState>::valid(); }
         explicit operator bool() const { return valid(); }
     };
 

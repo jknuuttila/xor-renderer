@@ -92,6 +92,7 @@ namespace xor
         public:
             Resource() = default;
 
+            bool valid() const { return backend::SharedState<backend::ResourceState>::valid(); }
             explicit operator bool() const { return valid(); }
             ID3D12Resource *get() const;
         };

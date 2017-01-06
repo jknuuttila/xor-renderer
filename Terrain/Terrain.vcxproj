@@ -102,6 +102,18 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
     </FxCompile>
+    <FxCompile Include="RenderTerrainAO.ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="RenderTerrainAO.vs.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+    </FxCompile>
+    <FxCompile Include="ResolveTerrainAO.cs.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+    </FxCompile>
     <FxCompile Include="VisualizeTriangulation.ps.hlsl">
       <SubType>
       </SubType>
@@ -118,6 +130,8 @@
   <ItemGroup>
     <ClInclude Include="ComputeNormalMap.sig.h" />
     <ClInclude Include="RenderTerrain.sig.h" />
+    <ClInclude Include="RenderTerrainAO.sig.h" />
+    <ClInclude Include="ResolveTerrainAO.sig.h" />
     <ClInclude Include="VisualizeTriangulation.sig.h">
       <SubType>
       </SubType>

@@ -127,6 +127,31 @@ enum class VisualizationMode
 	CPUError,
 };
 
+struct RWTexture
+{
+    TextureSRV srv;
+    TextureUAV uav;
+    TextureRTV rtv;
+    TextureDSV dsv;
+
+    RWTexture() = default;
+    RWTexture(Device &device,
+              const info::TextureInfo &info,
+              const info::TextureViewInfo &viewInfo = info::TextureViewInfo())
+    {
+        srv = device.createTextureSRV(info, viewInfo);
+
+        if (info.allowUAV)          uav = device.createTextureUAV(srv.texture(), viewInfo);
+        // if (info.allowRenderTarget) rtv = device.createTextureRTV(srv.texture(), viewInfo);
+        if (info.allowDepthStencil) dsv = device.createTextureDSV(srv.texture(), viewInfo);
+    }
+
+    bool valid() const { return srv.valid(); }
+    explicit operator bool() const { return valid(); }
+
+    Texture texture() { return srv.texture(); }
+};
+
 struct HeightmapRenderer
 {
     using DE = DirectedEdge<Empty, int3>;
@@ -144,8 +169,13 @@ struct HeightmapRenderer
 	float  maxErrorCoeff = .05f;
 	VisualizationMode mode = VisualizationMode::WireframeHeight;
     TextureSRV cpuError;
-    TextureSRV normalMap;
-    TextureUAV normalMapUAV;
+    RWTexture normalMap;
+
+    GraphicsPipeline renderAO;
+    ComputePipeline resolveAO;
+    RWTexture aoMap;
+    TextureUAV aoIntermediateMap;
+
     struct LightingProperties
     {
         float3 sunDirection;
@@ -179,16 +209,22 @@ struct HeightmapRenderer
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
 			.inputLayout(mesh.inputLayout()));
 
+        renderAO = device.createGraphicsPipeline(
+			GraphicsPipeline::Info()
+			.vertexShader("RenderTerrainAO.vs")
+			.depthMode(info::DepthMode::Write)
+			.depthFormat(DXGI_FORMAT_D32_FLOAT)
+			.inputLayout(mesh.inputLayout()));
+        resolveAO = device.createComputePipeline(
+            ComputePipeline::Info("ResolveTerrainAO.cs"));
+
         computeNormalMapCS = device.createComputePipeline(
             ComputePipeline::Info("ComputeNormalMap.cs"));
         {
-            normalMap = device.createTextureSRV(info::TextureInfoBuilder()
-                                                //.size(uint2(512))
-                                                .size(uint2(heightmap->size))
-                                                .format(DXGI_FORMAT_R16G16B16A16_FLOAT)
-                                                .uav());
-
-            normalMapUAV = device.createTextureUAV(normalMap.texture());
+            normalMap = RWTexture(device, info::TextureInfoBuilder()
+                                  .size(uint2(heightmap->size))
+                                  .format(DXGI_FORMAT_R16G16B16A16_FLOAT)
+                                  .uav());
 
             auto cmd = device.graphicsCommandList();
             computeNormalMap(cmd);
@@ -202,13 +238,12 @@ struct HeightmapRenderer
 
         ComputeNormalMap::Constants constants;
         constants.size = normalMap.texture()->size;
-        //constants.size = uint2(512);
         constants.axisMultiplier = float2(heightmap->texelSize);
         constants.heightMultiplier = 1.f;
 
         cmd.setConstants(constants);
         cmd.setShaderView(ComputeNormalMap::heightMap, heightmap->heightSRV);
-        cmd.setShaderView(ComputeNormalMap::normalMap, normalMapUAV);
+        cmd.setShaderView(ComputeNormalMap::normalMap, normalMap.uav);
 
         cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
     }
@@ -1004,7 +1039,7 @@ struct HeightmapRenderer
         cmd.setConstants(lightingConstants);
         mesh.setForRendering(cmd);
         cmd.setShaderView(RenderTerrain::terrainColor,  heightmap->colorSRV);
-        cmd.setShaderView(RenderTerrain::terrainNormal, normalMap);
+        cmd.setShaderView(RenderTerrain::terrainNormal, normalMap.srv);
         {
             auto p = cmd.profilingEvent("Draw opaque");
             cmd.drawIndexed(mesh.numIndices());
@@ -1018,10 +1053,6 @@ struct HeightmapRenderer
                      .depthMode(info::DepthMode::ReadOnly)
                      .depthBias(10000)
                      .fill(D3D12_FILL_MODE_WIREFRAME));
-            cmd.setShaderView(RenderTerrain::terrainColor, heightmap->colorSRV);
-            cmd.setShaderView(RenderTerrain::terrainNormal, normalMap);
-            cmd.setConstants(constants);
-            cmd.setConstants(lightingConstants);
             cmd.drawIndexed(mesh.numIndices());
         }
 	}
@@ -1061,9 +1092,6 @@ struct HeightmapRenderer
 			cmd.bind(visualizeTriangulation.variant()
 					 .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
 					 .fill(D3D12_FILL_MODE_WIREFRAME));
-			cmd.setConstants(vtConstants);
-			cmd.setShaderView(VisualizeTriangulation::heightMap, heightmap->heightSRV);
-            cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, cpuError);
 			cmd.drawIndexed(mesh.numIndices());
 		}
 	}
@@ -1336,7 +1364,7 @@ public:
 
             blit.blit(cmd,
                       backbuffer, Rect::withSize(int2(backbuffer.texture()->size - 300).s_x0, 300),
-                      heightmapRenderer.normalMap, Rect::withSize(areaStart, areaSize),
+                      heightmapRenderer.normalMap.srv, Rect::withSize(areaStart, areaSize),
                       float4(0.5f, 0.5f, 1, 1), float4(0.5f, 0.5f, 0, 1));
         }
 
