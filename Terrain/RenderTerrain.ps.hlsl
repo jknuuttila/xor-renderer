@@ -21,6 +21,8 @@ float4 main(PSInput i) : SV_Target
     float3 albedo = h;
 #endif
 
+    float ambientOcclusion = terrainAO.Sample(bilinearSampler, i.uv.zw);
+
 #if defined(LIGHTING)
     float3 N = normalize(terrainNormal.Sample(bilinearSampler, uv).xyz);
 	// return float4(N, 1);
@@ -30,6 +32,9 @@ float4 main(PSInput i) : SV_Target
     // float3 color = saturate(dot(N, L)) / Pi * sunColor.rgb * albedo;
     float3 color = saturate(dot(N, L)) / Pi * sunColor.rgb;
 
+	return float4(color, 1);
+#elif defined(SHOW_AO)
+    float3 color = ambientOcclusion;
 	return float4(color, 1);
 #else
 	return float4(albedo, 1);

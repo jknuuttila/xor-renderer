@@ -50,6 +50,8 @@ namespace xor
         bool isCompressed() const;
 
         Format asStructure() const;
+        Format readFormat() const;
+        Format typelessFormat() const;
     };
 
 }

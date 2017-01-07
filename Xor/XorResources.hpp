@@ -153,7 +153,8 @@ namespace xor
             TextureViewInfo() = default;
             TextureViewInfo(Format format) : format(format) {}
 
-            TextureViewInfo defaults(const TextureInfo &textureInfo) const;
+            TextureViewInfo defaults(const TextureInfo &textureInfo,
+                                     bool srv = false) const;
         };
 
         class TextureViewInfoBuilder : public TextureViewInfo 

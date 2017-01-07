@@ -119,12 +119,16 @@ namespace xor
             return total;
         }
 
-        TextureViewInfo TextureViewInfo::defaults(const TextureInfo & textureInfo) const
+        TextureViewInfo TextureViewInfo::defaults(const TextureInfo & textureInfo,
+                                                  bool srv) const
         {
             TextureViewInfo info = *this;
 
             if (!info.format)
                 info.format = textureInfo.format;
+
+            if (srv)
+                info.format = info.format.readFormat();
 
             return info;
         }

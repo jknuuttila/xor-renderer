@@ -21,7 +21,7 @@ VSOutput main(VSInput i)
 	o.worldPos.xz = lerp(worldMin, worldMax, i.normalizedPos);
     o.worldPos.y  = i.height;
     o.worldPos.w  = 1;
-    o.uv          = float4(i.uv, 0, 0);
+    o.uv          = float4(i.uv, i.normalizedPos);
 	o.pos         = mul(viewProj, o.worldPos);
     return o;
 }

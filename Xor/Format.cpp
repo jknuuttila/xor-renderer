@@ -135,6 +135,28 @@ namespace xor
         return Format::structure(size());
     }
 
+    Format Format::readFormat() const
+    {
+        switch (dxgiFormat())
+        {
+        case DXGI_FORMAT_D32_FLOAT:
+            return DXGI_FORMAT_R32_FLOAT;
+        default:
+            return dxgiFormat();
+        }
+    }
+
+    Format Format::typelessFormat() const
+    {
+        switch (dxgiFormat())
+        {
+        case DXGI_FORMAT_D32_FLOAT:
+            return DXGI_FORMAT_R32_TYPELESS;
+        default:
+            return dxgiFormat();
+        }
+    }
+
     uint Format::areaSizeBytes(uint2 area) const
     {
         uint b = blockSize();

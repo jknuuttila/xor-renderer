@@ -737,7 +737,7 @@ namespace xor
         desc.Height              = info.size.y;
         desc.DepthOrArraySize    = 1;
         desc.MipLevels           = info.mipLevels;
-        desc.Format              = info.format;
+        desc.Format              = info.format.typelessFormat();
         desc.SampleDesc.Count    = 1;
         desc.SampleDesc.Quality  = 0;
         desc.Layout              = D3D12_TEXTURE_LAYOUT_UNKNOWN;
@@ -788,7 +788,7 @@ namespace xor
 
     TextureSRV Device::createTextureSRV(Texture texture, const TextureSRV::Info & viewInfo)
     {
-        auto info = viewInfo.defaults(texture.info());
+        auto info = viewInfo.defaults(texture.info(), true);
 
         TextureSRV srv;
         srv.m_texture = texture;

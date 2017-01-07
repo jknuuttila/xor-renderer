@@ -346,7 +346,7 @@ namespace xor
         transition(uav.m_texture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
         cmd()->ClearUnorderedAccessViewUint(uav.S().descriptor.gpu,
-                                            uav.S().descriptor.cpu,
+                                            uav.S().descriptor.staging,
                                             uav.m_texture.get(),
                                             clearValue.data(),
                                             0, nullptr);
@@ -357,7 +357,7 @@ namespace xor
         transition(uav.m_texture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
         cmd()->ClearUnorderedAccessViewFloat(uav.S().descriptor.gpu,
-                                             uav.S().descriptor.cpu,
+                                             uav.S().descriptor.staging,
                                              uav.m_texture.get(),
                                              clearValue.data(),
                                              0, nullptr);

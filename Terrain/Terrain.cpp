@@ -119,6 +119,13 @@ enum class TriangulationMode
     Quadric,
 };
 
+enum class RenderingMode
+{
+    Height,
+    Lighting,
+    AmbientOcclusion,
+};
+
 enum class VisualizationMode
 {
 	Disabled,
@@ -253,14 +260,17 @@ struct HeightmapRenderer
     }
 
     void computeAmbientOcclusion(CommandList &cmd,
-                                 uint samples = 100,
+                                 SwapChain &sc,
+                                 std::function<void()> wait,
+                                 uint samples = 1000,
                                  uint aoMapResolution = 2048,
                                  uint depthBufferResolution = 4096)
     {
         auto e = cmd.profilingEventPrint("computeAmbientOcclusion");
 
-        auto &renderAODepthPrepass         = renderAO;
-        auto  renderAOAccumulateVisibility = renderAO.variant()
+        auto renderAODepthPrepass         = renderAO.variant()
+            .cull(D3D12_CULL_MODE_NONE);
+        auto renderAOAccumulateVisibility = renderAO.variant()
             .pixelShader("RenderTerrainAO.ps")
             .depthMode(info::DepthMode::ReadOnly)
             .depthFunction(D3D12_COMPARISON_FUNC_EQUAL);
@@ -277,6 +287,10 @@ struct HeightmapRenderer
         auto zBuffer = device.createTextureDSV(info::TextureInfoBuilder()
                                                .size(uint2(depthBufferResolution))
                                                .format(DXGI_FORMAT_D32_FLOAT));
+#if 0
+        auto zBufferSRV = device.createTextureSRV(zBuffer.texture());
+        Blit blit(device);
+#endif
 
         std::mt19937 gen(120495);
 
@@ -289,6 +303,11 @@ struct HeightmapRenderer
 
         for (uint i = 0; i < samples; ++i)
         {
+#if 0
+            auto bb = sc.backbuffer();
+            cmd.clearRTV(bb);
+#endif
+
             float3 hemisphere      = uniformHemisphereGen(gen);
             float3 sampleCameraPos = hemisphere.s_xzy * radius;
             Matrix view            = Matrix::lookAt(sampleCameraPos, float3(0));
@@ -312,6 +331,15 @@ struct HeightmapRenderer
 
             cmd.bind(renderAOAccumulateVisibility);
             cmd.drawIndexed(mesh.numIndices());
+#if 0
+
+            blit.blit(cmd, bb, Rect::withSize(900), zBufferSRV);
+            device.execute(cmd);
+            device.present(sc);
+            cmd = device.graphicsCommandList();
+            print("Sample %u\n", i);
+            // wait();
+#endif
         }
 
         float2 aoTexelWorldDim   = worldSize / float2(float(aoMapResolution));
@@ -335,9 +363,19 @@ struct HeightmapRenderer
 
             cmd.dispatchThreads(ResolveTerrainAO::threadGroupSize, uint3(constants.size));
         }
+
+#if 0
+        auto bb = sc.backbuffer();
+        blit.blit(cmd, bb, Rect::withSize(900), aoMap.srv);
+        device.execute(cmd);
+        device.present(sc);
+        cmd = device.graphicsCommandList();
+        print("AO map\n");
+        wait();
+#endif
     }
 
-    void setLightingProperties(LightingProperties *props = nullptr)
+    void setLightingProperties(LightingProperties *props = nullptr, bool showAO = false)
     {
         lightingDefines.clear();
 
@@ -348,6 +386,10 @@ struct HeightmapRenderer
                 lightingDefines.emplace_back("TEXTURED");
 
             lightingDefines.emplace_back("LIGHTING");
+        }
+        else if (showAO)
+        {
+            lightingDefines.emplace_back("SHOW_AO");
         }
         else
         {
@@ -1129,6 +1171,7 @@ struct HeightmapRenderer
         mesh.setForRendering(cmd);
         cmd.setShaderView(RenderTerrain::terrainColor,  heightmap->colorSRV);
         cmd.setShaderView(RenderTerrain::terrainNormal, normalMap.srv);
+        cmd.setShaderView(RenderTerrain::terrainAO,     aoMap.srv);
         {
             auto p = cmd.profilingEvent("Draw opaque");
             cmd.drawIndexed(mesh.numIndices());
@@ -1205,9 +1248,9 @@ class Terrain : public Window
     int areaSize  = 2048;
 #endif
 	int triangulationDensity = 6;
+    RenderingMode renderingMode = RenderingMode::Height;
     struct Lighting
     {
-        bool enabled = false;
         Angle sunAzimuth   = Angle::degrees(45.f);
         Angle sunElevation = Angle::degrees(45.f);
         float sunIntensity = 1.f;
@@ -1287,11 +1330,21 @@ public:
         heightmapRenderer.calculateMeshError();
 
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
+
+        {
+            auto waitForKey = [&]() {
+                while ((GetAsyncKeyState(VK_SPACE) & 0x8000)) { pumpMessages(); Sleep(1); }
+                while (!(GetAsyncKeyState(VK_SPACE) & 0x8000)) { pumpMessages(); Sleep(1); }
+            };
+            auto cmd = device.graphicsCommandList();
+            heightmapRenderer.computeAmbientOcclusion(cmd, swapChain, waitForKey);
+            device.execute(cmd);
+        }
     }
 
     void updateLighting()
     {
-        if (lighting.enabled)
+        if (renderingMode == RenderingMode::Lighting)
         {
             HeightmapRenderer::LightingProperties props = {};
             auto M = Matrix::azimuthElevation(lighting.sunAzimuth, lighting.sunElevation);
@@ -1302,7 +1355,8 @@ public:
         }
         else
         {
-            heightmapRenderer.setLightingProperties();
+            heightmapRenderer.setLightingProperties(nullptr,
+                                                    renderingMode == RenderingMode::AmbientOcclusion);
         }
     }
 
@@ -1366,7 +1420,11 @@ public:
             ImGui::SliderInt("Density", &triangulationDensity, 5, 18);
             ImGui::Text("Vertex count: %d", vertexCount());
 
-            if (ImGui::Checkbox("Lighting", &lighting.enabled))
+            if (ImGui::Combo("Rendering mode",
+                         reinterpret_cast<int *>(&renderingMode),
+                         "Height\0"
+                         "Lighting\0"
+                         "Ambient occlusion\0"))
                 updateLighting();
             if (ImGui::SliderFloat("Sun azimuth",   &lighting.sunAzimuth.radians, 0, 2 * Pi))
                 updateLighting();
@@ -1460,18 +1518,13 @@ public:
 #if 0
         blit.blit(cmd,
             backbuffer, Rect(int2(100), int2(800)),
-            heightmapRenderer.normalMap, Rect::withSize(areaStart, areaSize));
+            heightmapRenderer.aoMap.srv, Rect::withSize(areaStart, areaSize));
 #endif
 
         cmd.imguiEndFrame(swapChain);
 
         device.execute(cmd);
         device.present(swapChain);
-
-#if 0
-        while ((GetAsyncKeyState(VK_SPACE) & 0x8000)) { pumpMessages(); Sleep(1); }
-        while (!(GetAsyncKeyState(VK_SPACE) & 0x8000)) { pumpMessages(); Sleep(1); }
-#endif
     }
 };
 
