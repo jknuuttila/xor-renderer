@@ -11,9 +11,10 @@ XOR_CBUFFER(Constants, 0)
 	float2 worldMin;
 	float2 worldMax;
     float2 aoTextureSize;
+    uint aoBitMask;
 };
 
-XOR_UAV(RWTexture2D<uint>, terrainAOVisibleSamples, 0)
+XOR_UAV(RWTexture2D<uint>, terrainAOVisibleBits, 0)
 
 XOR_END_SIGNATURE
 

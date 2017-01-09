@@ -12,6 +12,7 @@
     <FxCompile Include="RenderTerrainAO.ps.hlsl" />
     <FxCompile Include="RenderTerrainAO.vs.hlsl" />
     <FxCompile Include="ResolveTerrainAO.cs.hlsl" />
+    <FxCompile Include="AccumulateTerrainAO.cs.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="RenderTerrain.sig.h" />
@@ -19,5 +20,6 @@
     <ClInclude Include="ComputeNormalMap.sig.h" />
     <ClInclude Include="RenderTerrainAO.sig.h" />
     <ClInclude Include="ResolveTerrainAO.sig.h" />
+    <ClInclude Include="AccumulateTerrainAO.sig.h" />
   </ItemGroup>
 </Project>

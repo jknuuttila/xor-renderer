@@ -12,6 +12,7 @@
 #include "ComputeNormalMap.sig.h"
 #include "RenderTerrainAO.sig.h"
 #include "ResolveTerrainAO.sig.h"
+#include "AccumulateTerrainAO.sig.h"
 
 #include <random>
 #include <unordered_set>
@@ -179,11 +180,7 @@ struct HeightmapRenderer
 	VisualizationMode mode = VisualizationMode::WireframeHeight;
     TextureSRV cpuError;
     RWTexture normalMap;
-
-    GraphicsPipeline renderAO;
-    ComputePipeline resolveAO;
     RWTexture aoMap;
-    RWTexture aoVisibilitySamples;
 
     struct LightingProperties
     {
@@ -217,15 +214,6 @@ struct HeightmapRenderer
 			.pixelShader("VisualizeTriangulation.ps")
 			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
 			.inputLayout(mesh.inputLayout()));
-
-        renderAO = device.createGraphicsPipeline(
-			GraphicsPipeline::Info()
-			.vertexShader("RenderTerrainAO.vs")
-			.depthMode(info::DepthMode::Write)
-			.depthFormat(DXGI_FORMAT_D32_FLOAT)
-			.inputLayout(mesh.inputLayout()));
-        resolveAO = device.createComputePipeline(
-            ComputePipeline::Info("ResolveTerrainAO.cs"));
 
         computeNormalMapCS = device.createComputePipeline(
             ComputePipeline::Info("ComputeNormalMap.cs"));
@@ -268,6 +256,17 @@ struct HeightmapRenderer
     {
         auto e = cmd.profilingEventPrint("computeAmbientOcclusion");
 
+        auto renderAO = device.createGraphicsPipeline(
+			GraphicsPipeline::Info()
+			.vertexShader("RenderTerrainAO.vs")
+			.depthMode(info::DepthMode::Write)
+			.depthFormat(DXGI_FORMAT_D32_FLOAT)
+			.inputLayout(mesh.inputLayout()));
+        auto accumulateAO = device.createComputePipeline(
+            ComputePipeline::Info("AccumulateTerrainAO.cs"));
+        auto resolveAO = device.createComputePipeline(
+            ComputePipeline::Info("ResolveTerrainAO.cs"));
+
         auto renderAODepthPrepass         = renderAO.variant()
             .cull(D3D12_CULL_MODE_NONE);
         auto renderAOAccumulateVisibility = renderAO.variant()
@@ -279,7 +278,11 @@ struct HeightmapRenderer
                           .size(uint2(aoMapResolution))
                           .format(DXGI_FORMAT_R16_FLOAT)
                           .uav());
-        aoVisibilitySamples = RWTexture(device, info::TextureInfoBuilder()
+        RWTexture aoVisibilityBits = RWTexture(device, info::TextureInfoBuilder()
+                                               .size(uint2(aoMapResolution))
+                                               .format(DXGI_FORMAT_R32_UINT)
+                                               .uav());
+        RWTexture aoVisibilitySamples = RWTexture(device, info::TextureInfoBuilder()
                                         .size(uint2(aoMapResolution))
                                         .format(DXGI_FORMAT_R32_UINT)
                                         .uav());
@@ -300,62 +303,105 @@ struct HeightmapRenderer
         float radius   = diameter / 2;
 
         cmd.clearUAV(aoVisibilitySamples.uav);
+        cmd.clearUAV(aoVisibilityBits.uav);
+        constexpr uint AOBitsPerPixel = 32;
 
-        for (uint i = 0; i < samples; ++i)
         {
+            uint i = 0;
+            while (i < samples)
+            {
+                for (uint j = 0; j < AOBitsPerPixel; ++j)
+                {
 #if 0
-            auto bb = sc.backbuffer();
-            cmd.clearRTV(bb);
+                    auto bb = sc.backbuffer();
+                    cmd.clearRTV(bb);
 #endif
 
-            float3 hemisphere      = uniformHemisphereGen(gen);
-            float3 sampleCameraPos = hemisphere.s_xzy * radius;
-            Matrix view            = Matrix::lookAt(sampleCameraPos, float3(0));
-            Matrix proj            = Matrix::projectionOrtho(diameter, diameter, 1.f, diameter);
-            Matrix viewProj        = proj * view;
+                    //float3 hemisphere = uniformHemisphereGen(gen);
+                    float3 hemisphere = cosineWeightedHemisphereGen(gen);
+                    float3 sampleCameraPos = hemisphere.s_xzy * radius;
+                    Matrix view = Matrix::lookAt(sampleCameraPos, float3(0));
+                    Matrix proj = Matrix::projectionOrtho(diameter, diameter, 1.f, diameter);
+                    Matrix viewProj = proj * view;
 
-            cmd.clearDSV(zBuffer);
-            cmd.setRenderTargets(zBuffer);
-            cmd.bind(renderAODepthPrepass);
+                    cmd.clearDSV(zBuffer);
+                    cmd.setRenderTargets(zBuffer);
+                    cmd.bind(renderAODepthPrepass);
 
-            RenderTerrainAO::Constants constants;
-            constants.viewProj      = viewProj;
-            constants.worldMin      = minWorld;
-            constants.worldMax      = maxWorld;
-            constants.aoTextureSize = float2(aoMap.texture()->size);
+                    RenderTerrainAO::Constants constants;
+                    constants.viewProj = viewProj;
+                    constants.worldMin = minWorld;
+                    constants.worldMax = maxWorld;
+                    constants.aoTextureSize = float2(aoMap.texture()->size);
+                    constants.aoBitMask = 1 << j;
 
-            cmd.setConstants(constants);
-            cmd.setShaderView(RenderTerrainAO::terrainAOVisibleSamples, aoVisibilitySamples.uav);
-            mesh.setForRendering(cmd);
-            cmd.drawIndexed(mesh.numIndices());
+                    cmd.setConstants(constants);
+                    cmd.setShaderView(RenderTerrainAO::terrainAOVisibleBits, aoVisibilityBits.uav);
+                    mesh.setForRendering(cmd);
+                    cmd.drawIndexed(mesh.numIndices());
 
-            cmd.bind(renderAOAccumulateVisibility);
-            cmd.drawIndexed(mesh.numIndices());
+                    cmd.bind(renderAOAccumulateVisibility);
+                    cmd.drawIndexed(mesh.numIndices());
 #if 0
 
-            blit.blit(cmd, bb, Rect::withSize(900), zBufferSRV);
-            device.execute(cmd);
-            device.present(sc);
-            cmd = device.graphicsCommandList();
-            print("Sample %u\n", i);
-            // wait();
+                    blit.blit(cmd, bb, Rect::withSize(900), zBufferSRV);
+                    device.execute(cmd);
+                    device.present(sc);
+                    cmd = device.graphicsCommandList();
+                    print("Sample %u\n", i);
+                    // wait();
 #endif
+                }
+
+                {
+                    cmd.bind(accumulateAO);
+                    AccumulateTerrainAO::Constants constants;
+                    constants.size = uint2(aoMap.texture()->size);
+
+                    cmd.setConstants(constants);
+                    cmd.setShaderView(AccumulateTerrainAO::terrainAOVisibleSamples, aoVisibilitySamples.uav);
+                    cmd.setShaderView(AccumulateTerrainAO::terrainAOVisibleBits, aoVisibilityBits.uav);
+
+                    cmd.dispatchThreads(ResolveTerrainAO::threadGroupSize, uint3(constants.size));
+                }
+
+                i += AOBitsPerPixel;
+            }
         }
 
-        float2 aoTexelWorldDim   = worldSize / float2(float(aoMapResolution));
-        float  rtPixelWorldDim   = diameter / float(depthBufferResolution);            
-        float2 aoTexelRTDim      = aoTexelWorldDim / float2(rtPixelWorldDim);
-        float  aoTexelRTArea     = aoTexelRTDim.x * aoTexelRTDim.y;
-        float  maxVisibleSamples = std::round(aoTexelRTArea * samples);
+        float maxVisibleSamples = float(samples);
 
         cmd.setRenderTargets();
 
         {
+            constexpr int BlurTaps = 1;
+            constexpr int NumWeights = BlurTaps + 1;
+
             cmd.bind(resolveAO);
 
-            ResolveTerrainAO::Constants constants;
-            constants.size              = aoMap.texture()->size;
+            ResolveTerrainAO::Constants constants = {};
+            constants.size              = int2(aoMap.texture()->size);
             constants.maxVisibleSamples = maxVisibleSamples;
+            constants.blurKernelSize    = BlurTaps;
+
+            for (int i = 0; i <= BlurTaps; ++i)
+            {
+                int n = BlurTaps * 2;
+                int k = BlurTaps + i;
+                int total = 1 << n;
+
+                auto fact = [] (int x)
+                {
+                    int prod = 1;
+                    for (int i = 2; i <= x; ++i)
+                        prod *= i;
+                    return prod;
+                };
+
+                int n_k = fact(n) / (fact(k) * fact(n - k));
+
+                constants.blurWeights[i].x = float(n_k) / float(total);
+            }
 
             cmd.setConstants(constants);
             cmd.setShaderView(ResolveTerrainAO::terrainAO, aoMap.uav);
@@ -1280,7 +1326,7 @@ public:
 
         Timer loadingTime;
 
-#if defined(_DEBUG) || 1
+#if defined(_DEBUG) || 0
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
 #else
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/test/height.png",
@@ -1336,9 +1382,16 @@ public:
                 while ((GetAsyncKeyState(VK_SPACE) & 0x8000)) { pumpMessages(); Sleep(1); }
                 while (!(GetAsyncKeyState(VK_SPACE) & 0x8000)) { pumpMessages(); Sleep(1); }
             };
+
+            Timer aoTimer;
             auto cmd = device.graphicsCommandList();
             heightmapRenderer.computeAmbientOcclusion(cmd, swapChain, waitForKey);
+            auto number = cmd.number();
             device.execute(cmd);
+            device.waitUntilCompleted(number);
+
+            log("Heightmap", "Generated ambient occlusion map in %.2f ms\n",
+                aoTimer.milliseconds());
         }
     }
 

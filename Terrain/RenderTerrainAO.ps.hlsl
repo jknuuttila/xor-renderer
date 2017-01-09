@@ -12,5 +12,5 @@ void main(PSInput i)
 {
     float2 coords  = i.uv.xy * aoTextureSize;
     uint2  iCoords = uint2(coords);
-    InterlockedAdd(terrainAOVisibleSamples[iCoords], 1);
+    InterlockedOr(terrainAOVisibleBits[iCoords], aoBitMask);
 }

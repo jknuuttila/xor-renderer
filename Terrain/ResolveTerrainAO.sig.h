@@ -7,8 +7,10 @@ XOR_BEGIN_SIGNATURE(ResolveTerrainAO)
 
 XOR_CBUFFER(Constants, 0)
 {
-    uint2 size;
+    int2 size;
     float maxVisibleSamples;
+    int blurKernelSize;
+    float4 blurWeights[9];
 };
 
 XOR_SRV(Texture2D<uint>,    terrainAOVisibleSamples, 0)
