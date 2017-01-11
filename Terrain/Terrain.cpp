@@ -175,17 +175,22 @@ struct HeightmapRenderer
     ImageData heightData;
 	float2 minWorld;
 	float2 maxWorld;
+    float worldHeight   = 0;
+    float worldDiameter = 0;
     Rect area;
 	float  maxErrorCoeff = .05f;
 	VisualizationMode mode = VisualizationMode::WireframeHeight;
     TextureSRV cpuError;
     RWTexture normalMap;
     RWTexture aoMap;
+    RWTexture shadowMap;
 
     struct LightingProperties
     {
         float3 sunDirection;
         float3 sunColor;
+        int shadowBias     = 0;
+        float shadowSSBias = 0;
     };
     LightingProperties lighting;
     std::vector<info::ShaderDefine> lightingDefines;
@@ -227,6 +232,8 @@ struct HeightmapRenderer
             computeNormalMap(cmd);
             device.execute(cmd);
         }
+
+        setShadowMapDim(1024);
     }
 
     void computeNormalMap(CommandList &cmd)
@@ -297,10 +304,7 @@ struct HeightmapRenderer
 
         std::mt19937 gen(120495);
 
-        float2 worldSize = maxWorld - minWorld;
-        float height   = heightmap->maxHeight - heightmap->minHeight;
-        float diameter = sqrt(worldSize.lengthSqr() + height * height);
-        float radius   = diameter / 2;
+        float radius = worldDiameter / 2;
 
         cmd.clearUAV(aoVisibilitySamples.uav);
         cmd.clearUAV(aoVisibilityBits.uav);
@@ -321,7 +325,7 @@ struct HeightmapRenderer
                     float3 hemisphere = cosineWeightedHemisphereGen(gen);
                     float3 sampleCameraPos = hemisphere.s_xzy * radius;
                     Matrix view = Matrix::lookAt(sampleCameraPos, float3(0));
-                    Matrix proj = Matrix::projectionOrtho(diameter, diameter, 1.f, diameter);
+                    Matrix proj = Matrix::projectionOrtho(worldDiameter, worldDiameter, 1.f, worldDiameter);
                     Matrix viewProj = proj * view;
 
                     cmd.clearDSV(zBuffer);
@@ -440,6 +444,17 @@ struct HeightmapRenderer
         else
         {
             memset(&lighting, 0, sizeof(lighting));
+        }
+    }
+
+    void setShadowMapDim(int shadowDim)
+    {
+        if (!shadowMap.valid() || any(shadowMap.texture()->size != uint2(shadowDim)))
+        {
+            shadowMap = RWTexture(device, info::TextureInfoBuilder()
+                                  .size(uint2(shadowDim))
+                                  .format(DXGI_FORMAT_D32_FLOAT)
+                                  .depthStencil());
         }
     }
 
@@ -818,6 +833,10 @@ struct HeightmapRenderer
         float2 extent = size / 2.f;
         minWorld = -extent;
         maxWorld =  extent;
+
+        float2 worldSize = maxWorld - minWorld;
+        worldHeight   = heightmap->maxHeight - heightmap->minHeight;
+        worldDiameter = sqrt(worldSize.lengthSqr() + worldHeight * worldHeight);
     }
 
     void uniformGrid(Rect area, uint quadsPerDim)
@@ -1197,27 +1216,70 @@ struct HeightmapRenderer
 		this->mesh = Mesh::generate(device, attrs, indices);
     }
 
-	void render(CommandList &cmd, const Matrix &viewProj, bool wireframe = false)
+	void renderShadowMap(CommandList &cmd, const RenderTerrain::Constants &constants)
+    {
+        cmd.clearDSV(shadowMap.dsv);
+        cmd.setRenderTargets(shadowMap.dsv);
+
+        cmd.bind(renderTerrain.variant()
+                 .pixelShader()
+                 .renderTargetFormats()
+                 .depthBias(lighting.shadowBias, lighting.shadowSSBias));
+
+        auto c = constants;
+        c.viewProj = c.shadowViewProj;
+        cmd.setConstants(c);
+        mesh.setForRendering(cmd);
+
+        cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainColor);
+        cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainNormal);
+        cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainAO);
+        cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainShadows);
+
+        {
+            auto p = cmd.profilingEvent("Draw shadows");
+            cmd.drawIndexed(mesh.numIndices());
+        }
+
+        cmd.setRenderTargets();
+    }
+
+	void render(CommandList &cmd,
+                TextureRTV &rtv,
+                TextureDSV &dsv,
+                const Matrix &viewProj,
+                bool wireframe = false)
 	{
-        cmd.bind(renderTerrain.variant().pixelShader(info::SameShader {}, lightingDefines));
+        Matrix shadowView = Matrix::lookAt(lighting.sunDirection * (worldDiameter / 2),
+                                     float3(0));
+        Matrix shadowProj = Matrix::projectionOrtho(float2(worldDiameter), 1.f, worldDiameter);
+        Matrix shadowViewProj = shadowProj * shadowView;
 
 		RenderTerrain::Constants constants;
-		constants.viewProj  = viewProj;
-		constants.worldMin  = minWorld;
-		constants.worldMax  = maxWorld;
-        constants.heightMin = heightmap->minHeight;
-        constants.heightMax = heightmap->maxHeight;
+		constants.viewProj       = viewProj;
+        constants.shadowViewProj = shadowViewProj;
+		constants.worldMin       = minWorld;
+		constants.worldMax       = maxWorld;
+        constants.heightMin      = heightmap->minHeight;
+        constants.heightMax      = heightmap->maxHeight;
 
         RenderTerrain::LightingConstants lightingConstants;
         lightingConstants.sunDirection = lighting.sunDirection.s_xyz0;
         lightingConstants.sunColor     = lighting.sunColor.s_xyz0;
 
+        renderShadowMap(cmd, constants);
+
+        cmd.setRenderTargets(rtv, dsv);
+
+        cmd.bind(renderTerrain.variant().pixelShader(info::SameShader {}, lightingDefines));
+
         cmd.setConstants(constants);
         cmd.setConstants(lightingConstants);
         mesh.setForRendering(cmd);
-        cmd.setShaderView(RenderTerrain::terrainColor,  heightmap->colorSRV);
-        cmd.setShaderView(RenderTerrain::terrainNormal, normalMap.srv);
-        cmd.setShaderView(RenderTerrain::terrainAO,     aoMap.srv);
+        cmd.setShaderView(RenderTerrain::terrainColor,   heightmap->colorSRV);
+        cmd.setShaderView(RenderTerrain::terrainNormal,  normalMap.srv);
+        cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
+        cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
         {
             auto p = cmd.profilingEvent("Draw opaque");
             cmd.drawIndexed(mesh.numIndices());
@@ -1233,6 +1295,8 @@ struct HeightmapRenderer
                      .fill(D3D12_FILL_MODE_WIREFRAME));
             cmd.drawIndexed(mesh.numIndices());
         }
+
+        cmd.setRenderTargets();
 	}
 
 	void visualize(CommandList &cmd, float2 minCorner, float2 maxCorner)
@@ -1300,6 +1364,8 @@ class Terrain : public Window
         Angle sunAzimuth   = Angle::degrees(45.f);
         Angle sunElevation = Angle::degrees(45.f);
         float sunIntensity = 1.f;
+        int shadowBias     = 0;
+        float shadowSSBias = 0;
     } lighting;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
@@ -1403,6 +1469,8 @@ public:
             auto M = Matrix::azimuthElevation(lighting.sunAzimuth, lighting.sunElevation);
             props.sunDirection = normalize(float3(M.transform(float3(0, 0, -1))));
             props.sunColor     = float3(1) * lighting.sunIntensity;
+            props.shadowBias   = lighting.shadowBias;
+            props.shadowSSBias = lighting.shadowSSBias;
 
             heightmapRenderer.setLightingProperties(&props);
         }
@@ -1473,6 +1541,8 @@ public:
             ImGui::SliderInt("Density", &triangulationDensity, 5, 18);
             ImGui::Text("Vertex count: %d", vertexCount());
 
+            ImGui::Separator();
+
             if (ImGui::Combo("Rendering mode",
                          reinterpret_cast<int *>(&renderingMode),
                          "Height\0"
@@ -1483,6 +1553,14 @@ public:
                 updateLighting();
             if (ImGui::SliderFloat("Sun elevation", &lighting.sunElevation.radians, 0, Pi / 2.f))
                 updateLighting();
+            if (ImGui::SliderFloat("Sun intensity", &lighting.sunIntensity, 0, 3))
+                updateLighting();
+            if (ImGui::SliderInt("Shadow depth bias", &lighting.shadowBias, -1000, 1000))
+                updateLighting();
+            if (ImGui::SliderFloat("Shadow slope scaled depth bias", &lighting.shadowSSBias, -10, 10))
+                updateLighting();
+
+            ImGui::Separator();
 
             ImGui::Combo("Triangulation mode",
                          reinterpret_cast<int *>(&triangulationMode),
@@ -1490,9 +1568,15 @@ public:
                          "Incremental max error\0"
                          "Quadric\0");
             ImGui::Checkbox("Tipsify vertex cache optimization", &tipsifyMesh);
+
+            ImGui::Separator();
+
             ImGui::Checkbox("Show area", &blitArea);
             ImGui::Checkbox("Show normals", &blitNormal);
             ImGui::Checkbox("Wireframe", &wireframe);
+
+            ImGui::Separator();
+
 			ImGui::Combo("Visualize triangulation",
 						 reinterpret_cast<int *>(&heightmapRenderer.mode),
 						 "Disabled\0"
@@ -1503,6 +1587,8 @@ public:
 						 "CPUError\0");
             ImGui::Checkbox("Large visualization", &largeVisualization);
             ImGui::SliderFloat("Error magnitude", &heightmapRenderer.maxErrorCoeff, 0, .25f);
+
+            ImGui::Separator();
 
             if (ImGui::Button("Update"))
                 updateTerrain();
@@ -1524,13 +1610,14 @@ public:
             cmd.clearDSV(depthBuffer, 0);
         }
 
-        cmd.setRenderTargets(backbuffer, depthBuffer);
-
 		heightmapRenderer.render(cmd, 
-							 Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov,
-														   1.f, heightmap.worldSize.x * 1.5f)
-							 * camera.viewMatrix(),
-							 wireframe);
+                                 backbuffer, depthBuffer,
+                                 Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov,
+                                                               1.f, heightmap.worldSize.x * 1.5f)
+                                 * camera.viewMatrix(),
+                                 wireframe);
+
+        cmd.setRenderTargets(backbuffer, depthBuffer);
 
         {
             float2 rightBottom = float2(1590, 890);

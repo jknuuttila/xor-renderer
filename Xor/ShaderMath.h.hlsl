@@ -36,6 +36,20 @@ float4 remap(float4 a, float4 b, float4 c, float4 d, float4 x)
 		remap(a.w, b.w, c.w, d.w, x.w));
 }
 
+float2 ndcToUV(float2 ndc)
+{
+    float2 zeroToOne = ndc / 2 + 0.5;
+    float2 uv = float2(
+        zeroToOne.x,
+        1 - zeroToOne.y);
+    return uv;
+}
+
+float2 uvToNDC(float2 uv)
+{
+    return lerp(float2(-1, 1), float2(1, -1), uv);
+}
+
 float3 signedColor(float value, float max)
 {
 	float V = abs(value) / max;

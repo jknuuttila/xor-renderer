@@ -123,6 +123,8 @@ namespace xor
 
         void setShaderView(unsigned slot, const TextureSRV &srv);
         void setShaderView(unsigned slot, TextureUAV &uav);
+        void setShaderViewNullTextureSRV(unsigned slot);
+        void setShaderViewNullTextureUAV(unsigned slot);
 
         void setConstantBuffer(unsigned slot, Span<const uint8_t> bytes);
         template <typename T>

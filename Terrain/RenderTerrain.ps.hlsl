@@ -25,12 +25,19 @@ float4 main(PSInput i) : SV_Target
 
 #if defined(LIGHTING)
     float3 N = normalize(terrainNormal.Sample(bilinearSampler, uv).xyz);
-	// return float4(N, 1);
     N = N.xzy;
+
+    float4 shadowPos = mul(shadowViewProj, i.worldPos);
+    shadowPos.xyz   /= shadowPos.w;
+    float2 shadowUV  = ndcToUV(shadowPos.xy);
+    float shadowZ    = terrainShadows.Sample(pointSampler, shadowUV);
+
+    float shadow     = shadowPos.z >= shadowZ ? 1 : 0;
 
     float3 L = sunDirection.xyz;
     // float3 color = saturate(dot(N, L)) / Pi * sunColor.rgb * albedo;
     float3 color = saturate(dot(N, L)) / Pi * sunColor.rgb;
+    color *= shadow;
 
 	return float4(color, 1);
 #elif defined(SHOW_AO)

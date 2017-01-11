@@ -518,6 +518,16 @@ namespace xor
             uavs[slot] = device().S().nullTextureUAV.staging;
     }
 
+    void CommandList::setShaderViewNullTextureSRV(unsigned slot)
+    {
+        S().srvs[slot] = device().S().nullTextureSRV.staging;
+    }
+
+    void CommandList::setShaderViewNullTextureUAV(unsigned slot)
+    {
+        S().uavs[slot] = device().S().nullTextureUAV.staging;
+    }
+
     void CommandList::setConstantBuffer(unsigned slot, Span<const uint8_t> bytes)
     {
         auto block = uploadBytes(bytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);

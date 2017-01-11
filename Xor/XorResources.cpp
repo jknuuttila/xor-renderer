@@ -193,6 +193,12 @@ namespace xor
             return *this;
         }
 
+        GraphicsPipelineInfo & GraphicsPipelineInfo::pixelShader()
+        {
+            m_ps = ShaderDesc();
+            return *this;
+        }
+
         GraphicsPipelineInfo &GraphicsPipelineInfo::pixelShader(const String & psName, Span<const ShaderDefine> defines)
         {
             m_ps.shader = psName;
@@ -203,6 +209,13 @@ namespace xor
         {
             m_ps.defines.clear();
             m_ps.defines.insert(m_ps.defines.begin(), defines.begin(), defines.end());
+            return *this;
+        }
+
+        GraphicsPipelineInfo & GraphicsPipelineInfo::renderTargetFormats()
+        {
+            NumRenderTargets = 0;
+            memset(RTVFormats, 0, sizeof(RTVFormats));
             return *this;
         }
 
