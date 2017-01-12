@@ -203,6 +203,13 @@ namespace xor
                 return c;
             }
 
+            friend Vector abs(Vector a)
+            {
+                Vector c;
+                for (uint i = 0; i < N; ++i) c[i] = std::abs(a[i]);
+                return c;
+            }
+
             friend Vector min(Vector a, Vector b)
             {
                 Vector c;

@@ -52,9 +52,10 @@ namespace xor
 
         Matrix Matrix::projectionPerspective(float aspectRatioWByH, Angle verticalFov, float depth1Plane, float depth0Plane)
         {
-            // Right handed coordinates, so flip Z
-            depth1Plane = -depth1Plane;
-            depth0Plane = -depth0Plane;
+            // Right handed coordinates, so flip Z, but respect if the depths were already
+            // given in right handed view space
+            depth1Plane = -std::abs(depth1Plane);
+            depth0Plane = -std::abs(depth0Plane);
 
             float2 imagePlaneSizeAtUnitZ;
             imagePlaneSizeAtUnitZ.y = tan(verticalFov.radians / 2);
@@ -103,19 +104,30 @@ namespace xor
 
         Matrix Matrix::projectionOrtho(float2 dims, float depth1Plane, float depth0Plane)
         {
-            // Right handed coordinates, so flip Z
-            depth1Plane = -depth1Plane;
-            depth0Plane = -depth0Plane;
+            // Right handed coordinates, so flip Z, but respect if the depths were already
+            // given in right handed view space
+            depth1Plane = -std::abs(depth1Plane);
+            depth0Plane = -std::abs(depth0Plane);
 
             float2 s = 2.f / dims;
 
-            float a = depth1Plane / (depth1Plane - depth0Plane);
+            // (Az0 + B) == 0
+            // (Az1 + B) == 1
+
+            // B = -Az0
+            // Az1 - Az0 == 1
+            // A == 1 / (z1 - z0) 
+
+            float a = 1 / (depth1Plane - depth0Plane);
             float b = -a * depth0Plane;
+
+            // float a = depth1Plane / (depth1Plane - depth0Plane);
+            // float b = -a * depth0Plane;
 
             return Matrix {
                 { s.x,   0,   0,   0 },
                 {   0, s.y,   0,   0 },
-                {   0,   0,  -a,  -b },
+                {   0,   0,   a,   b },
                 {   0,   0,   0,   1 },
             };
         }

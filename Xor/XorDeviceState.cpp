@@ -3,11 +3,11 @@
 
 namespace xor
 {
-    static const uint MaxRTVs = 256;
-    static const uint MaxDSVs = 256;
-    static const uint DescriptorHeapSize = 65536 * 4;
-    static const uint DescriptorHeapRing = 65536 * 3;
-    static const uint QueryHeapSize = 65536;
+    constexpr uint MaxRTVs = 256;
+    constexpr uint MaxDSVs = 256;
+    constexpr uint DescriptorHeapSize = 65536 * 4;
+    constexpr uint DescriptorHeapRing = 65536 * 3;
+    constexpr uint QueryHeapSize = 65536;
 
     namespace backend
     {
@@ -192,18 +192,43 @@ namespace xor
 		}
 
 		void QueryHeap::resolve(ID3D12GraphicsCommandList * cmdList, int64_t first, int64_t last)
-		{
-			XOR_CHECK(last >= first, "TODO: implement fully");
+        {
+            if (last >= first)
+            {
+                uint start = static_cast<uint>(first * 2);
+                uint count = static_cast<uint>((last - first + 1) * 2);
 
-			UINT start = static_cast<UINT>(first * 2);
-			UINT count = static_cast<UINT>((last - first + 1) * 2);
+                cmdList->ResolveQueryData(
+                    timestamps.Get(),
+                    D3D12_QUERY_TYPE_TIMESTAMP,
+                    start, count,
+                    readback.Get(),
+                    start * sizeof(uint64_t));
+            }
+            else
+            {
+                // If the ring buffer wrapped around, we need to copy both halves
 
-			cmdList->ResolveQueryData(
-				timestamps.Get(),
-				D3D12_QUERY_TYPE_TIMESTAMP,
-				start, count,
-				readback.Get(),
-				start * sizeof(uint64_t));
+                uint size = static_cast<uint>(ringbuffer.size());
+
+                uint startHigh = static_cast<uint>(first * 2);
+                uint countHigh = static_cast<uint>((size - first) * 2);
+                uint startLow  = 0;
+                uint countLow  = static_cast<uint>(last * 2);
+
+                cmdList->ResolveQueryData(
+                    timestamps.Get(),
+                    D3D12_QUERY_TYPE_TIMESTAMP,
+                    startHigh, countHigh,
+                    readback.Get(),
+                    startHigh * sizeof(uint64_t));
+                cmdList->ResolveQueryData(
+                    timestamps.Get(),
+                    D3D12_QUERY_TYPE_TIMESTAMP,
+                    startLow, countLow,
+                    readback.Get(),
+                    startLow * sizeof(uint64_t));
+            }
 		}
 
 		int64_t QueryHeap::beginEvent(ID3D12GraphicsCommandList * cmdList,

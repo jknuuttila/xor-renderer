@@ -187,9 +187,9 @@ struct HeightmapRenderer
 
     struct LightingProperties
     {
-        float3 sunDirection;
+        float3 sunDirection = normalize(float3(1, 1, 1));
         float3 sunColor;
-        int shadowBias     = 0;
+        int shadowBiasExp  = 0;
         float shadowSSBias = 0;
     };
     LightingProperties lighting;
@@ -1221,10 +1221,18 @@ struct HeightmapRenderer
         cmd.clearDSV(shadowMap.dsv);
         cmd.setRenderTargets(shadowMap.dsv);
 
+        int bias = static_cast<int>(
+            std::exp2(std::abs(lighting.shadowBiasExp) / 2.f));
+        if (lighting.shadowBiasExp < 0)
+            bias = -bias;
+        else if (lighting.shadowBiasExp == 0)
+            bias = 0;
+
         cmd.bind(renderTerrain.variant()
                  .pixelShader()
                  .renderTargetFormats()
-                 .depthBias(lighting.shadowBias, lighting.shadowSSBias));
+                 .cull(D3D12_CULL_MODE_NONE)
+                 .depthBias(bias, lighting.shadowSSBias));
 
         auto c = constants;
         c.viewProj = c.shadowViewProj;
@@ -1250,10 +1258,53 @@ struct HeightmapRenderer
                 const Matrix &viewProj,
                 bool wireframe = false)
 	{
-        Matrix shadowView = Matrix::lookAt(lighting.sunDirection * (worldDiameter / 2),
-                                     float3(0));
-        Matrix shadowProj = Matrix::projectionOrtho(float2(worldDiameter), 1.f, worldDiameter);
+        float3 terrainMin = float3(minWorld.x, minWorld.y, heightmap->minHeight);
+        float3 terrainMax = float3(maxWorld.x, maxWorld.y, heightmap->maxHeight);
+
+        float3 terrainCorners[] =
+        {
+            float3(terrainMin.x, terrainMin.y, terrainMin.z),
+            float3(terrainMin.x, terrainMin.y, terrainMax.z),
+            float3(terrainMin.x, terrainMax.y, terrainMin.z),
+            float3(terrainMin.x, terrainMax.y, terrainMax.z),
+            float3(terrainMax.x, terrainMin.y, terrainMin.z),
+            float3(terrainMax.x, terrainMin.y, terrainMax.z),
+            float3(terrainMax.x, terrainMax.y, terrainMin.z),
+            float3(terrainMax.x, terrainMax.y, terrainMax.z),
+        };
+
+        float3 terrainViewMin = float3(1e10f);
+        float3 terrainViewMax = float3(-1e10f);
+        Matrix shadowView = Matrix::lookAt(lighting.sunDirection * worldDiameter, float3(0));
+
+        for (auto c : terrainCorners)
+        {
+            float3 c_ = float3(shadowView.transform(c));
+            terrainViewMin = min(c_, terrainViewMin);
+            terrainViewMax = max(c_, terrainViewMax);
+        }
+
+        float2 terrainDims = float2(max(abs(terrainViewMin), abs(terrainViewMax))) * 2;
+        float terrainNear   = abs(terrainViewMin.z);
+        float terrainFar    = abs(terrainViewMax.z);
+        if (terrainNear > terrainFar)
+            std::swap(terrainNear, terrainFar);
+
+        Matrix shadowProj = Matrix::projectionOrtho(float2(terrainDims),
+                                                    terrainNear,
+                                                    //1.f,
+                                                    terrainFar);
         Matrix shadowViewProj = shadowProj * shadowView;
+
+#if 0
+        for (auto c : terrainCorners)
+        {
+            print("%s -> %s -> %s\n",
+                  toString(c).cStr(),
+                  toString(shadowView.transform(c)).cStr(),
+                  toString(shadowViewProj.transform(c)).cStr());
+        }
+#endif
 
 		RenderTerrain::Constants constants;
 		constants.viewProj       = viewProj;
@@ -1364,13 +1415,14 @@ class Terrain : public Window
         Angle sunAzimuth   = Angle::degrees(45.f);
         Angle sunElevation = Angle::degrees(45.f);
         float sunIntensity = 1.f;
-        int shadowBias     = 0;
+        int shadowBiasExp  = 0;
         float shadowSSBias = 0;
     } lighting;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
     bool blitArea    = true;
     bool blitNormal  = false;
+    bool blitShadowMap = false;
     bool wireframe = false;
     bool largeVisualization = false;
 
@@ -1467,10 +1519,10 @@ public:
         {
             HeightmapRenderer::LightingProperties props = {};
             auto M = Matrix::azimuthElevation(lighting.sunAzimuth, lighting.sunElevation);
-            props.sunDirection = normalize(float3(M.transform(float3(0, 0, -1))));
-            props.sunColor     = float3(1) * lighting.sunIntensity;
-            props.shadowBias   = lighting.shadowBias;
-            props.shadowSSBias = lighting.shadowSSBias;
+            props.sunDirection  = normalize(float3(M.transform(float3(0, 0, -1))));
+            props.sunColor      = float3(1) * lighting.sunIntensity;
+            props.shadowBiasExp = lighting.shadowBiasExp;
+            props.shadowSSBias  = lighting.shadowSSBias;
 
             heightmapRenderer.setLightingProperties(&props);
         }
@@ -1555,7 +1607,7 @@ public:
                 updateLighting();
             if (ImGui::SliderFloat("Sun intensity", &lighting.sunIntensity, 0, 3))
                 updateLighting();
-            if (ImGui::SliderInt("Shadow depth bias", &lighting.shadowBias, -1000, 1000))
+            if (ImGui::SliderInt("Shadow depth bias exponent", &lighting.shadowBiasExp, -64, 64))
                 updateLighting();
             if (ImGui::SliderFloat("Shadow slope scaled depth bias", &lighting.shadowSSBias, -10, 10))
                 updateLighting();
@@ -1573,6 +1625,7 @@ public:
 
             ImGui::Checkbox("Show area", &blitArea);
             ImGui::Checkbox("Show normals", &blitNormal);
+            ImGui::Checkbox("Show shadows", &blitShadowMap);
             ImGui::Checkbox("Wireframe", &wireframe);
 
             ImGui::Separator();
@@ -1653,6 +1706,15 @@ public:
                       backbuffer, Rect::withSize(int2(backbuffer.texture()->size - 300).s_x0, 300),
                       heightmapRenderer.normalMap.srv, Rect::withSize(areaStart, areaSize),
                       float4(0.5f, 0.5f, 1, 1), float4(0.5f, 0.5f, 0, 1));
+        }
+
+        if (blitShadowMap && !largeVisualization)
+        {
+            auto p = cmd.profilingEvent("Blit shadow map");
+
+            blit.blit(cmd,
+                      backbuffer, Rect(int2(200), int2(800)),
+                      heightmapRenderer.shadowMap.srv);
         }
 
 #if 0
