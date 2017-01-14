@@ -809,6 +809,11 @@ namespace xor
             &desc,
             srv.S().descriptor.staging);
 
+        device()->CopyDescriptorsSimple(1,
+                                        srv.S().descriptor.cpu,
+                                        srv.S().descriptor.staging,
+                                        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
         return srv;
     }
 
@@ -865,6 +870,12 @@ namespace xor
             nullptr,
             &desc,
             uav.S().descriptor.staging);
+
+        // Copy it to the shader visible heap as well
+        device()->CopyDescriptorsSimple(1,
+                                        uav.S().descriptor.cpu,
+                                        uav.S().descriptor.staging,
+                                        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
         return uav;
     }

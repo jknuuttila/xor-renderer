@@ -67,6 +67,7 @@ namespace xor
     {
         if (S().closed)
         {
+            XOR_CHECK_HR(S().allocator->Reset());
             XOR_CHECK_HR(cmd()->Reset(S().allocator.Get(), nullptr));
             S().closed             = false;
             S().activeRenderTarget = Texture();
