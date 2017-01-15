@@ -65,11 +65,14 @@ namespace xor
 
             auto num = number();
 
-            readbackBuffer(S().debugPrintData.buffer(),
-                           [num] (Span<const uint8_t> debugPrintData)
+            if (device().S().debugPrintEnabled)
             {
-                handleShaderDebugPrints(num, debugPrintData);
-            });
+                readbackBuffer(S().debugPrintData.buffer(),
+                               [num](Span<const uint8_t> debugPrintData)
+                {
+                    handleShaderDebugPrints(num, debugPrintData);
+                });
+            }
 
             XOR_CHECK_HR(cmd()->Close());
             S().closed             = true;
@@ -786,8 +789,10 @@ namespace xor
 		return e;
     }
 
-    void CommandList::handleShaderDebugPrints(SeqNum cmdListNumber, Span<const uint8_t> debugPrintData)
+    void CommandList::handleShaderDebugPrints(SeqNum cmdListNumber,
+                                              Span<const uint8_t> debugPrintData)
     {
+        return;
         auto data = reinterpretSpan<const uint32_t>(debugPrintData);
 
         // The first dword is the write pointer, which tells us how much valid data

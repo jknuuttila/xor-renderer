@@ -47,6 +47,20 @@ namespace xor
                 return commandListSequence.hasCompleted(seqNum);
             }
 
+            bool hasBeenExecuted(SeqNum seqNum)
+            {
+                if (hasCompleted(seqNum))
+                    return true;
+
+                for (auto &c : executedCommandLists)
+                {
+                    if (c.number() == seqNum)
+                        return true;
+                }
+
+                return false;
+            }
+
             void waitUntilCompleted(SeqNum seqNum);
 
             void waitUntilDrained()
@@ -68,11 +82,10 @@ namespace xor
             }
         };
 
-        class GPUMemoryRingbuffer
+        class GPUTransientMemoryAllocator
         {
         private:
-            OffsetRing            m_memoryRing;
-            OffsetRing            m_metadataRing;
+            int64_t m_size = 0;
 
             struct Metadata
             {
@@ -81,35 +94,21 @@ namespace xor
             };
             std::vector<Metadata> m_metadata;
         public:
-            GPUMemoryRingbuffer() = default;
-            GPUMemoryRingbuffer(size_t memory,
-                                size_t metadataEntries)
-                : m_memoryRing(memory)
-                , m_metadataRing(metadataEntries)
-                , m_metadata(metadataEntries)
+            GPUTransientMemoryAllocator() = default;
+            GPUTransientMemoryAllocator(size_t memory)
+                : m_size(static_cast<int64_t>(memory))
             {}
 
-            size_t sizeMemory() const { return m_memoryRing.size(); }
-            size_t sizeMetadata() const { return m_metadata.size(); }
+            size_t sizeMemory() const { return static_cast<size_t>(m_size); }
 
             Block allocate(size_t amount, size_t alignment, SeqNum cmdList)
             {
-                if (m_metadataRing.full())
-                    return Block();
-
-                Metadata m;
-                m.block = m_memoryRing.allocateBlock(amount, alignment);
-
-                if (m.block.begin < 0)
-                    return Block();
-
-                m.allocatedBy = cmdList;
-
-                auto metadataOffset = m_metadataRing.allocate();
-
-                m_metadata[metadataOffset] = m;
-
-                return m.block;
+                if (m_metadata.back().allocatedBy == cmdList)
+                {
+                }
+                else
+                {
+                }
             }
 
             Block allocate(GPUProgressTracking &progress,
@@ -123,12 +122,15 @@ namespace xor
 
                     XOR_CHECK(oldest >= 0, "Ringbuffer not big enough to hold %llu elements.",
                               static_cast<llu>(amount));
-
-                    progress.waitUntilCompleted(oldest);
-                    while (oldest >= 0 && progress.hasCompleted(oldest))
+                    
+                    if (progress.hasBeenExecuted(oldest))
                     {
-                        releaseOldestAllocation();
-                        oldest = oldestCmdList();
+                        progress.waitUntilCompleted(oldest);
+                        while (oldest >= 0 && progress.hasCompleted(oldest))
+                        {
+                            releaseOldestAllocation();
+                            oldest = oldestCmdList();
+                        }
                     }
 
                     block = allocate(amount, alignment, cmdList);
@@ -162,7 +164,7 @@ namespace xor
             ComPtr<ID3D12DescriptorHeap> m_stagingHeap;
             ComPtr<ID3D12DescriptorHeap> m_heap;
             OffsetPool                   m_freeDescriptors;
-            GPUMemoryRingbuffer          m_ring;
+            GPUTransientMemoryAllocator          m_ring;
             uint                         m_ringStart = 0;
             D3D12_DESCRIPTOR_HEAP_TYPE   m_type      = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
@@ -222,7 +224,7 @@ namespace xor
 
                 m_ringStart       = totalSize - ringSize;
                 m_freeDescriptors = OffsetPool(m_ringStart);
-                m_ring            = GPUMemoryRingbuffer(ringSize,
+                m_ring            = GPUTransientMemoryAllocator(ringSize,
                                                         ringSize ? ViewMetadataEntries : 0);
                 m_increment       = device->GetDescriptorHandleIncrementSize(m_type);
                 m_cpuStart        = m_heap->GetCPUDescriptorHandleForHeapStart();
@@ -287,7 +289,7 @@ namespace xor
 
             MovingPtr<GPUProgressTracking *> progress;
             ComPtr<ID3D12Resource> heap;
-            GPUMemoryRingbuffer ringbuffer;
+            GPUTransientMemoryAllocator ringbuffer;
             MovingPtr<uint8_t *> mapped;
             bool flushed = false;
 
@@ -532,6 +534,7 @@ namespace xor
                 GraphicsPipeline imguiRenderer;
             } imgui;
             int2 debugMousePosition;
+            bool debugPrintEnabled = true;
 
             DeviceState(Adapter adapter_,
                         ComPtr<ID3D12Device> pDevice,

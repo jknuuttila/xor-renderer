@@ -189,6 +189,7 @@ struct HeightmapRenderer
     {
         float3 sunDirection = normalize(float3(1, 1, 1));
         float3 sunColor;
+        float3 ambient;
         int shadowBiasExp  = 0;
         float shadowSSBias = 0;
     };
@@ -1290,9 +1291,11 @@ struct HeightmapRenderer
         if (terrainNear > terrainFar)
             std::swap(terrainNear, terrainFar);
 
+        terrainNear *= 0.9f;
+        terrainFar  *= 1.1f;
+
         Matrix shadowProj = Matrix::projectionOrtho(float2(terrainDims),
                                                     terrainNear,
-                                                    //1.f,
                                                     terrainFar);
         Matrix shadowViewProj = shadowProj * shadowView;
 
@@ -1317,6 +1320,7 @@ struct HeightmapRenderer
         RenderTerrain::LightingConstants lightingConstants;
         lightingConstants.sunDirection = lighting.sunDirection.s_xyz0;
         lightingConstants.sunColor     = lighting.sunColor.s_xyz0;
+        lightingConstants.ambient      = lighting.ambient.s_xyz0;
 
         renderShadowMap(cmd, constants);
 
@@ -1415,6 +1419,7 @@ class Terrain : public Window
         Angle sunAzimuth   = Angle::degrees(45.f);
         Angle sunElevation = Angle::degrees(45.f);
         float sunIntensity = 1.f;
+        float3 ambient     = float3(.025f, .025f, .05f);
         int shadowBiasExp  = 0;
         float shadowSSBias = 0;
     } lighting;
@@ -1521,6 +1526,7 @@ public:
             auto M = Matrix::azimuthElevation(lighting.sunAzimuth, lighting.sunElevation);
             props.sunDirection  = normalize(float3(M.transform(float3(0, 0, -1))));
             props.sunColor      = float3(1) * lighting.sunIntensity;
+            props.ambient       = lighting.ambient;
             props.shadowBiasExp = lighting.shadowBiasExp;
             props.shadowSSBias  = lighting.shadowSSBias;
 
@@ -1607,6 +1613,8 @@ public:
                 updateLighting();
             if (ImGui::SliderFloat("Sun intensity", &lighting.sunIntensity, 0, 3))
                 updateLighting();
+            if (ImGui::SliderFloat3("Ambient", lighting.ambient.data(), 0, .25f))
+                updateLighting();
             if (ImGui::SliderInt("Shadow depth bias exponent", &lighting.shadowBiasExp, -64, 64))
                 updateLighting();
             if (ImGui::SliderFloat("Shadow slope scaled depth bias", &lighting.shadowSSBias, -10, 10))
@@ -1642,6 +1650,13 @@ public:
             ImGui::SliderFloat("Error magnitude", &heightmapRenderer.maxErrorCoeff, 0, .25f);
 
             ImGui::Separator();
+
+            static bool first = true;
+            if (first)
+            {
+                updateTerrain();
+                first = false;
+            }
 
             if (ImGui::Button("Update"))
                 updateTerrain();

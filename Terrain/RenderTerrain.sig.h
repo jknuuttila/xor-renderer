@@ -19,6 +19,7 @@ XOR_CBUFFER(LightingConstants, 1)
 {
     float4 sunDirection;
 	float4 sunColor;
+    float4 ambient;
 };
 
 XOR_SRV(Texture2D<float4>, terrainColor,   0)

@@ -1027,6 +1027,20 @@ namespace xor
                     io.KeysDown[k.code] = k.pressed;
                 break;
             }
+
+            if (k.code == VK_OEM_5 && k.pressed)
+            {
+                if (S().debugPrintEnabled)
+                {
+                    log("ShaderDebug", "Shader debug print disabled\n");
+                    S().debugPrintEnabled = false;
+                }
+                else
+                {
+                    log("ShaderDebug", "Shader debug print enabled\n");
+                    S().debugPrintEnabled = true;
+                }
+            }
         }
 
         for (auto ch : input.characterInput)
