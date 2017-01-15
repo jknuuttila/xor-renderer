@@ -80,6 +80,10 @@ namespace xor
         BufferVBV createBufferVBV(const Buffer::Info &bufferInfo, const BufferVBV::Info &viewInfo = BufferVBV::Info());
         BufferIBV createBufferIBV(Buffer buffer                 , const BufferIBV::Info &viewInfo = BufferIBV::Info());
         BufferIBV createBufferIBV(const Buffer::Info &bufferInfo, const BufferIBV::Info &viewInfo = BufferIBV::Info());
+        BufferSRV createBufferSRV(Buffer buffer                 , const BufferSRV::Info &viewInfo = BufferSRV::Info());
+        BufferSRV createBufferSRV(const Buffer::Info &bufferInfo, const BufferSRV::Info &viewInfo = BufferSRV::Info());
+        BufferUAV createBufferUAV(Buffer buffer                 , const BufferUAV::Info &viewInfo = BufferUAV::Info());
+        BufferUAV createBufferUAV(const Buffer::Info &bufferInfo, const BufferUAV::Info &viewInfo = BufferUAV::Info());
 
         Texture    createTexture(const Texture::Info &info);
         TextureSRV createTextureSRV(Texture texture                 , const TextureSRV::Info &viewInfo = TextureSRV::Info());

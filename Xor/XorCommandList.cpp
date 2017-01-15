@@ -9,6 +9,8 @@ namespace xor
 {
     namespace backend
     {
+        constexpr uint ShaderDebugPrintDataSize = 16 * 1024;
+
         CommandListState::CommandListState(Device & dev)
         {
             setParent(&dev);
@@ -40,8 +42,12 @@ namespace xor
             XOR_CHECK(!!completedEvent, "Failed to create completion event.");
 
 			queryHeap = dev.S().queryHeap;
+
+            debugPrintData = dev.createBufferUAV(info::BufferInfoBuilder().rawBuffer(ShaderDebugPrintDataSize));
         }
     }
+
+    using namespace xor::backend;
 
     ID3D12GraphicsCommandList *CommandList::cmd()
     {
@@ -63,18 +69,26 @@ namespace xor
         }
     }
 
-    void CommandList::reset()
+    void CommandList::reset(GPUProgressTracking &progress)
     {
         if (S().closed)
         {
             XOR_CHECK_HR(S().allocator->Reset());
             XOR_CHECK_HR(cmd()->Reset(S().allocator.Get(), nullptr));
-            S().closed             = false;
-            S().activeRenderTarget = Texture();
-
-			S().firstProfilingEvent = -1;
-			S().lastProfilingEvent  = -1;
         }
+
+        S().closed             = false;
+        S().activeRenderTarget = Texture();
+
+        ++S().timesStarted;
+        S().seqNum = progress.startNewCommandList();
+
+        S().debugConstants.cursorPosition    = device().S().debugMousePosition;
+        S().debugConstants.commandListNumber = static_cast<uint>(S().seqNum);
+        S().debugConstants.eventNumber       = 0;
+
+        S().firstProfilingEvent = -1;
+        S().lastProfilingEvent  = -1;
     }
 
     bool CommandList::hasCompleted()
@@ -173,7 +187,7 @@ namespace xor
             D3D12_GPU_DESCRIPTOR_HANDLE table;
 
             auto dev = S().device();
-            auto &heap = dev.S().viewHeap(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+            auto &heap = dev.S().viewHeap();
 
             auto start = heap.allocateFromRing(dev.S().progress, totalDescriptors, number());
 
@@ -213,9 +227,19 @@ namespace xor
             }
 
             if (compute)
+            {
                 cmd()->SetComputeRootDescriptorTable(0, table);
+                cmd()->SetComputeRoot32BitConstants(1, 4, &S().debugConstants, 0);
+                cmd()->SetComputeRootUnorderedAccessView(2, S().debugPrintData.m_buffer.S().resource->GetGPUVirtualAddress());
+            }
             else
+            {
                 cmd()->SetGraphicsRootDescriptorTable(0, table);
+                cmd()->SetGraphicsRoot32BitConstants(1, 4, &S().debugConstants, 0);
+                cmd()->SetGraphicsRootUnorderedAccessView(2, S().debugPrintData.m_buffer.S().resource->GetGPUVirtualAddress());
+            }
+
+            ++S().debugConstants.eventNumber;
         }
     }
 

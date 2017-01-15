@@ -467,6 +467,7 @@ namespace xor
                 TextureSRV fontAtlas;
                 GraphicsPipeline imguiRenderer;
             } imgui;
+            int2 debugMousePosition;
 
             DeviceState(Adapter adapter_,
                         ComPtr<ID3D12Device> pDevice,
@@ -474,7 +475,7 @@ namespace xor
 
             ~DeviceState();
 
-            ViewHeap &viewHeap(D3D12_DESCRIPTOR_HEAP_TYPE type)
+            ViewHeap &viewHeap(D3D12_DESCRIPTOR_HEAP_TYPE type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
             {
                 switch (type)
                 {

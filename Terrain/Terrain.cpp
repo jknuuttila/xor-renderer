@@ -226,7 +226,7 @@ struct HeightmapRenderer
             normalMap = RWTexture(device, info::TextureInfoBuilder()
                                   .size(uint2(heightmap->size))
                                   .format(DXGI_FORMAT_R16G16B16A16_FLOAT)
-                                  .uav());
+                                  .allowUAV());
 
             auto cmd = device.graphicsCommandList();
             computeNormalMap(cmd);
@@ -284,15 +284,15 @@ struct HeightmapRenderer
         aoMap = RWTexture(device, info::TextureInfoBuilder()
                           .size(uint2(aoMapResolution))
                           .format(DXGI_FORMAT_R16_FLOAT)
-                          .uav());
+                          .allowUAV());
         RWTexture aoVisibilityBits = RWTexture(device, info::TextureInfoBuilder()
                                                .size(uint2(aoMapResolution))
                                                .format(DXGI_FORMAT_R32_UINT)
-                                               .uav());
+                                               .allowUAV());
         RWTexture aoVisibilitySamples = RWTexture(device, info::TextureInfoBuilder()
                                         .size(uint2(aoMapResolution))
                                         .format(DXGI_FORMAT_R32_UINT)
-                                        .uav());
+                                        .allowUAV());
 
         auto zBuffer = device.createTextureDSV(info::TextureInfoBuilder()
                                                .size(uint2(depthBufferResolution))
@@ -454,7 +454,7 @@ struct HeightmapRenderer
             shadowMap = RWTexture(device, info::TextureInfoBuilder()
                                   .size(uint2(shadowDim))
                                   .format(DXGI_FORMAT_D32_FLOAT)
-                                  .depthStencil());
+                                  .allowDepthStencil());
         }
     }
 

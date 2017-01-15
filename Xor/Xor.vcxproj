@@ -21,6 +21,7 @@
     <ClInclude Include="Material.hpp" />
     <ClInclude Include="Mesh.hpp" />
     <ClInclude Include="Quadric.hpp" />
+    <ClInclude Include="ShaderDebugDefs.h" />
     <ClInclude Include="Xor.hpp" />
     <ClInclude Include="XorBackend.hpp" />
     <ClInclude Include="XorCommandList.hpp" />
@@ -99,9 +100,14 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
     </FxCompile>
-    <ClInclude Include="ShaderMath.h.hlsl">
+    <FxCompile Include="ShaderMath.h.hlsl">
       <FileType>Document</FileType>
-    </ClInclude>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <Text Include="ShaderDebug.h.hlsl">
+      <FileType>Document</FileType>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\external\Compressonator\Compressonator_MD_DLL.dll">

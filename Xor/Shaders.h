@@ -1,6 +1,8 @@
 #ifndef XOR_SHADERS_H
 #define XOR_SHADERS_H
 
+#include "Xor/ShaderDebugDefs.h"
+
 #ifdef __cplusplus
 
 #include "Core/Math.hpp"
@@ -37,6 +39,7 @@ namespace xor
 #else
 
 #include "Xor/ShaderMath.h.hlsl"
+#include "Xor/ShaderDebug.h.hlsl"
 
 #define XOR_BEGIN_SIGNATURE(signatureName)
 #define XOR_END_SIGNATURE
@@ -69,37 +72,49 @@ namespace xor
     "StaticSampler(s1, " \
         "filter = FILTER_MIN_MAG_MIP_POINT), "
 
+// Built-in descriptors for ShaderDebug
+#define XOR_ROOT_SIGNATURE_DEBUG \
+    "RootConstants(num32BitConstants = 4, b0, space = 1)," \
+    "UAV(u0, space = 1)"
+
 #define XOR_ROOT_SIGNATURE_C(numCBVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(CBV(b0, numDescriptors = " #numCBVs ")) " \
+    "DescriptorTable(CBV(b0, numDescriptors = " #numCBVs "))," \
+    XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_S(numSRVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(SRV(t0, numDescriptors = " #numSRVs ")) " \
+    "DescriptorTable(SRV(t0, numDescriptors = " #numSRVs "))," \
+    XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_U(numUAVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(UAV(u0, numDescriptors = " #numUAVs ")) " \
+    "DescriptorTable(UAV(u0, numDescriptors = " #numUAVs "))," \
+    XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_CS(numCBVs, numSRVs) \
     XOR_ROOT_SIGNATURE_BASE \
     "DescriptorTable(CBV(b0, numDescriptors = " #numCBVs ")," \
-    "                SRV(t0, numDescriptors = " #numSRVs ")) " \
+    "                SRV(t0, numDescriptors = " #numSRVs "))," \
+    XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_CU(numCBVs, numUAVs) \
     XOR_ROOT_SIGNATURE_BASE \
     "DescriptorTable(CBV(b0, numDescriptors = " #numCBVs ")," \
-    "                UAV(u0, numDescriptors = " #numUAVs ")) " \
+    "                UAV(u0, numDescriptors = " #numUAVs "))," \
+    XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_SU(numSRVs, numUAVs) \
     XOR_ROOT_SIGNATURE_BASE \
     "DescriptorTable(SRV(t0, numDescriptors = " #numSRVs ")," \
-    "                UAV(u0, numDescriptors = " #numUAVs ")) " \
+    "                UAV(u0, numDescriptors = " #numUAVs "))," \
+    XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_CSU(numCBVs, numSRVs, numUAVs) \
     XOR_ROOT_SIGNATURE_BASE \
     "DescriptorTable(CBV(b0, numDescriptors = " #numCBVs ")," \
     "                SRV(t0, numDescriptors = " #numSRVs "), " \
-    "                UAV(u0, numDescriptors = " #numUAVs ")) " \
+    "                UAV(u0, numDescriptors = " #numUAVs "))," \
+    XOR_ROOT_SIGNATURE_DEBUG
 
 #endif

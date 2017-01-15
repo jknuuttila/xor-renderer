@@ -51,6 +51,7 @@ namespace xor
         public:
             size_t size = 0;
             Format format;
+            bool allowUAV = false;
 
             BufferInfo() = default;
             BufferInfo(size_t size, Format format)
@@ -78,6 +79,8 @@ namespace xor
             BufferInfoBuilder(const BufferInfo &info) : BufferInfo(info) {}
             BufferInfoBuilder &size(size_t sz)    { BufferInfo::size = sz; return *this; }
             BufferInfoBuilder &format(Format fmt) { BufferInfo::format = fmt; return *this; }
+            BufferInfoBuilder &rawBuffer(size_t sizeInBytes) { size(sizeInBytes / sizeof(uint32_t)); return format(DXGI_FORMAT_R32_TYPELESS); }
+            BufferInfoBuilder &allowUAV(bool allowUAV = true) { BufferInfo::allowUAV = allowUAV; return *this; }
         };
 
         class BufferViewInfo
@@ -102,6 +105,7 @@ namespace xor
             BufferViewInfoBuilder &firstElement(size_t index) { BufferViewInfo::firstElement = index; return *this; }
             BufferViewInfoBuilder &numElements(uint count) { BufferViewInfo::numElements = count; return *this; }
             BufferViewInfoBuilder &format(Format format) { BufferViewInfo::format = format; return *this; }
+            BufferViewInfoBuilder &raw() { BufferViewInfo::format = DXGI_FORMAT_R32_TYPELESS; return *this; }
         };
 
         class TextureInfo
@@ -140,9 +144,9 @@ namespace xor
             TextureInfoBuilder &size(uint2 sz)    { TextureInfo::size = sz; return *this; }
             TextureInfoBuilder &format(Format fmt) { TextureInfo::format = fmt; return *this; }
             TextureInfoBuilder &mipLevels(uint mips) { TextureInfo::mipLevels = mips; return *this; }
-            TextureInfoBuilder &renderTarget(bool allowRTV = true) { TextureInfo::allowRenderTarget = allowRTV; return *this; }
-            TextureInfoBuilder &depthStencil(bool allowDSV = true) { TextureInfo::allowDepthStencil = allowDSV; return *this; }
-            TextureInfoBuilder &uav(bool allowUAV = true) { TextureInfo::allowUAV = allowUAV; return *this; }
+            TextureInfoBuilder &allowRenderTarget(bool allowRTV = true) { TextureInfo::allowRenderTarget = allowRTV; return *this; }
+            TextureInfoBuilder &allowDepthStencil(bool allowDSV = true) { TextureInfo::allowDepthStencil = allowDSV; return *this; }
+            TextureInfoBuilder &allowUAV(bool allowUAV = true) { TextureInfo::allowUAV = allowUAV; return *this; }
         };
 
         class TextureViewInfo
@@ -437,6 +441,28 @@ namespace xor
     };
 
     class TextureUAV : public TextureView
+    {
+    public:
+    };
+
+    class BufferView : public DescriptorView
+    {
+        friend class Device;
+        friend class CommandList;
+        Buffer m_buffer;
+    public:
+        using Info    = info::BufferViewInfo;
+        using Builder = info::BufferViewInfoBuilder;
+
+        Buffer buffer();
+    };
+
+    class BufferSRV : public BufferView
+    {
+    public:
+    };
+
+    class BufferUAV : public BufferView
     {
     public:
     };

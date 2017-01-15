@@ -612,6 +612,16 @@ namespace xor
         }
     }
 
+    static D3D12_RESOURCE_FLAGS bufferFlags(const Buffer::Info &info)
+    {
+        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+
+        if (info.allowUAV)
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+        return flags;
+    }
+
     Buffer Device::createBuffer(const Buffer::Info & info)
     {
         Buffer buffer;
@@ -636,7 +646,7 @@ namespace xor
         desc.SampleDesc.Count   = 1;
         desc.SampleDesc.Quality = 0;
         desc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-        desc.Flags              = D3D12_RESOURCE_FLAG_NONE;
+        desc.Flags              = bufferFlags(info);
 
         XOR_CHECK_HR(device()->CreateCommittedResource(
             &heap,
@@ -699,6 +709,46 @@ namespace xor
     BufferIBV Device::createBufferIBV(const Buffer::Info & bufferInfo, const BufferIBV::Info & viewInfo)
     {
         return createBufferIBV(createBuffer(bufferInfo), viewInfo);
+    }
+
+    BufferUAV Device::createBufferUAV(Buffer buffer, const BufferUAV::Info & viewInfo)
+    {
+        auto info = viewInfo.defaults(buffer.info());
+
+        BufferUAV uav;
+        uav.m_buffer = buffer;
+        uav.makeState().setParent(this);
+        uav.S().descriptor = S().shaderViews.allocateFromHeap();
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {};
+        desc.Format                           = info.format;
+        desc.ViewDimension                    = D3D12_UAV_DIMENSION_BUFFER;
+        desc.Buffer.FirstElement              = info.firstElement;
+        desc.Buffer.NumElements               = info.numElements;
+        desc.Buffer.StructureByteStride       = info.format.isStructured() ? info.format.size() : 0;
+        desc.Buffer.CounterOffsetInBytes      = 0;
+
+        if (desc.Format == DXGI_FORMAT_R32_TYPELESS)
+            desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
+
+        device()->CreateUnorderedAccessView(buffer.get(),
+                                            nullptr,
+                                            &desc,
+                                            uav.S().descriptor.staging);
+
+        device()->CopyDescriptorsSimple(1,
+                                        uav.S().descriptor.cpu,
+                                        uav.S().descriptor.staging,
+                                        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+        return uav;
+    }
+
+    BufferUAV Device::createBufferUAV(const Buffer::Info & bufferInfo, const BufferUAV::Info & viewInfo)
+    {
+        auto info = bufferInfo;
+        info.allowUAV = true;
+        return createBufferUAV(createBuffer(info), viewInfo);
     }
 
     static D3D12_RESOURCE_FLAGS textureFlags(const Texture::Info &info)
@@ -847,6 +897,8 @@ namespace xor
 
     TextureDSV Device::createTextureDSV(const Texture::Info & textureInfo, const TextureDSV::Info & viewInfo)
     {
+        auto info = textureInfo;
+        info.allowDepthStencil = true;
         return createTextureDSV(createTexture(textureInfo), viewInfo);
     }
 
@@ -882,7 +934,9 @@ namespace xor
 
     TextureUAV Device::createTextureUAV(const Texture::Info & textureInfo, const TextureUAV::Info & viewInfo)
     {
-        return createTextureUAV(createTexture(textureInfo), viewInfo);
+        auto info = textureInfo;
+        info.allowUAV = true;
+        return createTextureUAV(createTexture(info), viewInfo);
     }
 
     CommandList Device::graphicsCommandList(const char *cmdListName)
@@ -894,12 +948,9 @@ namespace xor
             return std::make_shared<CommandListState>(*this);
         });
 
-        cmd.reset();
+        cmd.reset(S().progress);
         ID3D12DescriptorHeap *heaps[] = { S().shaderViews.get() };
         cmd.cmd()->SetDescriptorHeaps(1, heaps);
-
-        ++cmd.S().timesStarted;
-        cmd.S().seqNum = S().progress.startNewCommandList();
 
 		if (!StringView(cmdListName).empty())
 			cmd.S().cmdListEvent = cmd.profilingEvent(cmdListName);
@@ -942,7 +993,10 @@ namespace xor
         ImGuiIO &io = ImGui::GetIO();
 
         if (!input.mouseMovements.empty())
-            io.MousePos = float2(input.mouseMovements.back().position);
+        {
+            S().debugMousePosition = input.mouseMovements.back().position;
+            io.MousePos = float2(S().debugMousePosition);
+        }
 
         for (auto &w : input.mouseWheel)
         {

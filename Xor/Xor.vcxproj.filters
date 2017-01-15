@@ -14,12 +14,12 @@
     <ClInclude Include="XorBackend.hpp" />
     <ClInclude Include="XorDeviceState.hpp" />
     <ClInclude Include="XorPCH.hpp" />
-    <ClInclude Include="ShaderMath.h.hlsl" />
     <ClInclude Include="FPSCamera.hpp" />
     <ClInclude Include="Blit.hpp" />
     <ClInclude Include="Blit.sig.h" />
     <ClInclude Include="DirectedEdge.hpp" />
     <ClInclude Include="Quadric.hpp" />
+    <ClInclude Include="ShaderDebugDefs.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
@@ -46,8 +46,12 @@
     <FxCompile Include="ImguiRenderer.ps.hlsl" />
     <FxCompile Include="Blit.vs.hlsl" />
     <FxCompile Include="Blit.ps.hlsl" />
+    <FxCompile Include="ShaderMath.h.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="Xor.natvis" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ShaderDebug.h.hlsl" />
   </ItemGroup>
 </Project>

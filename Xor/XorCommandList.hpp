@@ -55,6 +55,9 @@ namespace xor
 
             Texture activeRenderTarget;
 
+            XorShaderDebugConstants debugConstants;
+            BufferUAV debugPrintData;
+
             std::vector<D3D12_CONSTANT_BUFFER_VIEW_DESC> cbvs;
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> srvs;
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> uavs;
@@ -159,6 +162,9 @@ namespace xor
                            ImageData data,
                            ImageRect dstPos = {});
 
+        void readbackBuffer(Buffer &buffer,
+                            std::function<void(Span<const uint8_t>)> calledWhenDone);
+
         void copyTexture(Texture &dst,       ImageRect dstPos,
                          const Texture &src, ImageRect srcArea = {});
 
@@ -172,7 +178,7 @@ namespace xor
         ID3D12GraphicsCommandList *cmd();
 
         void close();
-        void reset();
+        void reset(backend::GPUProgressTracking &progress);
 
         bool hasCompleted();
         void waitUntilCompleted(DWORD timeout = INFINITE);

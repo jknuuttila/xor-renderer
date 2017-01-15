@@ -48,6 +48,7 @@ namespace xor
 
         bool isDepthFormat() const;
         bool isCompressed() const;
+        bool isStructured() const;
 
         Format asStructure() const;
         Format readFormat() const;
