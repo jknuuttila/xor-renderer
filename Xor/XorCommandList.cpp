@@ -63,6 +63,14 @@ namespace xor
 			if (S().firstProfilingEvent >= 0)
 				S().queryHeap->resolve(cmd(), S().firstProfilingEvent, S().lastProfilingEvent);
 
+            auto num = number();
+
+            readbackBuffer(S().debugPrintData.buffer(),
+                           [num] (Span<const uint8_t> debugPrintData)
+            {
+                handleShaderDebugPrints(num, debugPrintData);
+            });
+
             XOR_CHECK_HR(cmd()->Close());
             S().closed             = true;
             S().activeRenderTarget = Texture();
@@ -84,11 +92,15 @@ namespace xor
         S().seqNum = progress.startNewCommandList();
 
         S().debugConstants.cursorPosition    = device().S().debugMousePosition;
-        S().debugConstants.commandListNumber = static_cast<uint>(S().seqNum);
         S().debugConstants.eventNumber       = 0;
 
         S().firstProfilingEvent = -1;
         S().lastProfilingEvent  = -1;
+
+        // Initialize the first dword of the debug print data, which is the write pointer,
+        // to point to the second dword.
+        uint32_t writePointerInit[1] = { 4 };
+        updateBuffer(S().debugPrintData.buffer(), asBytes(writePointerInit));
     }
 
     bool CommandList::hasCompleted()
@@ -229,13 +241,13 @@ namespace xor
             if (compute)
             {
                 cmd()->SetComputeRootDescriptorTable(0, table);
-                cmd()->SetComputeRoot32BitConstants(1, 4, &S().debugConstants, 0);
+                cmd()->SetComputeRoot32BitConstants(1, XorShaderDebugConstantCount, &S().debugConstants, 0);
                 cmd()->SetComputeRootUnorderedAccessView(2, S().debugPrintData.m_buffer.S().resource->GetGPUVirtualAddress());
             }
             else
             {
                 cmd()->SetGraphicsRootDescriptorTable(0, table);
-                cmd()->SetGraphicsRoot32BitConstants(1, 4, &S().debugConstants, 0);
+                cmd()->SetGraphicsRoot32BitConstants(1, XorShaderDebugConstantCount, &S().debugConstants, 0);
                 cmd()->SetGraphicsRootUnorderedAccessView(2, S().debugPrintData.m_buffer.S().resource->GetGPUVirtualAddress());
             }
 
@@ -631,6 +643,32 @@ namespace xor
             nullptr);
     }
 
+    void CommandList::readbackBuffer(Buffer & buffer,
+                                     std::function<void(Span<const uint8_t>)> calledWhenDone,
+                                     size_t offset,
+                                     size_t bytes)
+    {
+        if (bytes == 0)
+            bytes = buffer->sizeBytes();
+
+        auto &readback = *device().S().readbackHeap;
+
+        auto block = readback.readbackBytes(number(), bytes);
+
+        transition(buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+        cmd()->CopyBufferRegion(readback.heap.Get(),
+                                static_cast<UINT64>(block.begin),
+                                buffer.get(),
+                                offset,
+                                bytes);
+
+        device().whenCompleted([&readback, block, calledWhenDone] ()
+        {
+            calledWhenDone(makeConstSpan(readback.mapped + block.begin, block.size()));
+        }, number());
+    }
+
     void CommandList::copyTexture(Texture & dst, ImageRect dstPos,
                                   const Texture & src, ImageRect srcRect)
     {
@@ -746,6 +784,72 @@ namespace xor
 		S().lastProfilingEvent = e.m_offset;
 
 		return e;
+    }
+
+    void CommandList::handleShaderDebugPrints(SeqNum cmdListNumber, Span<const uint8_t> debugPrintData)
+    {
+        auto data = reinterpretSpan<const uint32_t>(debugPrintData);
+
+        // The first dword is the write pointer, which tells us how much valid data
+        // there is. It is initialized to 4, so we must subtract one from the length,
+        // avoiding underflow.
+        uint32_t length = data[0] / sizeof(uint32_t);
+        if (length > 0) --length;
+
+        data = data(1);
+        uint32_t i = 0;
+        while (i < length)
+        {
+            uint32_t opcode = data[i];
+            switch (opcode)
+            {
+            case XorShaderDebugPrintOpCodeMetadata:
+                log("ShaderDebug", "List %lld, event %u:", lld(cmdListNumber), data[i + 1]);
+                i += 2;
+                break;
+            case XorShaderDebugPrintOpCodeNewLine:
+                print("\n");
+                i += 1;
+                break;
+            case XorShaderDebugPrintOpCodePrintValues:
+            {
+                uint32_t typeId = data[i + 1];
+                uint32_t type   = typeId & XorShaderDebugTypeIdMask;
+                uint32_t count  = typeId & XorShaderDebugTypeCountMask;
+                XOR_ASSERT(count <= 4, "Print value count out of bounds");
+                print(" (");
+                for (uint32_t j = 0; j < count; ++j)
+                {
+                    uint32_t u = data[i + 2 + j];
+                    int32_t  i;
+                    float    f;
+                    const char *separator = j ? ", " : "";
+
+                    switch (type)
+                    {
+                    default:
+                    case XorShaderDebugTypeId_uint:
+                        print("%s%u", separator, u);
+                        break;
+                    case XorShaderDebugTypeId_int:
+                        memcpy(&i, &u, sizeof(i));
+                        print("%s%d", separator, i);
+                        break;
+                    case XorShaderDebugTypeId_float:
+                        memcpy(&f, &u, sizeof(f));
+                        print("%s%f", separator, f);
+                        break;
+                    }
+                }
+                print(")");
+                i += 2 + count;
+            }
+            break;
+            default:
+                XOR_CHECK(false, "Unknown print opcode");
+                break;
+            }
+        }
     }
 
     ProfilingEvent CommandList::profilingEvent(const char * name)

@@ -690,4 +690,9 @@ namespace xor
     {
         return *S().computeInfo;
     }
+
+    Buffer BufferView::buffer()
+    {
+        return m_buffer;
+    }
 }

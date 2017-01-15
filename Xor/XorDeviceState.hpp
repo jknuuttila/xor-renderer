@@ -89,6 +89,9 @@ namespace xor
                 , m_metadata(metadataEntries)
             {}
 
+            size_t sizeMemory() const { return m_memoryRing.size(); }
+            size_t sizeMetadata() const { return m_metadata.size(); }
+
             Block allocate(size_t amount, size_t alignment, SeqNum cmdList)
             {
                 if (m_metadataRing.full())
@@ -271,20 +274,29 @@ namespace xor
             }
         };
 
-        struct UploadHeap
+        template <D3D12_HEAP_TYPE HeapType>
+        struct CPUVisibleHeap
         {
-            static const size_t UploadHeapSize = 32 * 1024 * 1024;
-            static const size_t UploadMetadataEntries = 4096;
+            static_assert(HeapType == D3D12_HEAP_TYPE_UPLOAD || HeapType == D3D12_HEAP_TYPE_READBACK,
+                          "Unsupported heap type");
 
+            static constexpr size_t HeapSize = 32 * 1024 * 1024;
+            static constexpr size_t MetadataEntries = 4096;
+            static constexpr bool IsUploadHeap   = HeapType == D3D12_HEAP_TYPE_UPLOAD;
+            static constexpr bool IsReadbackHeap = HeapType == D3D12_HEAP_TYPE_READBACK;
+
+            MovingPtr<GPUProgressTracking *> progress;
             ComPtr<ID3D12Resource> heap;
             GPUMemoryRingbuffer ringbuffer;
-            uint8_t *mapped;
+            MovingPtr<uint8_t *> mapped;
+            bool flushed = false;
 
-            UploadHeap(ID3D12Device *device)
-                : ringbuffer(UploadHeapSize, UploadMetadataEntries)
+            CPUVisibleHeap(ID3D12Device *device, GPUProgressTracking &progress)
+                : progress(&progress)
+                , ringbuffer(HeapSize, MetadataEntries)
             {
                 D3D12_HEAP_PROPERTIES heapDesc = {};
-                heapDesc.Type                 = D3D12_HEAP_TYPE_UPLOAD;
+                heapDesc.Type                 = HeapType;
                 heapDesc.CPUPageProperty      = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
                 heapDesc.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
                 heapDesc.CreationNodeMask     = 0;
@@ -293,7 +305,7 @@ namespace xor
                 D3D12_RESOURCE_DESC desc = {};
                 desc.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
                 desc.Alignment          = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
-                desc.Width              = UploadHeapSize;
+                desc.Width              = HeapSize;
                 desc.Height             = 1;
                 desc.DepthOrArraySize   = 1;
                 desc.MipLevels          = 1;
@@ -307,50 +319,101 @@ namespace xor
                     &heapDesc,
                     D3D12_HEAP_FLAG_NONE,
                     &desc,
-                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    heapState(),
                     nullptr,
                     __uuidof(ID3D12Resource),
                     &heap));
-                setName(heap, "uploadHeap");
+                setName(heap, IsUploadHeap
+                        ? "Main upload heap"
+                        : "Main readback heap");
 
                 mapHeap();
             }
             
-            ~UploadHeap()
+            ~CPUVisibleHeap()
             {
                 heap->Unmap(0, nullptr);
             }
 
+            static D3D12_RESOURCE_STATES heapState()
+            {
+                if (IsUploadHeap)
+                    return D3D12_RESOURCE_STATE_GENERIC_READ;
+                else if (IsReadbackHeap)
+                    return D3D12_RESOURCE_STATE_COPY_DEST;
+                else
+                    return D3D12_RESOURCE_STATE_COMMON;
+            }
+
             void mapHeap()
             {
-                D3D12_RANGE dontRead;
-                dontRead.Begin = 0;
-                dontRead.End   = 0;
-                void *p        = nullptr;
-                XOR_CHECK_HR(heap->Map(0, &dontRead, &p));
+                void *p = nullptr;
+                if (IsUploadHeap)
+                {
+                    D3D12_RANGE dontRead;
+                    dontRead.Begin = 0;
+                    dontRead.End = 0;
+                    XOR_CHECK_HR(heap->Map(0, &dontRead, &p));
+                }
+                else
+                {
+                    XOR_CHECK_HR(heap->Map(0, nullptr, &p));
+                }
                 mapped = reinterpret_cast<uint8_t *>(p);
+            }
+
+            void flushHeap()
+            {
+                if (flushed)
+                    return;
+
+                flushBlock(Block(0, static_cast<int64_t>(ringbuffer.sizeMemory())));
+
+                flushed = true;
             }
 
             void flushBlock(Block block)
             {
-                D3D12_RANGE flushRange;
-                flushRange.Begin = static_cast<size_t>(block.begin);
-                flushRange.End   = static_cast<size_t>(block.end);
-                heap->Unmap(0, &flushRange);
+                if (IsUploadHeap)
+                {
+                    D3D12_RANGE flushRange;
+                    flushRange.Begin = static_cast<size_t>(block.begin);
+                    flushRange.End = static_cast<size_t>(block.end);
+                    heap->Unmap(0, &flushRange);
+                }
+                else
+                {
+                    heap->Unmap(0, nullptr);
+                }
+
                 mapHeap();
             }
 
-            Block uploadBytes(GPUProgressTracking &progress,
-                              Span<const uint8_t> bytes,
+            Block uploadBytes(Span<const uint8_t> bytes,
                               SeqNum cmdListNumber,
                               uint alignment = 1)
             {
-                auto block = ringbuffer.allocate(progress, bytes.sizeBytes(), alignment, cmdListNumber);
+                XOR_CHECK(IsUploadHeap, "Cannot upload to non-upload heaps");
+                auto block = ringbuffer.allocate(*progress, bytes.sizeBytes(), alignment, cmdListNumber);
                 memcpy(mapped + block.begin, bytes.data(), bytes.sizeBytes());
+                flushed = false;
                 flushBlock(block);
                 return block;
             }
+
+            Block readbackBytes(SeqNum cmdListNumber,
+                                size_t bytes,
+                                uint alignment = 1)
+            {
+                XOR_CHECK(IsReadbackHeap, "Cannot readback from non-readback heaps");
+                auto block = ringbuffer.allocate(*progress, bytes, alignment, cmdListNumber);
+                flushed = false;
+                return block;
+            }
         };
+
+        using UploadHeap   = CPUVisibleHeap<D3D12_HEAP_TYPE_UPLOAD>;
+        using ReadbackHeap = CPUVisibleHeap<D3D12_HEAP_TYPE_READBACK>;
 
 		struct ProfilingEventData
 		{
@@ -439,7 +502,8 @@ namespace xor
 
             GrowingPool<std::shared_ptr<CommandListState>> freeGraphicsCommandLists;
             GPUProgressTracking progress;
-            std::shared_ptr<UploadHeap> uploadHeap;
+            std::shared_ptr<CPUVisibleHeap<D3D12_HEAP_TYPE_UPLOAD>>   uploadHeap;
+            std::shared_ptr<CPUVisibleHeap<D3D12_HEAP_TYPE_READBACK>> readbackHeap;
 			std::shared_ptr<QueryHeap> queryHeap;
 
 			std::vector<ProfilingEventData> profilingData;

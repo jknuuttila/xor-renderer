@@ -41,31 +41,6 @@ namespace xor
         friend struct backend::PipelineState;
         friend class info::BufferInfo;
         friend class info::TextureInfo;
-
-        ID3D12Device *device();
-
-        backend::ShaderLoader &shaderLoader();
-        void releaseDescriptor(backend::Descriptor descriptor);
-        void releaseCommandList(std::shared_ptr<backend::CommandListState> cmdList);
-
-        CommandList initializerCommandList();
-        void initializeBufferWith(Buffer &buffer, Span<const uint8_t> bytes);
-        void initializeTextureWith(Texture &texture, Span<const ImageData> subresources);
-
-        backend::RootSignature collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
-
-        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment);
-
-		void processProfilingEvents();
-		const backend::ProfilingEventData *processProfilingEvent(const backend::ProfilingEventData *data,
-																 const backend::ProfilingEventData *end,
-																 float ticksToMs,
-																 int indent = 0);
-
-        Device(Adapter adapter,
-               ComPtr<ID3D12Device> device,
-               std::shared_ptr<backend::ShaderLoader> shaderLoader);
-        Device(StatePtr state);
     public:
         Device() = default;
 
@@ -112,6 +87,34 @@ namespace xor
         bool hasCompleted(SeqNum seqNum);
         void waitUntilCompleted(SeqNum seqNum);
         void waitUntilDrained();
+
+    private:
+        ID3D12Device *device();
+
+        backend::ShaderLoader &shaderLoader();
+        void releaseDescriptor(backend::Descriptor descriptor);
+        void releaseCommandList(std::shared_ptr<backend::CommandListState> cmdList);
+
+        CommandList initializerCommandList();
+        void initializeBufferWith(Buffer &buffer, Span<const uint8_t> bytes);
+        void initializeTextureWith(Texture &texture, Span<const ImageData> subresources);
+
+        backend::RootSignature collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
+
+        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment);
+
+		void processProfilingEvents();
+		const backend::ProfilingEventData *processProfilingEvent(const backend::ProfilingEventData *data,
+																 const backend::ProfilingEventData *end,
+																 float ticksToMs,
+																 int indent = 0);
+
+        void retireCommandLists();
+
+        Device(Adapter adapter,
+               ComPtr<ID3D12Device> device,
+               std::shared_ptr<backend::ShaderLoader> shaderLoader);
+        Device(StatePtr state);
     };
 
     class SwapChain : private backend::SharedState<backend::SwapChainState>

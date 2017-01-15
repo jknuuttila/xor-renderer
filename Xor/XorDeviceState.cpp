@@ -32,7 +32,8 @@ namespace xor
 
             XOR_INTERNAL_DEBUG_NAME(graphicsQueue);
 
-            uploadHeap = std::make_shared<UploadHeap>(device.Get());
+            uploadHeap   = std::make_shared<UploadHeap>(device.Get(), progress);
+            readbackHeap = std::make_shared<ReadbackHeap>(device.Get(), progress);
 
             rtvs = ViewHeap(device.Get(),
                             D3D12_DESCRIPTOR_HEAP_TYPE_RTV,

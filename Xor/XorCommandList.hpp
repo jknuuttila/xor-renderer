@@ -163,7 +163,9 @@ namespace xor
                            ImageRect dstPos = {});
 
         void readbackBuffer(Buffer &buffer,
-                            std::function<void(Span<const uint8_t>)> calledWhenDone);
+                            std::function<void(Span<const uint8_t>)> calledWhenDone,
+                            size_t offset = 0,
+                            size_t bytes = 0);
 
         void copyTexture(Texture &dst,       ImageRect dstPos,
                          const Texture &src, ImageRect srcArea = {});
@@ -192,6 +194,7 @@ namespace xor
         backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment = DefaultAlignment);
 
         ProfilingEvent profilingEventInternal(const char * name, bool print);
+        static void handleShaderDebugPrints(SeqNum cmdListNumber, Span<const uint8_t> debugPrintData);
     };
 
     template<typename T>

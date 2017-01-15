@@ -10,7 +10,7 @@ namespace xor
 
     // Largest amount of data that we push to the upload heap at once during initial
     // data uploading.
-    static const size_t InitialDataLimit = UploadHeap::UploadHeapSize / 4;
+    static const size_t InitialDataLimit = UploadHeap::HeapSize / 4;
     static const bool WaitForLargeInitialData = true;
 
     namespace backend
@@ -168,6 +168,7 @@ namespace xor
             D3D12_MESSAGE_ID disabledMessages[] = {
                 D3D12_MESSAGE_ID_MAP_INVALID_NULLRANGE,
                 D3D12_MESSAGE_ID_UNMAP_INVALID_NULLRANGE,
+                D3D12_MESSAGE_ID_EXECUTECOMMANDLISTS_GPU_WRITTEN_READBACK_RESOURCE_MAPPED,
             };
             D3D12_INFO_QUEUE_FILTER filter = {};
             filter.DenyList.NumSeverities  = static_cast<uint>(size(disabledSeverities));
@@ -431,7 +432,6 @@ namespace xor
         HeapBlock block;
         block.heap = S().uploadHeap->heap.Get();
         block.block = S().uploadHeap->uploadBytes(
-            S().progress,
             bytes,
             cmdListNumber,
             alignment);
@@ -496,6 +496,12 @@ namespace xor
 		}
 	}
 
+    void Device::retireCommandLists()
+    {
+        S().readbackHeap->flushHeap();
+        S().progress.retireCommandLists();
+    }
+
 	void Device::processProfilingEvents()
 	{
 		auto &data = S().profilingData;
@@ -558,7 +564,7 @@ namespace xor
         // If all the subresources fit nicely within the upload heap, 
         // just do it all in one command list, since it's faster and
         // places less pressure on the driver.
-        if (totalSize < UploadHeap::UploadHeapSize)
+        if (totalSize < UploadHeap::HeapSize)
         {
             auto cmd = initializerCommandList();
             for (uint s = 0; s < subresources.size(); ++s)
@@ -941,7 +947,7 @@ namespace xor
 
     CommandList Device::graphicsCommandList(const char *cmdListName)
     {
-        S().progress.retireCommandLists();
+        retireCommandLists();
 
         CommandList cmd = S().freeGraphicsCommandLists.allocate([this]
         {
@@ -985,7 +991,7 @@ namespace xor
         backbuffer.seqNum = S().progress.newestExecuted;
         swapChain.S().swapChain->Present(vsync ? 1 : 0, 0);
         S().shaderLoader->scanChangedSources();
-        S().progress.retireCommandLists();
+        retireCommandLists();
     }
 
     Device::ImguiInput Device::imguiInput(const Input & input)

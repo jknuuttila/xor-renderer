@@ -74,7 +74,7 @@ namespace xor
 
 // Built-in descriptors for ShaderDebug
 #define XOR_ROOT_SIGNATURE_DEBUG \
-    "RootConstants(num32BitConstants = 4, b0, space = 1)," \
+    "RootConstants(num32BitConstants = 3, b0, space = 1)," \
     "UAV(u0, space = 1)"
 
 #define XOR_ROOT_SIGNATURE_C(numCBVs) \

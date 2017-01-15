@@ -25,7 +25,10 @@ bool debugIsCursorPosition(float2 coords)
     return debugIsCursorPosition(int2(coords));
 }
 
-static const uint ShaderDebugPrintFixedPayloadSize = 12 + 4;
+static const uint ShaderDebugPrintMetadataSize = 8;
+static const uint ShaderDebugPrintNewlineSize = 4;
+static const uint ShaderDebugPrintValueHeaderSize = 8;
+static const uint ShaderDebugPrintFixedPayloadSize = ShaderDebugPrintMetadataSize + ShaderDebugPrintNewlineSize;
 
 uint debugAllocatePrintSpace(uint variablePayload)
 {
@@ -36,12 +39,11 @@ uint debugAllocatePrintSpace(uint variablePayload)
 
 void debugWriteEventMetadata(inout uint offset)
 {
-    uint3 values;
+    uint2 values;
     values.x = XorShaderDebugPrintOpCodeMetadata;
-    values.y = debugConstants.commandListNumber;
-    values.z = debugConstants.eventNumber;
-    debugPrintData.Store3(offset, values);
-    offset += 12;
+    values.y = debugConstants.eventNumber;
+    debugPrintData.Store2(offset, values);
+    offset += 8;
 }
 
 void debugWriteValues(uint typeId, uint data, inout uint offset)
@@ -104,10 +106,10 @@ float debugTypeId(float1 values) { return XOR_SHADERDEBUG_TYPE_ID(float, 1); }
 float debugTypeId(float2 values) { return XOR_SHADERDEBUG_TYPE_ID(float, 2); }
 float debugTypeId(float3 values) { return XOR_SHADERDEBUG_TYPE_ID(float, 3); }
 float debugTypeId(float4 values) { return XOR_SHADERDEBUG_TYPE_ID(float, 4); }
-uint debugPayloadSize(uint1 values) { return 4; }
-uint debugPayloadSize(uint2 values) { return 8; }
-uint debugPayloadSize(uint3 values) { return 12; }
-uint debugPayloadSize(uint4 values) { return 16; }
+uint debugPayloadSize(uint1 values) { return ShaderDebugPrintValueHeaderSize + 4; }
+uint debugPayloadSize(uint2 values) { return ShaderDebugPrintValueHeaderSize + 8; }
+uint debugPayloadSize(uint3 values) { return ShaderDebugPrintValueHeaderSize + 12; }
+uint debugPayloadSize(uint4 values) { return ShaderDebugPrintValueHeaderSize + 16; }
 
 // Define the actual printing operations as macros instead of functions to avoid a combinatorial
 // overload explosion with {uint,int,float} x {1,2,3,4} x argument count
