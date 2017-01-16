@@ -76,7 +76,6 @@ namespace xor
         {
             auto lines = tlogLines(readFile);
             BuildInfo *buildInfo = nullptr;
-            bool firstReadDep = false;
             for (auto &l : lines)
             {
                 int srcPos = l.find("^");
@@ -87,20 +86,19 @@ namespace xor
                     if (it != sourceBuildInfos.end())
                     {
                         buildInfo = &it->second;
-                        firstReadDep = true;
                     }
                     else
                     {
                         buildInfo = nullptr;
-                        firstReadDep = false;
                     }
                 }
-                else if (buildInfo && firstReadDep)
+                else if (buildInfo
+                         && buildInfo->buildExe.empty()
+                         && l.lower().endsWith(".exe"))
                 {
                     auto exe = File::canonicalize(l);
                     buildInfo->buildExe = exe;
                     log("TLog", "%s was built with executable %s\n", buildInfo->source.cStr(), exe.cStr());
-                    firstReadDep = false;
                 }
                 else if (buildInfo)
                 {

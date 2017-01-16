@@ -112,11 +112,13 @@ namespace xor
         bool empty() const { return size() == 0; }
         size_t size() const { return static_cast<size_t>(end - begin); }
 
+#if 0
         bool canFit(size_t size, size_t alignment = 1) const
         {
             int64_t alignedBegin = roundUpToMultiple(begin, static_cast<int64_t>(alignment));
             return end - alignedBegin >= static_cast<int64_t>(size);
         }
+#endif
     };
 
     // Allocating and releasing in a ring buffer fashion (i.e. FIFO),
