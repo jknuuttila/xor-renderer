@@ -3,4 +3,7 @@
   <ItemGroup>
     <ClCompile Include="HelloD3D12.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
 </Project>

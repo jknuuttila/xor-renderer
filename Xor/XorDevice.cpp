@@ -46,13 +46,19 @@ namespace xor
 #endif
         }
 
-        if (debugLayer == DebugLayer::Enabled)
+        if (debugLayer != DebugLayer::Disabled)
         {
             ComPtr<ID3D12Debug> debug;
             XOR_CHECK_HR(D3D12GetDebugInterface(
                 __uuidof(ID3D12Debug),
                 &debug));
+
+            ComPtr<ID3D12Debug1> debug1;
+            XOR_CHECK_HR(debug.As(&debug1));
             debug->EnableDebugLayer();
+            debug1->SetEnableSynchronizedCommandQueueValidation(TRUE);
+            if (debugLayer == DebugLayer::GPUBasedValidation)
+                debug1->SetEnableGPUBasedValidation(TRUE);
         }
 
         auto factory = dxgiFactory();
@@ -968,9 +974,40 @@ namespace xor
     {
         cmd.close();
 
+        log("Device", "Executing command list %lld. %p -> %zu\n",
+            lld(cmd.number()),
+            cmd.S().timesCompleted.Get(),
+            size_t(cmd.S().timesStarted));
+
         ID3D12CommandList *cmds[] = { cmd.S().cmd.Get() };
         S().graphicsQueue->ExecuteCommandLists(1, cmds);
+        {
+            auto completed = cmd.S().timesCompleted->GetCompletedValue();
+            log("FenceDebug", "%p == %zu (%zx)\n", cmd.S().timesCompleted.Get(), completed, completed);
+            if (completed > 1000000)
+                DebugBreak();
+        }
         S().graphicsQueue->Signal(cmd.S().timesCompleted.Get(), cmd.S().timesStarted);
+        XOR_ASSERT(cmd.S().timesCompleted->GetCompletedValue() <= cmd.S().timesStarted,
+                   "Command list completion count out of sync. %p = %llu",
+                   cmd.S().timesCompleted.Get(),
+                   size_t(cmd.S().timesCompleted->GetCompletedValue()));
+
+        {
+            auto completed = cmd.S().timesCompleted->GetCompletedValue();
+            log("FenceDebug", "%p == %zu (%zx)\n", cmd.S().timesCompleted.Get(), completed, completed);
+            if (completed > 1000000)
+                DebugBreak();
+        }
+
+        cmd.waitUntilCompleted();
+
+        {
+            auto completed = cmd.S().timesCompleted->GetCompletedValue();
+            log("FenceDebug", "%p == %zu (%zx)\n", cmd.S().timesCompleted.Get(), completed, completed);
+            if (completed > 1000000)
+                DebugBreak();
+        }
 
         S().progress.executeCommandList(std::move(cmd));
     }

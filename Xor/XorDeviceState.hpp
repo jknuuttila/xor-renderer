@@ -47,19 +47,7 @@ namespace xor
                 return commandListSequence.hasCompleted(seqNum);
             }
 
-            bool hasBeenExecuted(SeqNum seqNum)
-            {
-                if (hasCompleted(seqNum))
-                    return true;
-
-                for (auto &c : executedCommandLists)
-                {
-                    if (c.number() == seqNum)
-                        return true;
-                }
-
-                return false;
-            }
+            bool hasBeenExecuted(SeqNum seqNum);
 
             void waitUntilCompleted(SeqNum seqNum);
 
@@ -87,75 +75,77 @@ namespace xor
         private:
             int64_t m_size = 0;
 
-            struct Metadata
+            struct AllocationBlock
             {
                 Block block;
-                SeqNum allocatedBy;
+                Block freeBlock;
+                SeqNum allocatedBy = -1;
+                int next = -1;
+                int prev = -1;
+
+                AllocationBlock() = default;
+                AllocationBlock(Block freeBlock)
+                    : block(freeBlock)
+                    , freeBlock(freeBlock)
+                {}
+
+                bool isFree() const { return allocatedBy < 0; }
+                void release()
+                {
+                    allocatedBy = -1;
+                    freeBlock = block;
+                }
             };
-            std::vector<Metadata> m_metadata;
+
+            // Circular linked list that spans the entire space.
+            std::vector<AllocationBlock> m_blocks;
+            int m_current = 0;
+
+            String m_name;
         public:
             GPUTransientMemoryAllocator() = default;
-            GPUTransientMemoryAllocator(size_t memory)
+            GPUTransientMemoryAllocator(size_t memory, String name = String())
                 : m_size(static_cast<int64_t>(memory))
-            {}
-
-            size_t sizeMemory() const { return static_cast<size_t>(m_size); }
-
-            Block allocate(size_t amount, size_t alignment, SeqNum cmdList)
+                , m_name(std::move(name))
             {
-                if (m_metadata.back().allocatedBy == cmdList)
-                {
-                }
-                else
-                {
-                }
+                AllocationBlock entireSpace;
+                entireSpace.block       = Block(0, m_size);
+                entireSpace.freeBlock   = Block(0, m_size);
+                entireSpace.allocatedBy = -1;
+                entireSpace.next        = 0;
+                entireSpace.prev        = 0;
+                m_blocks.emplace_back(entireSpace);
+
+                m_current = 0;
             }
+
+            size_t size() const { return static_cast<size_t>(m_size); }
+
+            AllocationBlock &current() { return m_blocks[m_current]; }
+            AllocationBlock &next(AllocationBlock &b) { return m_blocks[b.next]; }
+            AllocationBlock &prev(AllocationBlock &b) { return m_blocks[b.prev]; }
+            int indexOfBlock(const AllocationBlock &b) const
+            {
+                return static_cast<int>(&b - m_blocks.data());
+            }
+
+            int addBlockAfter(AllocationBlock newBlock, AllocationBlock &predecessor);
+            void removeBlock(AllocationBlock &b);
 
             Block allocate(GPUProgressTracking &progress,
-                           size_t amount, size_t alignment, SeqNum cmdList)
+                           size_t size, size_t alignment, SeqNum cmdList);
+            Block allocate(GPUProgressTracking &progress, AllocationBlock &allocateFrom,
+                           size_t size, size_t alignment, SeqNum cmdList);
+
+            int splitFreeBlock(AllocationBlock &b);
+            bool mergeSubsequentFreeBlocks(GPUProgressTracking &progress, AllocationBlock &start);
+            AllocationBlock *nextFreeBlock(GPUProgressTracking &progress, AllocationBlock &b);
+            AllocationBlock *waitForFreeBlocks(GPUProgressTracking &progress);
+
+            bool blockIsFree(GPUProgressTracking &progress, AllocationBlock &b);
+            static bool blocksAreContiguous(const AllocationBlock &first, const AllocationBlock &second)
             {
-                Block block = allocate(amount, alignment, cmdList);
-
-                while (!block)
-                {
-                    auto oldest = oldestCmdList();
-
-                    XOR_CHECK(oldest >= 0, "Ringbuffer not big enough to hold %llu elements.",
-                              static_cast<llu>(amount));
-                    
-                    if (progress.hasBeenExecuted(oldest))
-                    {
-                        progress.waitUntilCompleted(oldest);
-                        while (oldest >= 0 && progress.hasCompleted(oldest))
-                        {
-                            releaseOldestAllocation();
-                            oldest = oldestCmdList();
-                        }
-                    }
-
-                    block = allocate(amount, alignment, cmdList);
-                }
-
-
-                return block;
-            }
-
-            SeqNum oldestCmdList() const
-            {
-                if (m_metadataRing.empty())
-                    return -1;
-                else
-                    return m_metadata[m_metadataRing.oldest()].allocatedBy;
-            }
-
-            void releaseOldestAllocation()
-            {
-                XOR_ASSERT(!m_metadataRing.empty(), "Tried to release when ringbuffer empty.");
-                XOR_ASSERT(!m_memoryRing.empty(), "Tried to release when ringbuffer empty.");
-                auto allocOffset = m_metadataRing.oldest();
-                auto &alloc = m_metadata[allocOffset];
-                m_memoryRing.release(alloc.block);
-                m_metadataRing.release(allocOffset);
+                return first.block.end == second.block.begin;
             }
         };
 
@@ -164,8 +154,9 @@ namespace xor
             ComPtr<ID3D12DescriptorHeap> m_stagingHeap;
             ComPtr<ID3D12DescriptorHeap> m_heap;
             OffsetPool                   m_freeDescriptors;
-            GPUTransientMemoryAllocator          m_ring;
-            uint                         m_ringStart = 0;
+            //GPUTransientMemoryAllocator  m_transientAllocator;
+            OffsetRing  m_transientAllocator;
+            uint                         m_transientStart = 0;
             D3D12_DESCRIPTOR_HEAP_TYPE   m_type      = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
             // We have two heaps and three types of descriptors:
@@ -194,7 +185,7 @@ namespace xor
                      D3D12_DESCRIPTOR_HEAP_TYPE type,
                      const String &name,
                      uint totalSize,
-                     uint ringSize = 0)
+                     uint transientSize = 0)
             {
                 m_type = type;
 
@@ -222,13 +213,13 @@ namespace xor
                     setName(m_stagingHeap, name + " staging");
                 }
 
-                m_ringStart       = totalSize - ringSize;
-                m_freeDescriptors = OffsetPool(m_ringStart);
-                m_ring            = GPUTransientMemoryAllocator(ringSize,
-                                                        ringSize ? ViewMetadataEntries : 0);
-                m_increment       = device->GetDescriptorHandleIncrementSize(m_type);
-                m_cpuStart        = m_heap->GetCPUDescriptorHandleForHeapStart();
-                m_gpuStart        = m_heap->GetGPUDescriptorHandleForHeapStart();
+                m_transientStart     = totalSize - transientSize;
+                m_freeDescriptors    = OffsetPool(m_transientStart);
+                //m_transientAllocator = GPUTransientMemoryAllocator(transientSize, "ViewHeap");
+                m_transientAllocator = OffsetRing(transientSize);
+                m_increment          = device->GetDescriptorHandleIncrementSize(m_type);
+                m_cpuStart           = m_heap->GetCPUDescriptorHandleForHeapStart();
+                m_gpuStart           = m_heap->GetGPUDescriptorHandleForHeapStart();
                 if (m_stagingHeap)
                     m_stagingStart = m_stagingHeap->GetCPUDescriptorHandleForHeapStart();
             }
@@ -263,7 +254,8 @@ namespace xor
 
             int64_t allocateFromRing(GPUProgressTracking &progress, size_t amount, SeqNum cmdList)
             {
-                return m_ring.allocate(progress, amount, 1, cmdList).begin + m_ringStart;
+                //return m_transientAllocator.allocate(progress, amount, 1, cmdList).begin + m_transientStart;
+                return m_transientAllocator.allocateContiguous(amount) + m_transientStart;
             }
 
             void release(Descriptor descriptor)
@@ -271,7 +263,7 @@ namespace xor
                 XOR_ASSERT(descriptor.type == m_type, "Released descriptor to the wrong heap.");
                 size_t offset = descriptor.cpu.ptr - m_cpuStart.ptr;
                 offset /= m_increment;
-                XOR_ASSERT(offset < m_ringStart, "Released descriptor out of bounds.");
+                XOR_ASSERT(offset < m_transientStart, "Released descriptor out of bounds.");
                 m_freeDescriptors.release(static_cast<int64_t>(offset));
             }
         };
@@ -283,19 +275,18 @@ namespace xor
                           "Unsupported heap type");
 
             static constexpr size_t HeapSize = 32 * 1024 * 1024;
-            static constexpr size_t MetadataEntries = 4096;
             static constexpr bool IsUploadHeap   = HeapType == D3D12_HEAP_TYPE_UPLOAD;
             static constexpr bool IsReadbackHeap = HeapType == D3D12_HEAP_TYPE_READBACK;
 
             MovingPtr<GPUProgressTracking *> progress;
             ComPtr<ID3D12Resource> heap;
-            GPUTransientMemoryAllocator ringbuffer;
+            GPUTransientMemoryAllocator allocator;
             MovingPtr<uint8_t *> mapped;
             bool flushed = false;
 
             CPUVisibleHeap(ID3D12Device *device, GPUProgressTracking &progress)
                 : progress(&progress)
-                , ringbuffer(HeapSize, MetadataEntries)
+                , allocator(HeapSize, String::format("CPUVisibleHeap<%d>", static_cast<int>(HeapType)))
             {
                 D3D12_HEAP_PROPERTIES heapDesc = {};
                 heapDesc.Type                 = HeapType;
@@ -369,7 +360,7 @@ namespace xor
                 if (flushed)
                     return;
 
-                flushBlock(Block(0, static_cast<int64_t>(ringbuffer.sizeMemory())));
+                flushBlock(Block(0, static_cast<int64_t>(allocator.size())));
 
                 flushed = true;
             }
@@ -396,7 +387,9 @@ namespace xor
                               uint alignment = 1)
             {
                 XOR_CHECK(IsUploadHeap, "Cannot upload to non-upload heaps");
-                auto block = ringbuffer.allocate(*progress, bytes.sizeBytes(), alignment, cmdListNumber);
+                auto block = allocator.allocate(*progress, bytes.sizeBytes(), alignment, cmdListNumber);
+                log("uploadBytes", "Uploading %zu bytes to (%lld, %lld) = (%p, %p)\n",
+                    bytes.sizeBytes(), block.begin, block.end, mapped + block.begin, mapped + block.end);
                 memcpy(mapped + block.begin, bytes.data(), bytes.sizeBytes());
                 flushed = false;
                 flushBlock(block);
@@ -408,7 +401,7 @@ namespace xor
                                 uint alignment = 1)
             {
                 XOR_CHECK(IsReadbackHeap, "Cannot readback from non-readback heaps");
-                auto block = ringbuffer.allocate(*progress, bytes, alignment, cmdListNumber);
+                auto block = allocator.allocate(*progress, bytes, alignment, cmdListNumber);
                 flushed = false;
                 return block;
             }

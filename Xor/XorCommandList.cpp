@@ -65,7 +65,7 @@ namespace xor
 
             auto num = number();
 
-            if (device().S().debugPrintEnabled)
+            if (false && device().S().debugPrintEnabled)
             {
                 readbackBuffer(S().debugPrintData.buffer(),
                                [num](Span<const uint8_t> debugPrintData)
@@ -103,15 +103,26 @@ namespace xor
         // Initialize the first dword of the debug print data, which is the write pointer,
         // to point to the second dword.
         uint32_t writePointerInit[1] = { 4 };
-        updateBuffer(S().debugPrintData.buffer(), asBytes(writePointerInit));
+        // updateBuffer(S().debugPrintData.buffer(), asBytes(writePointerInit));
     }
 
     bool CommandList::hasCompleted()
     {
         auto completed = S().timesCompleted->GetCompletedValue();
 
+        do {
+            auto completed = S().timesCompleted->GetCompletedValue();
+            log("FenceDebug", "%p == %zu (%zx)\n", S().timesCompleted.Get(), completed, completed);
+#if 1
+            if (completed > 1000000)
+                DebugBreak();
+#endif
+        } while (completed > 1000000);
+
         XOR_ASSERT(completed <= S().timesStarted,
-                   "Command list completion count out of sync.");
+                   "Command list completion count out of sync. %p = %llu",
+                   S().timesCompleted.Get(),
+                   size_t(S().timesCompleted->GetCompletedValue()));
 
         return completed == S().timesStarted;
     }

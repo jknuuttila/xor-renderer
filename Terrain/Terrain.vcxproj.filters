@@ -22,4 +22,7 @@
     <ClInclude Include="ResolveTerrainAO.sig.h" />
     <ClInclude Include="AccumulateTerrainAO.sig.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
 </Project>

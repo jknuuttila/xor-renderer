@@ -54,4 +54,7 @@
   <ItemGroup>
     <Text Include="ShaderDebug.h.hlsl" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
 </Project>

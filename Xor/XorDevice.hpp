@@ -136,6 +136,7 @@ namespace xor
         {
             Default,
             Enabled,
+            GPUBasedValidation,
             Disabled,
         };
 

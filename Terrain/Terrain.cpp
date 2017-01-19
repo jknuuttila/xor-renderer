@@ -258,10 +258,18 @@ struct HeightmapRenderer
     void computeAmbientOcclusion(CommandList &cmd,
                                  SwapChain &sc,
                                  std::function<void()> wait,
-                                 uint samples = 1000,
+                                 uint samples = 0,
                                  uint aoMapResolution = 2048,
                                  uint depthBufferResolution = 4096)
     {
+        if (samples == 0)
+        {
+#if defined(_DEBUG)
+            samples = 10;
+#else
+            samples = 1000;
+#endif
+        }
         auto e = cmd.profilingEventPrint("computeAmbientOcclusion");
 
         auto renderAO = device.createGraphicsPipeline(
@@ -1435,6 +1443,9 @@ class Terrain : public Window
 public:
     Terrain()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
+#if 0
+        , xor(Xor::DebugLayer::GPUBasedValidation)
+#endif
     {
         xor.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
 

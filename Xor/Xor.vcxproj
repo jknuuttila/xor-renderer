@@ -123,6 +123,9 @@
   <ItemGroup>
     <Natvis Include="Xor.natvis" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{AC764C74-7D44-43BC-9CAB-B470883B5549}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>

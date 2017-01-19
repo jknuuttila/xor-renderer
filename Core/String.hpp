@@ -345,7 +345,7 @@ namespace xor
     public:
         String() = default;
         String(const char *str)
-            : m_str(str)
+            : m_str(str ? str : "")
         {
             updateView();
         }
