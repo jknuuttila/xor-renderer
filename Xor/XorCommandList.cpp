@@ -110,6 +110,7 @@ namespace xor
     {
         auto completed = S().timesCompleted->GetCompletedValue();
 
+#if 0
         do {
             auto completed = S().timesCompleted->GetCompletedValue();
             log("FenceDebug", "%p == %zu (%zx)\n", S().timesCompleted.Get(), completed, completed);
@@ -119,6 +120,19 @@ namespace xor
 #endif
         } while (completed > 1000000);
 
+#else
+#endif
+#if 1
+        constexpr uint64_t BuggyFence = static_cast<uint64_t>(-1LL);
+        if (completed == BuggyFence)
+        {
+            log("CommandList",
+                "WARNING: Fence returned 0xffffffffffffffff, which is likely a bug somewhere. Treating as completed.\n");
+            // Fixup the fence.
+            S().timesCompleted->Signal(S().timesStarted);
+            return true;
+        }
+#endif
         XOR_ASSERT(completed <= S().timesStarted,
                    "Command list completion count out of sync. %p = %llu",
                    S().timesCompleted.Get(),

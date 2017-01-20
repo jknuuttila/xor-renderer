@@ -348,7 +348,10 @@ namespace xor
                                                     SeqNum cmdList)
         {
             // Check if we are eligible to allocate from it.
-            if (blockIsFree(progress, allocateFrom) || allocateFrom.allocatedBy == cmdList)
+            if (
+                //allocateFrom.isFree()
+                blockIsFree(progress, allocateFrom)
+                || allocateFrom.allocatedBy == cmdList)
             {
                 // We are. Check if the block can hold the alloc.
                 int64_t begin = allocateFrom.freeBlock.fitAtBegin(size, alignment);
@@ -375,12 +378,21 @@ namespace xor
             // a free block and retry.
             if (!allocateFrom.isFree())
             {
-                XOR_GPU_TRANSIENT_VERBOSE("    Current block belongs to another command list or is too small. Splitting leftovers.\n");
-                int freeBlock = splitFreeBlock(allocateFrom);
-                // This recursive call is guaranteed to enter the first branch,
-                // avoiding infinite recursion.
-                return allocate(progress, m_blocks[freeBlock],
-                                size, alignment, cmdList);
+                if (allocateFrom.freeBlock.empty())
+                {
+                    XOR_GPU_TRANSIENT_VERBOSE("    Current block has no free space left, skipping to next block.");
+                    return allocate(progress, next(allocateFrom),
+                                    size, alignment, cmdList);
+                }
+                else
+                {
+                    XOR_GPU_TRANSIENT_VERBOSE("    Current block belongs to another command list or is too small. Splitting leftovers.\n");
+                    int freeBlock = splitFreeBlock(allocateFrom);
+                    // This recursive call is guaranteed to enter the first branch,
+                    // avoiding infinite recursion.
+                    return allocate(progress, m_blocks[freeBlock],
+                                    size, alignment, cmdList);
+                }
             }
 
             // If we got here, the current block is free, but too small. 
@@ -460,16 +472,25 @@ namespace xor
 
                 // If we come full circle, we are done.
                 if (b->block.begin == start.block.begin)
+                {
+                    XOR_GPU_TRANSIENT_VERBOSE("        Reached starting block again.\n");
                     return merged;
+                }
 
                 // If the blocks are not contiguous, they cannot be merged.
                 // This happens when the allocator wraps around its space.
                 if (!blocksAreContiguous(start, *b))
+                {
+                    XOR_GPU_TRANSIENT_VERBOSE("        Blocks are not contiguous, cannot continue merge.\n");
                     return merged;
+                }
 
                 // If we encounter a block that is still in use, we are also done.
                 if (!blockIsFree(progress, *b))
+                {
+                    XOR_GPU_TRANSIENT_VERBOSE("        Block is not free, cannot merge.\n");
                     return merged;
+                }
 
                 // If we get here, the block is free.
                 XOR_GPU_TRANSIENT_VERBOSE("        Merging (%lld, %lld, %zu, %lld) and (%lld, %lld, %zu, %lld)\n",
