@@ -484,12 +484,13 @@ namespace xor
         return false;
     }
 
-    int64_t Block::fitAtBegin(size_t size, size_t alignment) const
+    Block Block::fitAtBegin(size_t size, size_t alignment) const
     {
+        int64_t iSize = static_cast<int64_t>(size);
         int64_t alignedBegin = roundUpToMultiple(begin, static_cast<int64_t>(alignment));
-        if (alignedBegin + static_cast<int64_t>(size) > end)
-            return -1;
+        if (alignedBegin + iSize > end)
+            return Block();
         else
-            return alignedBegin;
+            return Block(alignedBegin, alignedBegin + iSize);
     }
 }

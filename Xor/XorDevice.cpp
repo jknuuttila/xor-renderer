@@ -10,7 +10,7 @@ namespace xor
 
     // Largest amount of data that we push to the upload heap at once during initial
     // data uploading.
-    static const size_t InitialDataLimit = UploadHeap::HeapSize / 4;
+    static const size_t InitialDataLimit = UploadHeap::ChunkSize * 15 / 16;
     static const bool WaitForLargeInitialData = true;
 
     namespace backend
@@ -433,13 +433,15 @@ namespace xor
         return rs;
     }
 
-    HeapBlock Device::uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment)
+    HeapBlock Device::uploadBytes(Span<const uint8_t> bytes,
+                                  SeqNum cmdListNumber, GPUTransientChunk &chunk,
+                                  uint alignment)
     {
         HeapBlock block;
         block.heap = S().uploadHeap->heap.Get();
         block.block = S().uploadHeap->uploadBytes(
             bytes,
-            cmdListNumber,
+            cmdListNumber, chunk,
             alignment);
         return block;
     }

@@ -73,80 +73,25 @@ namespace xor
         class GPUTransientMemoryAllocator
         {
         private:
-            int64_t m_size = 0;
+            int64_t m_size      = 0;
+            int64_t m_chunkSize = 0;
 
-            struct AllocationBlock
-            {
-                Block block;
-                Block freeBlock;
-                SeqNum allocatedBy = -1;
-                int next = -1;
-                int prev = -1;
-
-                AllocationBlock() = default;
-                AllocationBlock(Block freeBlock)
-                    : block(freeBlock)
-                    , freeBlock(freeBlock)
-                {}
-
-                bool isFree() const { return allocatedBy < 0; }
-                void release()
-                {
-                    allocatedBy = -1;
-                    freeBlock = block;
-                }
-            };
-
-            // Circular linked list that spans the entire space.
-            std::vector<AllocationBlock> m_blocks;
-            int m_current = 0;
+            using ChunkNumber = int64_t;
+            std::vector<ChunkNumber>                    m_freeChunks;
+            std::vector<std::pair<SeqNum, ChunkNumber>> m_usedChunks;
 
             String m_name;
         public:
             GPUTransientMemoryAllocator() = default;
-            GPUTransientMemoryAllocator(size_t memory, String name = String())
-                : m_size(static_cast<int64_t>(memory))
-                , m_name(std::move(name))
-            {
-                AllocationBlock entireSpace;
-                entireSpace.block       = Block(0, m_size);
-                entireSpace.freeBlock   = Block(0, m_size);
-                entireSpace.allocatedBy = -1;
-                entireSpace.next        = 0;
-                entireSpace.prev        = 0;
-                m_blocks.emplace_back(entireSpace);
-
-                m_current = 0;
-            }
+            GPUTransientMemoryAllocator(size_t size, size_t chunkSize,
+                                        String name = String());
 
             size_t size() const { return static_cast<size_t>(m_size); }
 
-            AllocationBlock &current() { return m_blocks[m_current]; }
-            AllocationBlock &next(AllocationBlock &b) { return m_blocks[b.next]; }
-            AllocationBlock &prev(AllocationBlock &b) { return m_blocks[b.prev]; }
-            int indexOfBlock(const AllocationBlock &b) const
-            {
-                return static_cast<int>(&b - m_blocks.data());
-            }
-
-            int addBlockAfter(AllocationBlock newBlock, AllocationBlock &predecessor);
-            void removeBlock(AllocationBlock &b);
-
-            Block allocate(GPUProgressTracking &progress,
-                           size_t size, size_t alignment, SeqNum cmdList);
-            Block allocate(GPUProgressTracking &progress, AllocationBlock &allocateFrom,
+            Block allocate(GPUProgressTracking &progress, GPUTransientChunk &chunk,
                            size_t size, size_t alignment, SeqNum cmdList);
 
-            int splitFreeBlock(AllocationBlock &b);
-            bool mergeSubsequentFreeBlocks(GPUProgressTracking &progress, AllocationBlock &start);
-            AllocationBlock *nextFreeBlock(GPUProgressTracking &progress, AllocationBlock &b);
-            AllocationBlock *waitForFreeBlocks(GPUProgressTracking &progress);
-
-            bool blockIsFree(GPUProgressTracking &progress, AllocationBlock &b);
-            static bool blocksAreContiguous(const AllocationBlock &first, const AllocationBlock &second)
-            {
-                return first.block.end == second.block.begin;
-            }
+            ChunkNumber findFreeChunk(GPUProgressTracking &progress);
         };
 
         class ViewHeap
@@ -275,6 +220,7 @@ namespace xor
                           "Unsupported heap type");
 
             static constexpr size_t HeapSize = 32 * 1024 * 1024;
+            static constexpr size_t ChunkSize = 2 * 1024 * 1024;
             static constexpr bool IsUploadHeap   = HeapType == D3D12_HEAP_TYPE_UPLOAD;
             static constexpr bool IsReadbackHeap = HeapType == D3D12_HEAP_TYPE_READBACK;
 
@@ -286,7 +232,7 @@ namespace xor
 
             CPUVisibleHeap(ID3D12Device *device, GPUProgressTracking &progress)
                 : progress(&progress)
-                , allocator(HeapSize, String::format("CPUVisibleHeap<%d>", static_cast<int>(HeapType)))
+                , allocator(HeapSize, ChunkSize, String::format("CPUVisibleHeap<%d>", static_cast<int>(HeapType)))
             {
                 D3D12_HEAP_PROPERTIES heapDesc = {};
                 heapDesc.Type                 = HeapType;
@@ -383,11 +329,13 @@ namespace xor
             }
 
             Block uploadBytes(Span<const uint8_t> bytes,
-                              SeqNum cmdListNumber,
+                              SeqNum cmdListNumber, GPUTransientChunk &chunk,
                               uint alignment = 1)
             {
                 XOR_CHECK(IsUploadHeap, "Cannot upload to non-upload heaps");
-                auto block = allocator.allocate(*progress, bytes.sizeBytes(), alignment, cmdListNumber);
+                auto block = allocator.allocate(*progress, chunk,
+                                                bytes.sizeBytes(), alignment,
+                                                cmdListNumber);
                 log("uploadBytes", "Uploading %zu bytes to (%lld, %lld) = (%p, %p)\n",
                     bytes.sizeBytes(), block.begin, block.end, mapped + block.begin, mapped + block.end);
                 memcpy(mapped + block.begin, bytes.data(), bytes.sizeBytes());
@@ -396,12 +344,14 @@ namespace xor
                 return block;
             }
 
-            Block readbackBytes(SeqNum cmdListNumber,
+            Block readbackBytes(SeqNum cmdListNumber, GPUTransientChunk &chunk,
                                 size_t bytes,
                                 uint alignment = 1)
             {
                 XOR_CHECK(IsReadbackHeap, "Cannot readback from non-readback heaps");
-                auto block = allocator.allocate(*progress, bytes, alignment, cmdListNumber);
+                auto block = allocator.allocate(*progress, chunk,
+                                                bytes, alignment,
+                                                cmdListNumber);
                 flushed = false;
                 return block;
             }
@@ -553,7 +503,6 @@ namespace xor
 
             ID3D12Device *operator->() { return device.Get(); }
         };
-
     }
 }
 

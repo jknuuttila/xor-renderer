@@ -112,11 +112,11 @@ namespace xor
         bool empty() const { return size() == 0; }
         size_t size() const { return static_cast<size_t>(end - begin); }
 
-        int64_t fitAtBegin(size_t size, size_t alignment = 1) const;
+        Block fitAtBegin(size_t size, size_t alignment = 1) const;
 
         bool canFit(size_t size, size_t alignment = 1) const
         {
-            return fitAtBegin(size, alignment) >= 0;
+            return !!fitAtBegin(size, alignment);
         }
     };
 

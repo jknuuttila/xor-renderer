@@ -51,6 +51,8 @@ namespace xor
             Handle              completedEvent;
 
             SeqNum seqNum = 0;
+            GPUTransientChunk uploadChunk;
+            GPUTransientChunk readbackChunk;
             bool closed = false;
 
             Texture activeRenderTarget;

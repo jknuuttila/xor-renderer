@@ -24,6 +24,7 @@ namespace xor
 	namespace backend
 	{
 		struct ProfilingEventData;
+        class GPUTransientChunk;
 	}
 
     class Device : private backend::SharedState<backend::DeviceState>
@@ -101,7 +102,9 @@ namespace xor
 
         backend::RootSignature collectRootSignature(const D3D12_SHADER_BYTECODE &shader);
 
-        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, SeqNum cmdListNumber, uint alignment);
+        backend::HeapBlock uploadBytes(Span<const uint8_t> bytes,
+                                       SeqNum cmdListNumber, backend::GPUTransientChunk &chunk,
+                                       uint alignment);
 
 		void processProfilingEvents();
 		const backend::ProfilingEventData *processProfilingEvent(const backend::ProfilingEventData *data,

@@ -93,6 +93,8 @@ namespace xor
 
         ++S().timesStarted;
         S().seqNum = progress.startNewCommandList();
+        S().uploadChunk.reset();
+        S().readbackChunk.reset();
 
         S().debugConstants.cursorPosition    = device().S().debugMousePosition;
         S().debugConstants.eventNumber       = 0;
@@ -103,7 +105,7 @@ namespace xor
         // Initialize the first dword of the debug print data, which is the write pointer,
         // to point to the second dword.
         uint32_t writePointerInit[1] = { 4 };
-        // updateBuffer(S().debugPrintData.buffer(), asBytes(writePointerInit));
+        updateBuffer(S().debugPrintData.buffer(), asBytes(writePointerInit));
     }
 
     bool CommandList::hasCompleted()
@@ -285,7 +287,7 @@ namespace xor
 
     backend::HeapBlock CommandList::uploadBytes(Span<const uint8_t> bytes, uint alignment)
     {
-        return device().uploadBytes(bytes, number(), alignment);
+        return device().uploadBytes(bytes, number(), S().uploadChunk, alignment);
     }
 
     CommandList::~CommandList()
@@ -681,7 +683,7 @@ namespace xor
 
         auto &readback = *device().S().readbackHeap;
 
-        auto block = readback.readbackBytes(number(), bytes);
+        auto block = readback.readbackBytes(number(), S().readbackChunk, bytes);
 
         transition(buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
 

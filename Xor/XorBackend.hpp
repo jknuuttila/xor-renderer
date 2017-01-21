@@ -124,6 +124,16 @@ namespace xor
             Block block;
         };
 
+        class GPUTransientChunk
+        {
+            friend class GPUTransientMemoryAllocator;
+            Block       m_free;
+        public:
+            GPUTransientChunk() = default;
+
+            void reset() { *this = GPUTransientChunk(); }
+        };
+
         class DeviceChild
         {
             std::weak_ptr<DeviceState> m_parentDevice;
