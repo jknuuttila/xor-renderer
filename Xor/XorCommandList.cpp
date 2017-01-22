@@ -65,7 +65,7 @@ namespace xor
 
             auto num = number();
 
-            if (false && device().S().debugPrintEnabled)
+            if (device().S().debugPrintEnabled)
             {
                 readbackBuffer(S().debugPrintData.buffer(),
                                [num](Span<const uint8_t> debugPrintData)
@@ -131,7 +131,8 @@ namespace xor
             log("CommandList",
                 "WARNING: Fence returned 0xffffffffffffffff, which is likely a bug somewhere. Treating as completed.\n");
             // Fixup the fence.
-            S().timesCompleted->Signal(S().timesStarted);
+            //S().timesCompleted->Signal(S().timesStarted);
+            XOR_CHECK_HR(S().allocator->Reset());
             return true;
         }
 #endif
@@ -150,7 +151,8 @@ namespace xor
             XOR_CHECK_HR(S().timesCompleted->SetEventOnCompletion(
                 S().timesStarted,
                 S().completedEvent.get()));
-            WaitForSingleObject(S().completedEvent.get(), timeout);
+            DWORD result = WaitForSingleObject(S().completedEvent.get(), timeout);
+            XOR_CHECK(result == WAIT_OBJECT_0, "halp");
         }
     }
 
@@ -231,7 +233,7 @@ namespace xor
             auto dev = S().device();
             auto &heap = dev.S().viewHeap();
 
-            auto start = heap.allocateFromRing(dev.S().progress, totalDescriptors, number());
+            auto start = heap.allocateFromTransient(dev.S().progress, totalDescriptors, number());
 
             auto &srcs = S().viewDescriptorSrcs;
 
@@ -603,6 +605,7 @@ namespace xor
         cbvs[slot].SizeInBytes    = roundUpToMultiple<uint>(
             static_cast<uint>(bytes.sizeBytes()),
             D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+        // log("setConstantBuffer", "CBV[%u] = %p, %u\n", slot, cbvs[slot].BufferLocation, cbvs[slot].SizeInBytes);
     }
 
     void CommandList::setTopology(D3D_PRIMITIVE_TOPOLOGY topology)
@@ -819,7 +822,6 @@ namespace xor
     void CommandList::handleShaderDebugPrints(SeqNum cmdListNumber,
                                               Span<const uint8_t> debugPrintData)
     {
-        return;
         auto data = reinterpretSpan<const uint32_t>(debugPrintData);
 
         // The first dword is the write pointer, which tells us how much valid data

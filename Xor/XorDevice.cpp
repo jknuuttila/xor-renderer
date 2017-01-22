@@ -976,53 +976,14 @@ namespace xor
     {
         cmd.close();
 
-        log("Device", "Executing command list %lld. %p -> %zu\n",
-            lld(cmd.number()),
-            cmd.S().timesCompleted.Get(),
-            size_t(cmd.S().timesStarted));
-
         ID3D12CommandList *cmds[] = { cmd.S().cmd.Get() };
         S().graphicsQueue->ExecuteCommandLists(1, cmds);
         S().graphicsQueue->Signal(cmd.S().timesCompleted.Get(), cmd.S().timesStarted);
+
         XOR_ASSERT(cmd.S().timesCompleted->GetCompletedValue() <= cmd.S().timesStarted,
                    "Command list completion count out of sync. %p = %llu",
                    cmd.S().timesCompleted.Get(),
                    size_t(cmd.S().timesCompleted->GetCompletedValue()));
-
-#if 0
-        XOR_CHECK_HR(cmd.S().timesCompleted->SetEventOnCompletion(
-            cmd.S().timesStarted,
-            cmd.S().completedEvent.get()));
-        XOR_CHECK(WaitForSingleObject(cmd.S().completedEvent.get(), 10000)
-                  == WAIT_OBJECT_0, "halp");
-#endif
-
-        {
-            auto completed = cmd.S().timesCompleted->GetCompletedValue();
-            if (completed == 62)
-            {
-                // 00007FF75FC41BA0  mov         rcx,qword ptr [rbp+138h]  
-                // 00007FFA9EC80B60  mov         rcx,qword ptr [rcx+28h]  
-                // 00007FFAB9B87710  mov         rax,qword ptr [rcx+0B0h]  
-                auto p1 = reinterpret_cast<uint8_t *>(cmd.S().timesCompleted.Get());
-                auto p2 = p1 + 0x28;
-                auto p3 = *reinterpret_cast<uint8_t **>(p2);
-                auto p4 = p3 + 0xb0;
-                auto p5 = reinterpret_cast<uint8_t *>(p4);
-                auto p6 = reinterpret_cast<uint64_t **>(p5);
-                auto val = *p6;
-                print("abs: %p, diff: %lld\n", p6, p5 - p1);
-                completed = cmd.S().timesCompleted->GetCompletedValue();
-                val = *p6;
-            }
-            log("FenceDebug", "%p == %zu (%zx)\n", cmd.S().timesCompleted.Get(), completed, completed);
-#if 0
-            if (completed > 1000000)
-                DebugBreak();
-#endif
-        }
-
-        // cmd.waitUntilCompleted();
 
         S().progress.executeCommandList(std::move(cmd));
     }

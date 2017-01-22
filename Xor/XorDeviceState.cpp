@@ -282,7 +282,7 @@ namespace xor
 			top = m.parent;
 		}
 
-#define XOR_GPU_TRANSIENT_VERBOSE_LOGGING
+// #define XOR_GPU_TRANSIENT_VERBOSE_LOGGING
 
 #if defined(XOR_GPU_TRANSIENT_VERBOSE_LOGGING)
 #define XOR_GPU_TRANSIENT_VERBOSE(fmt, ...) log("GPUTransientMemoryAllocator", "\"%s\": " fmt, m_name.cStr(), ## __VA_ARGS__)
@@ -306,21 +306,26 @@ namespace xor
                                                     size_t size, size_t alignment,
                                                     SeqNum cmdList)
         {
+            size = roundUpToMultiple(size, alignment);
+
             auto &free = chunk.m_free;
             auto b = free.fitAtBegin(size, alignment);
+            XOR_GPU_TRANSIENT_VERBOSE("Trying to allocate %zu for list %lld in existing chunk (%lld, %lld).\n",
+                                      size, cmdList,
+                                      free.begin, free.end);
 
             // If the allocation fits in the previous active chunk, just use that.
             if (b)
             {
                 free.begin = b.end;
-                XOR_GPU_TRANSIENT_VERBOSE("Allocated in existing chunk. Chunk is now (%lld, %lld).\n",
+                XOR_GPU_TRANSIENT_VERBOSE("    Allocation successful. Chunk is now (%lld, %lld).\n",
                                           free.begin, free.end);
                 return b;
             }
             // If not, get a new chunk.
             else
             {
-                XOR_GPU_TRANSIENT_VERBOSE("Existing chunk cannot hold allocation, getting new chunk.\n");
+                XOR_GPU_TRANSIENT_VERBOSE("    Existing chunk cannot hold allocation, getting new chunk.\n");
 
                 XOR_CHECK(size <= static_cast<size_t>(m_chunkSize),
                           "Allocation does not fit in one chunk");
@@ -335,6 +340,7 @@ namespace xor
 
                 auto b = free.fitAtBegin(size, alignment);
                 XOR_ASSERT(b.valid(), "Allocation failed with an empty chunk");
+                free.begin = b.end;
                 return b;
             }
         }
@@ -346,14 +352,18 @@ namespace xor
             {
                 ChunkNumber c = m_freeChunks.back();
                 m_freeChunks.pop_back();
+                XOR_GPU_TRANSIENT_VERBOSE("Using free chunk %lld.\n", c);
                 return c;
             }
+
+            XOR_GPU_TRANSIENT_VERBOSE("No free chunks, checking for released chunks.\n");
 
             // If there is not, try to reclaim all chunks that have been released already.
             for (auto &c : m_usedChunks)
             {
                 if (progress.hasCompleted(c.first))
                 {
+                    XOR_GPU_TRANSIENT_VERBOSE("    Chunk %lld, belonging to list %lld, was released, freeing.\n", c.second, c.first);
                     m_freeChunks.emplace_back(c.second);
                     c.first = -1;
                 }
@@ -374,12 +384,14 @@ namespace xor
 
             // No free chunks in the list. Wait for the first (presumably the oldest)
             // chunk that belongs to a list that has been executed.
+            XOR_GPU_TRANSIENT_VERBOSE("No released chunks, waiting for a chunk.\n");
             for (size_t i = 0; i < m_usedChunks.size(); ++i)
             {
                 auto &c = m_usedChunks[i];
 
                 if (progress.hasBeenExecuted(c.first))
                 {
+                    XOR_GPU_TRANSIENT_VERBOSE("    Waiting for chunk %lld, belonging to list %lld.\n", c.second, c.first);
                     progress.waitUntilCompleted(c.first);
                     ChunkNumber newlyReleased = c.second;
                     m_usedChunks.erase(m_usedChunks.begin() + i);

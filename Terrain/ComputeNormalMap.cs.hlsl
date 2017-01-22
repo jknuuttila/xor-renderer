@@ -12,6 +12,13 @@ void main(uint3 tid : SV_DispatchThreadID)
 {
     uint2 pos = tid.xy;
 
+#if 0
+    uint2 sz = 256;
+    
+    if (pos.x == 0 && pos.y == 0)
+        debugPrint3(size, axisMultiplier, heightMultiplier);
+#endif
+
     if (any(pos >= size))
         return;
 

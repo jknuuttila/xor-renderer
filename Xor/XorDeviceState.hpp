@@ -99,10 +99,10 @@ namespace xor
             ComPtr<ID3D12DescriptorHeap> m_stagingHeap;
             ComPtr<ID3D12DescriptorHeap> m_heap;
             OffsetPool                   m_freeDescriptors;
-            //GPUTransientMemoryAllocator  m_transientAllocator;
-            OffsetRing  m_transientAllocator;
+            GPUTransientMemoryAllocator  m_transientAllocator;
+            GPUTransientChunk            m_transientChunk;
             uint                         m_transientStart = 0;
-            D3D12_DESCRIPTOR_HEAP_TYPE   m_type      = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+            D3D12_DESCRIPTOR_HEAP_TYPE   m_type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
             // We have two heaps and three types of descriptors:
             // - Actual descriptor heap used by shaders
@@ -122,7 +122,7 @@ namespace xor
 
             uint                         m_increment = 0;
 
-            static const size_t ViewMetadataEntries = 4096;
+            static constexpr uint NumChunks = 64;
         public:
 
             ViewHeap() = default;
@@ -160,8 +160,10 @@ namespace xor
 
                 m_transientStart     = totalSize - transientSize;
                 m_freeDescriptors    = OffsetPool(m_transientStart);
-                //m_transientAllocator = GPUTransientMemoryAllocator(transientSize, "ViewHeap");
-                m_transientAllocator = OffsetRing(transientSize);
+
+                if (transientSize)
+                    m_transientAllocator = GPUTransientMemoryAllocator(transientSize, transientSize / NumChunks, "ViewHeap");
+
                 m_increment          = device->GetDescriptorHandleIncrementSize(m_type);
                 m_cpuStart           = m_heap->GetCPUDescriptorHandleForHeapStart();
                 m_gpuStart           = m_heap->GetGPUDescriptorHandleForHeapStart();
@@ -197,10 +199,12 @@ namespace xor
                 return descriptorAtOffset(offset);
             }
 
-            int64_t allocateFromRing(GPUProgressTracking &progress, size_t amount, SeqNum cmdList)
+            int64_t allocateFromTransient(GPUProgressTracking &progress, size_t amount, SeqNum cmdList)
             {
-                //return m_transientAllocator.allocate(progress, amount, 1, cmdList).begin + m_transientStart;
-                return m_transientAllocator.allocateContiguous(amount) + m_transientStart;
+                XOR_ASSERT(m_transientAllocator.size() > 0, "This ViewHeap has no transient portion.");
+                return m_transientAllocator.allocate(progress, m_transientChunk,
+                                                     amount, 1,
+                                                     cmdList).begin + m_transientStart;
             }
 
             void release(Descriptor descriptor)
@@ -303,8 +307,10 @@ namespace xor
 
             void flushHeap()
             {
+#if 0
                 if (flushed)
                     return;
+#endif
 
                 flushBlock(Block(0, static_cast<int64_t>(allocator.size())));
 
@@ -318,7 +324,8 @@ namespace xor
                     D3D12_RANGE flushRange;
                     flushRange.Begin = static_cast<size_t>(block.begin);
                     flushRange.End = static_cast<size_t>(block.end);
-                    heap->Unmap(0, &flushRange);
+                    //heap->Unmap(0, &flushRange);
+                    heap->Unmap(0, nullptr);
                 }
                 else
                 {
@@ -336,9 +343,12 @@ namespace xor
                 auto block = allocator.allocate(*progress, chunk,
                                                 bytes.sizeBytes(), alignment,
                                                 cmdListNumber);
+#if 0
                 log("uploadBytes", "Uploading %zu bytes to (%lld, %lld) = (%p, %p)\n",
                     bytes.sizeBytes(), block.begin, block.end, mapped + block.begin, mapped + block.end);
+#endif
                 memcpy(mapped + block.begin, bytes.data(), bytes.sizeBytes());
+                // memset(mapped + block.end,   0,            block.size() - bytes.sizeBytes());
                 flushed = false;
                 flushBlock(block);
                 return block;

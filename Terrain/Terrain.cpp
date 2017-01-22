@@ -731,6 +731,7 @@ struct HeightmapRenderer
 
     ErrorMetrics calculateMeshError()
     {
+        return ErrorMetrics {};
         Timer timer;
 
         RWImageData error(area.size(), DXGI_FORMAT_R32_FLOAT);
@@ -1661,13 +1662,6 @@ public:
             ImGui::SliderFloat("Error magnitude", &heightmapRenderer.maxErrorCoeff, 0, .25f);
 
             ImGui::Separator();
-
-            static bool first = true;
-            if (first)
-            {
-                updateTerrain();
-                first = false;
-            }
 
             if (ImGui::Button("Update"))
                 updateTerrain();
