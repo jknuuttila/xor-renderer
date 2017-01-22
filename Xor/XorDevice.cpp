@@ -472,24 +472,27 @@ namespace xor
 			history.values[history.next] = ms;
 			++history.next;
 
-			double avgMs = 0;
+			double minMs = 1e12;
+			double maxMs = 0;
 			for (double v : history.values)
-				avgMs += v;
-			avgMs /= historyLength;
+            {
+                minMs = std::min(minMs, v);
+                maxMs = std::max(maxMs, v);
+            }
 
             if (data->print || history.printToConsole)
             {
-                log("Profiling", "%s (%lld): %.4f ms\n",
-                    data->name, lld(now()), avgMs);
+                log("Profiling", "%s (%lld): Min %.4f ms, Max %.4f ms\n",
+                    data->name, lld(now()), minMs, maxMs);
             }
 
+            // FIXME: This 'if' causes profilingEventPrint() to not print anything for non-toplevel stuff
 			if (ImGui::TreeNode(history.values.data(),
-								"%s: %.2f ms",
+                                "%s: Min %.3f ms, Max %.3f ms",
 								data->name,
-								avgMs))
+								minMs, maxMs))
 			{
                 ImGui::Checkbox("Print to console", &history.printToConsole);
-				ImGui::PlotLines(data->name, history.values.data(), static_cast<int>(history.values.size()));
 				data = processProfilingEvent(data + 1, end, ticksToMs, indent + 1);
 				ImGui::TreePop();
 			}
@@ -1069,6 +1072,14 @@ namespace xor
         retval.wantsMouse    = io.WantCaptureMouse;
         retval.wantsText     = io.WantTextInput;
         return retval;
+    }
+
+    size_t Device::debugFeedback(Span<uint8_t> dst)
+    {
+        auto &feedback = S().debugFeedbackValue;
+        size_t bytes = std::min(dst.sizeBytes(), sizeof(feedback));
+        memcpy(dst.data(), &feedback, bytes);
+        return bytes;
     }
 
     SeqNum Device::now()

@@ -34,11 +34,6 @@ float4 main(PSInput i) : SV_Target
 
     float shadow     = shadowPos.z >= shadowZ ? 1 : 0;
 
-    if (debugIsCursorPosition(i.svPos.xy))
-    {
-        debugPrint1(float3(shadowPos.z, shadowZ, shadowPos.z - shadowZ));
-    }
-
     float3 L = sunDirection.xyz;
     // float3 color = saturate(dot(N, L)) / Pi * sunColor.rgb * albedo;
     float3 color = saturate(dot(N, L)) / Pi * sunColor.rgb;

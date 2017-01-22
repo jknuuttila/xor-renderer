@@ -1429,8 +1429,9 @@ class Terrain : public Window
         Angle sunElevation = Angle::degrees(45.f);
         float sunIntensity = 1.f;
         float3 ambient     = float3(.025f, .025f, .05f);
-        int shadowBiasExp  = 0;
-        float shadowSSBias = 0;
+        int shadowBiasExp  = -20;
+        float shadowSSBias = -2;
+        int shadowDimExp   = 10;
     } lighting;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
@@ -1521,10 +1522,7 @@ public:
             Timer aoTimer;
             auto cmd = device.graphicsCommandList();
             auto number = cmd.number();
-            {
-            auto e = cmd.profilingEventPrint("Lols?");
             heightmapRenderer.computeAmbientOcclusion(cmd, swapChain, waitForKey);
-            }
             device.execute(cmd);
             device.waitUntilCompleted(number);
 
@@ -1546,6 +1544,7 @@ public:
             props.shadowSSBias  = lighting.shadowSSBias;
 
             heightmapRenderer.setLightingProperties(&props);
+            heightmapRenderer.setShadowMapDim(1 << lighting.shadowDimExp);
         }
         else
         {
@@ -1633,6 +1632,8 @@ public:
             if (ImGui::SliderInt("Shadow depth bias exponent", &lighting.shadowBiasExp, -64, 64))
                 updateLighting();
             if (ImGui::SliderFloat("Shadow slope scaled depth bias", &lighting.shadowSSBias, -10, 10))
+                updateLighting();
+            if (ImGui::SliderInt("Shadow map size exponent", &lighting.shadowDimExp, 8, 12))
                 updateLighting();
 
             ImGui::Separator();

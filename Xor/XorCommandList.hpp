@@ -58,7 +58,7 @@ namespace xor
             Texture activeRenderTarget;
 
             XorShaderDebugConstants debugConstants;
-            BufferUAV debugPrintData;
+            BufferUAV shaderDebugData;
 
             std::vector<D3D12_CONSTANT_BUFFER_VIEW_DESC> cbvs;
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> srvs;
@@ -196,7 +196,8 @@ namespace xor
         backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment = DefaultAlignment);
 
         ProfilingEvent profilingEventInternal(const char * name, bool print);
-        static void handleShaderDebugPrints(SeqNum cmdListNumber, Span<const uint8_t> debugPrintData);
+        static void handleShaderDebug(SeqNum cmdListNumber, Span<const uint8_t> shaderDebugData,
+                                      uint4 *shaderDebugFeedback = nullptr);
     };
 
     template<typename T>

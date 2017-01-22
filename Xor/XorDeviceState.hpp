@@ -307,13 +307,10 @@ namespace xor
 
             void flushHeap()
             {
-#if 0
                 if (flushed)
                     return;
-#endif
 
                 flushBlock(Block(0, static_cast<int64_t>(allocator.size())));
-
                 flushed = true;
             }
 
@@ -324,8 +321,7 @@ namespace xor
                     D3D12_RANGE flushRange;
                     flushRange.Begin = static_cast<size_t>(block.begin);
                     flushRange.End = static_cast<size_t>(block.end);
-                    //heap->Unmap(0, &flushRange);
-                    heap->Unmap(0, nullptr);
+                    heap->Unmap(0, &flushRange);
                 }
                 else
                 {
@@ -343,12 +339,7 @@ namespace xor
                 auto block = allocator.allocate(*progress, chunk,
                                                 bytes.sizeBytes(), alignment,
                                                 cmdListNumber);
-#if 0
-                log("uploadBytes", "Uploading %zu bytes to (%lld, %lld) = (%p, %p)\n",
-                    bytes.sizeBytes(), block.begin, block.end, mapped + block.begin, mapped + block.end);
-#endif
                 memcpy(mapped + block.begin, bytes.data(), bytes.sizeBytes());
-                // memset(mapped + block.end,   0,            block.size() - bytes.sizeBytes());
                 flushed = false;
                 flushBlock(block);
                 return block;
@@ -488,6 +479,7 @@ namespace xor
             } imgui;
             int2 debugMousePosition;
             bool debugPrintEnabled = true;
+            uint4 debugFeedbackValue;
 
             DeviceState(Adapter adapter_,
                         ComPtr<ID3D12Device> pDevice,

@@ -82,6 +82,15 @@ namespace xor
         };
         ImguiInput imguiInput(const Input &input);
 
+        size_t debugFeedback(Span<uint8_t> dst);
+        template <typename T>
+        T debugFeedback()
+        {
+            T value = T();
+            debugFeedback(asRWBytes(makeSpan(&value)));
+            return value;
+        }
+
         SeqNum now();
         void whenCompleted(std::function<void()> f);
         void whenCompleted(std::function<void()> f, SeqNum seqNum);

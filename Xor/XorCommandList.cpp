@@ -43,7 +43,7 @@ namespace xor
 
 			queryHeap = dev.S().queryHeap;
 
-            debugPrintData = dev.createBufferUAV(info::BufferInfoBuilder().rawBuffer(ShaderDebugPrintDataSize));
+            shaderDebugData = dev.createBufferUAV(info::BufferInfoBuilder().rawBuffer(ShaderDebugPrintDataSize));
         }
     }
 
@@ -67,10 +67,11 @@ namespace xor
 
             if (device().S().debugPrintEnabled)
             {
-                readbackBuffer(S().debugPrintData.buffer(),
-                               [num](Span<const uint8_t> debugPrintData)
+                auto feedback = &device().S().debugFeedbackValue;
+                readbackBuffer(S().shaderDebugData.buffer(),
+                               [num, feedback](Span<const uint8_t> shaderDebugData)
                 {
-                    handleShaderDebugPrints(num, debugPrintData);
+                    handleShaderDebug(num, shaderDebugData, feedback);
                 });
             }
 
@@ -102,10 +103,11 @@ namespace xor
         S().firstProfilingEvent = -1;
         S().lastProfilingEvent  = -1;
 
-        // Initialize the first dword of the debug print data, which is the write pointer,
-        // to point to the second dword.
-        uint32_t writePointerInit[1] = { 4 };
-        updateBuffer(S().debugPrintData.buffer(), asBytes(writePointerInit));
+        // Initialize the debug data write pointer to point to the space after it.
+        uint32_t writePointerInit[1] = { XorShaderDebugWritePointerInit };
+        updateBuffer(S().shaderDebugData.buffer(),
+                     asBytes(writePointerInit),
+                     XorShaderDebugWritePointerOffset);
     }
 
     bool CommandList::hasCompleted()
@@ -274,13 +276,13 @@ namespace xor
             {
                 cmd()->SetComputeRootDescriptorTable(0, table);
                 cmd()->SetComputeRoot32BitConstants(1, XorShaderDebugConstantCount, &S().debugConstants, 0);
-                cmd()->SetComputeRootUnorderedAccessView(2, S().debugPrintData.m_buffer.S().resource->GetGPUVirtualAddress());
+                cmd()->SetComputeRootUnorderedAccessView(2, S().shaderDebugData.m_buffer.S().resource->GetGPUVirtualAddress());
             }
             else
             {
                 cmd()->SetGraphicsRootDescriptorTable(0, table);
                 cmd()->SetGraphicsRoot32BitConstants(1, XorShaderDebugConstantCount, &S().debugConstants, 0);
-                cmd()->SetGraphicsRootUnorderedAccessView(2, S().debugPrintData.m_buffer.S().resource->GetGPUVirtualAddress());
+                cmd()->SetGraphicsRootUnorderedAccessView(2, S().shaderDebugData.m_buffer.S().resource->GetGPUVirtualAddress());
             }
 
             ++S().debugConstants.eventNumber;
@@ -819,16 +821,17 @@ namespace xor
 		return e;
     }
 
-    void CommandList::handleShaderDebugPrints(SeqNum cmdListNumber,
-                                              Span<const uint8_t> debugPrintData)
+    void CommandList::handleShaderDebug(SeqNum cmdListNumber,
+                                        Span<const uint8_t> shaderDebugData,
+                                        uint4 *shaderDebugFeedback)
     {
-        auto data = reinterpretSpan<const uint32_t>(debugPrintData);
+        auto data = reinterpretSpan<const uint32_t>(shaderDebugData(XorShaderDebugWritePointerOffset));
 
-        // The first dword is the write pointer, which tells us how much valid data
-        // there is. It is initialized to 4, so we must subtract one from the length,
-        // avoiding underflow.
-        uint32_t length = data[0] / sizeof(uint32_t);
-        if (length > 0) --length;
+        uint32_t writePointer = data[0];
+        uint32_t writtenBytes = (writePointer > XorShaderDebugWritePointerInit)
+            ? (writePointer - XorShaderDebugWritePointerInit)
+            : 0;
+        uint32_t length = writtenBytes / sizeof(uint32_t);
 
         data = data(1);
         uint32_t i = 0;
@@ -837,15 +840,24 @@ namespace xor
             uint32_t opcode = data[i];
             switch (opcode)
             {
-            case XorShaderDebugPrintOpCodeMetadata:
+            case XorShaderDebugOpCodeMetadata:
                 log("ShaderDebug", "List %lld, event %u:", lld(cmdListNumber), data[i + 1]);
                 i += 2;
                 break;
-            case XorShaderDebugPrintOpCodeNewLine:
+            case XorShaderDebugOpCodeNewLine:
                 print("\n");
                 i += 1;
                 break;
-            case XorShaderDebugPrintOpCodePrintValues:
+            case XorShaderDebugOpCodeFeedback:
+                if (shaderDebugFeedback)
+                {
+                    memcpy(shaderDebugFeedback,
+                           shaderDebugData.data() + XorShaderDebugFeedbackOffset,
+                           sizeof(*shaderDebugFeedback));
+                }
+                i += 1;
+                break;
+            case XorShaderDebugOpCodePrintValues:
             {
                 uint32_t typeId = data[i + 1];
                 uint32_t type   = typeId & XorShaderDebugTypeIdMask;

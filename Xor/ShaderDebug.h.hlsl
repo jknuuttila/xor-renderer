@@ -8,7 +8,7 @@ cbuffer XorShaderDebugConstantBuffer : register(b0, space1)
     XorShaderDebugConstants debugConstants;
 };
 
-RWByteAddressBuffer debugPrintData : register(u0, space1);
+RWByteAddressBuffer shaderDebugData : register(u0, space1);
 
 bool debugIsCursorPosition(int2 coords)
 {
@@ -29,70 +29,85 @@ static const uint ShaderDebugPrintMetadataSize = 8;
 static const uint ShaderDebugPrintNewlineSize = 4;
 static const uint ShaderDebugPrintValueHeaderSize = 8;
 static const uint ShaderDebugPrintFixedPayloadSize = ShaderDebugPrintMetadataSize + ShaderDebugPrintNewlineSize;
+static const uint ShaderDebugFeedbackSize = 4;
 
-uint debugAllocatePrintSpace(uint variablePayload)
+uint debugAllocateSpace(uint bytes)
 {
     uint offset;
-    debugPrintData.InterlockedAdd(0, ShaderDebugPrintFixedPayloadSize + variablePayload, offset);
+    shaderDebugData.InterlockedAdd(XorShaderDebugWritePointerOffset, bytes, offset);
     return offset;
+}
+uint debugAllocatePrintSpace(uint variablePayload)
+{
+    return debugAllocateSpace(ShaderDebugPrintFixedPayloadSize + variablePayload);
 }
 
 void debugWriteEventMetadata(inout uint offset)
 {
     uint2 values;
-    values.x = XorShaderDebugPrintOpCodeMetadata;
+    values.x = XorShaderDebugOpCodeMetadata;
     values.y = debugConstants.eventNumber;
-    debugPrintData.Store2(offset, values);
+    shaderDebugData.Store2(offset, values);
     offset += 8;
 }
 
 void debugWriteValues(uint typeId, uint data, inout uint offset)
 {
     uint3 values;
-    values.x = XorShaderDebugPrintOpCodePrintValues;
+    values.x = XorShaderDebugOpCodePrintValues;
     values.y = typeId;
     values.z = data;
-    debugPrintData.Store3(offset, values);
+    shaderDebugData.Store3(offset, values);
     offset += 12;
 }
 
 void debugWriteValues(uint typeId, uint2 data, inout uint offset)
 {
     uint4 values;
-    values.x  = XorShaderDebugPrintOpCodePrintValues;
+    values.x  = XorShaderDebugOpCodePrintValues;
     values.y  = typeId;
     values.zw = data;
-    debugPrintData.Store4(offset, values);
+    shaderDebugData.Store4(offset, values);
     offset += 16;
 }
 
 void debugWriteValues(uint typeId, uint3 data, inout uint offset)
 {
     uint2 values;
-    values.x  = XorShaderDebugPrintOpCodePrintValues;
+    values.x  = XorShaderDebugOpCodePrintValues;
     values.y  = typeId;
-    debugPrintData.Store2(offset, values);
+    shaderDebugData.Store2(offset, values);
     offset += 8;
-    debugPrintData.Store3(offset, data);
+    shaderDebugData.Store3(offset, data);
     offset += 12;
 }
 
 void debugWriteValues(uint typeId, uint4 data, inout uint offset)
 {
     uint2 values;
-    values.x  = XorShaderDebugPrintOpCodePrintValues;
+    values.x  = XorShaderDebugOpCodePrintValues;
     values.y  = typeId;
-    debugPrintData.Store2(offset, values);
+    shaderDebugData.Store2(offset, values);
     offset += 8;
-    debugPrintData.Store4(offset, data);
+    shaderDebugData.Store4(offset, data);
     offset += 16;
 }
 
 void debugWriteNewline(inout uint offset)
 {
-    debugPrintData.Store(offset, XorShaderDebugPrintOpCodeNewLine);
+    shaderDebugData.Store(offset, XorShaderDebugOpCodeNewLine);
     offset += 4;
 }
+
+void debugWriteFeedback(uint4 data)
+{
+    uint offset = debugAllocateSpace(ShaderDebugFeedbackSize);
+    shaderDebugData.Store4(XorShaderDebugFeedbackOffset, data);
+    shaderDebugData.Store(offset, XorShaderDebugOpCodeFeedback);
+}
+void debugWriteFeedback(uint3 data, inout uint offset) { debugWriteFeedback(uint4(data, 0)); }
+void debugWriteFeedback(uint2 data, inout uint offset) { debugWriteFeedback(uint4(data, 0, 0)); }
+void debugWriteFeedback(uint  data, inout uint offset) { debugWriteFeedback(uint4(data, 0, 0, 0)); }
 
 uint debugTypeId(uint1 values) { return XOR_SHADERDEBUG_TYPE_ID(uint, 1); }
 uint debugTypeId(uint2 values) { return XOR_SHADERDEBUG_TYPE_ID(uint, 2); }
@@ -146,5 +161,7 @@ uint debugPayloadSize(uint4 values) { return ShaderDebugPrintValueHeaderSize + 1
     debugWriteValues(debugTypeId(values4), asuint(values4), offset_); \
     debugWriteNewline(offset_); \
 }
+
+#define debugFeedback(values1) debugWriteFeedback(asuint(values1))
 
 #endif
