@@ -12,14 +12,6 @@ void main(uint3 tid : SV_DispatchThreadID)
 {
     int2 id = tid.xy;
 
-    if (all(id == 0))
-    {
-        debugPrint3(size, maxVisibleSamples, blurKernelSize);
-        debugPrint3(blurWeights[0], blurWeights[1], blurWeights[2]);
-        debugPrint3(blurWeights[3], blurWeights[4], blurWeights[5]);
-        debugPrint3(blurWeights[6], blurWeights[7], blurWeights[8]);
-    }
-
     if (any(id >= size))
         return;
 

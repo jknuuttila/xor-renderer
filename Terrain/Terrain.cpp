@@ -1520,8 +1520,11 @@ public:
 
             Timer aoTimer;
             auto cmd = device.graphicsCommandList();
-            heightmapRenderer.computeAmbientOcclusion(cmd, swapChain, waitForKey);
             auto number = cmd.number();
+            {
+            auto e = cmd.profilingEventPrint("Lols?");
+            heightmapRenderer.computeAmbientOcclusion(cmd, swapChain, waitForKey);
+            }
             device.execute(cmd);
             device.waitUntilCompleted(number);
 
