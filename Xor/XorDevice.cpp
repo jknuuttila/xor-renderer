@@ -521,7 +521,7 @@ namespace xor
 		if (ImGui::Begin("Profiling", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
 			ImGui::SetWindowPos(float2(600, 0));
-			ImGui::SliderInt("Rolling average length", &S().profilingDataHistoryLength, 1, 30);
+			ImGui::SliderInt("History length", &S().profilingDataHistoryLength, 1, 30);
 
 			uint64_t freq = 0;
 			XOR_CHECK_HR(S().graphicsQueue->GetTimestampFrequency(&freq));
