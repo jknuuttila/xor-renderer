@@ -25,7 +25,7 @@ class LoadBalancing : public Window
 
     struct WorkloadSettings
     {
-        int iterations = 30;
+        int iterations = 15;
 #if defined(_DEBUG)
         int sizeExp = 8;
 #else

@@ -2,6 +2,7 @@
 #define LOADBALANCEDSHADER_SIG_H
 
 #include "Xor/Shaders.h"
+#include "LoadBalancingDefs.h"
 
 XOR_BEGIN_SIGNATURE(LoadBalancedShader)
 

@@ -1,5 +1,8 @@
 #include "LoadBalancedShader.sig.h"
-#include "LoadBalancingDefs.h"
+
+// TODO: Implement Kogge-Stone prefix sum.
+// log N iterations, each thread keeps a sum
+// each iter, calc offset -i*2. if nonnegative, add that index to own sum.
 
 [RootSignature(LOADBALANCEDSHADER_ROOT_SIGNATURE)]
 [numthreads(XOR_NUMTHREADS)]
