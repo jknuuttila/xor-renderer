@@ -364,6 +364,7 @@ namespace xor
 		struct ProfilingEventData
 		{
 			const char *name;
+            uint64_t id;
 			uint64_t ticks;
 			int indent;
             bool print;
@@ -376,6 +377,7 @@ namespace xor
             struct Metadata
             {
                 const char *name     = nullptr;
+                uint64_t id          = 0;
                 int64_t parent       = -1;
                 SeqNum cmdListNumber = -1;
                 bool print           = false;
@@ -389,7 +391,7 @@ namespace xor
 			void resolve(ID3D12GraphicsCommandList *cmdList, int64_t first, int64_t last);
 
 			int64_t beginEvent(ID3D12GraphicsCommandList *cmdList,
-                               const char *name, bool print,
+                               const char *name, uint64_t uniqueId, bool print,
                                SeqNum cmdListNumber);
 			void endEvent(ID3D12GraphicsCommandList *cmdList, int64_t eventOffset);
 
@@ -432,7 +434,7 @@ namespace xor
                     uint64_t end   = queryData[i * 2 + 1];
                     uint64_t time  = (end < begin) ? 0 : end - begin;
 
-					f(ProfilingEventData { m.name, time, indent, m.print });
+					f(ProfilingEventData { m.name, m.id, time, indent, m.print });
 
                     ringbuffer.release(i);
                     i = ringbuffer.oldest();
@@ -468,9 +470,13 @@ namespace xor
             ViewHeap shaderViews;
             Descriptor nullTextureSRV;
             Descriptor nullTextureUAV;
+            Descriptor nullBufferSRV;
+            Descriptor nullBufferUAV;
 
             std::shared_ptr<ShaderLoader> shaderLoader;
             std::unordered_map<info::PipelineKey, std::shared_ptr<PipelineState>> pipelines;
+
+            uint64_t frameNumber = 0;
 
             struct ImGui
             {

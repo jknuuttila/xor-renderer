@@ -137,31 +137,6 @@ enum class VisualizationMode
 	CPUError,
 };
 
-struct RWTexture
-{
-    TextureSRV srv;
-    TextureUAV uav;
-    TextureRTV rtv;
-    TextureDSV dsv;
-
-    RWTexture() = default;
-    RWTexture(Device &device,
-              const info::TextureInfo &info,
-              const info::TextureViewInfo &viewInfo = info::TextureViewInfo())
-    {
-        srv = device.createTextureSRV(info, viewInfo);
-
-        if (info.allowUAV)          uav = device.createTextureUAV(srv.texture(), viewInfo);
-        // if (info.allowRenderTarget) rtv = device.createTextureRTV(srv.texture(), viewInfo);
-        if (info.allowDepthStencil) dsv = device.createTextureDSV(srv.texture(), viewInfo);
-    }
-
-    bool valid() const { return srv.valid(); }
-    explicit operator bool() const { return valid(); }
-
-    Texture texture() { return srv.texture(); }
-};
-
 struct HeightmapRenderer
 {
     using DE = DirectedEdge<Empty, int3>;
@@ -1521,10 +1496,9 @@ public:
 
             Timer aoTimer;
             auto cmd = device.graphicsCommandList();
-            auto number = cmd.number();
             heightmapRenderer.computeAmbientOcclusion(cmd, swapChain, waitForKey);
             device.execute(cmd);
-            device.waitUntilCompleted(number);
+            device.waitUntilCompleted(cmd.number());
 
             log("Heightmap", "Generated ambient occlusion map in %.2f ms\n",
                 aoTimer.milliseconds());

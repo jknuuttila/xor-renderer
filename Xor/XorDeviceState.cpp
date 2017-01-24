@@ -52,6 +52,8 @@ namespace xor
 
             nullTextureSRV = shaderViews.allocateFromHeap();
             nullTextureUAV = shaderViews.allocateFromHeap();
+            nullBufferSRV = shaderViews.allocateFromHeap();
+            nullBufferUAV = shaderViews.allocateFromHeap();
 
             {
                 D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
@@ -78,6 +80,35 @@ namespace xor
                     nullptr, nullptr,
                     &desc,
                     nullTextureUAV.cpu);
+            }
+
+            {
+                D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
+                desc.Format                          = DXGI_FORMAT_R8G8B8A8_UNORM;
+                desc.ViewDimension                   = D3D12_SRV_DIMENSION_BUFFER;
+                desc.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                desc.Buffer.FirstElement             = 0;
+                desc.Buffer.NumElements              = 1;
+                desc.Buffer.StructureByteStride      = 0;
+                desc.Buffer.Flags                    = D3D12_BUFFER_SRV_FLAG_NONE;
+                device->CreateShaderResourceView(
+                    nullptr,
+                    &desc,
+                    nullBufferSRV.cpu);
+            }
+
+            {
+                D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {};
+                desc.Format                          = DXGI_FORMAT_R8G8B8A8_UNORM;
+                desc.ViewDimension                   = D3D12_UAV_DIMENSION_BUFFER;
+                desc.Buffer.FirstElement             = 0;
+                desc.Buffer.NumElements              = 1;
+                desc.Buffer.StructureByteStride      = 0;
+                desc.Buffer.Flags                    = D3D12_BUFFER_UAV_FLAG_NONE;
+                device->CreateUnorderedAccessView(
+                    nullptr, nullptr,
+                    &desc,
+                    nullBufferUAV.cpu);
             }
         }
 
@@ -250,13 +281,15 @@ namespace xor
 		}
 
 		int64_t QueryHeap::beginEvent(ID3D12GraphicsCommandList * cmdList,
-                                      const char * name, bool print,
+                                      const char * name, uint64_t uniqueId,
+                                      bool print,
                                       SeqNum cmdListNumber)
 		{
 			int64_t offset = ringbuffer.allocate();
 			XOR_CHECK(offset >= 0, "Out of ringbuffer space");
 			auto &m         = metadata[offset];
 			m.name          = name;
+            m.id            = uniqueId;
 			m.cmdListNumber = cmdListNumber;
 			m.parent        = top;
             m.print         = print;

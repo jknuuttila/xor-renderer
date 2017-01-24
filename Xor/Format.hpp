@@ -45,13 +45,14 @@ namespace xor
         uint areaSizeBytes(uint width) const { return areaSizeBytes({ width, 1 }); }
         uint blockSize() const;
         uint blockBytes() const;
+        uint structureByteStride() const;
 
         bool isDepthFormat() const;
         bool isCompressed() const;
         bool isStructured() const;
 
         Format asStructure() const;
-        Format readFormat() const;
+        Format shaderViewFormat() const;
         Format typelessFormat() const;
     };
 

@@ -73,6 +73,8 @@ namespace xor
 
         void execute(CommandList &cmd);
         void present(SwapChain &swapChain, bool vsync = true);
+        void resetFrameNumber(uint64_t newFrameNumber = 0);
+        uint64_t frameNumber() const;
 
         struct ImguiInput
         {

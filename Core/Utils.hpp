@@ -8,6 +8,7 @@
 #include <memory>
 #include <initializer_list>
 #include <type_traits>
+#include <algorithm>
 
 namespace xor
 {
@@ -685,5 +686,12 @@ namespace xor
     template <typename F>
     auto scopeGuard(F &&f) { return ScopeGuard<F>(std::forward<F>(f)); }
 
+    template <typename S>
+    void sort(S &&span)
+    {
+        using std::begin;
+        using std::end;
+        std::sort(begin(span), end(span));
+    }
 }
 

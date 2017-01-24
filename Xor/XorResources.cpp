@@ -12,15 +12,19 @@ namespace xor
 
     namespace info
     {
-        BufferViewInfo BufferViewInfo::defaults(const BufferInfo & bufferInfo) const
+        BufferViewInfo BufferViewInfo::defaults(const BufferInfo & bufferInfo,
+                                                bool shaderView) const
         {
             BufferViewInfo info = *this;
 
             if (!info.format)
                 info.format = bufferInfo.format;
+            else if (shaderView)
+                info.format = info.format.shaderViewFormat();
 
             if (info.numElements == 0)
                 info.numElements = static_cast<uint>(bufferInfo.size);
+
 
             return info;
         }
@@ -30,20 +34,22 @@ namespace xor
             return numElements * format.size();
         }
 
+        void BufferInfo::initializeWith(Span<const uint8_t> data)
+        {
+            m_initializer = ResourceInitializer<Buffer>([data](Device &dev, Buffer &buf)
+            {
+                dev.initializeBufferWith(buf, data);
+            });
+        }
+
         BufferInfo BufferInfo::fromBytes(Span<const uint8_t> data, Format format)
         {
             XOR_ASSERT(data.size() % format.size() == 0,
                        "Initializer data size is not a multiple of the element type size.");
 
             auto numElements = data.size() / format.size();
-
             BufferInfo info(numElements, format);
-
-            info.m_initializer = ResourceInitializer<Buffer>([data](Device &dev, Buffer &buf)
-            {
-                dev.initializeBufferWith(buf, data);
-            });
-
+            info.initializeWith(data);
             return info;
         }
 
@@ -120,15 +126,14 @@ namespace xor
         }
 
         TextureViewInfo TextureViewInfo::defaults(const TextureInfo & textureInfo,
-                                                  bool srv) const
+                                                  bool shaderView) const
         {
             TextureViewInfo info = *this;
 
             if (!info.format)
                 info.format = textureInfo.format;
-
-            if (srv)
-                info.format = info.format.readFormat();
+            else if (shaderView)
+                info.format = info.format.shaderViewFormat();
 
             return info;
         }
@@ -694,5 +699,14 @@ namespace xor
     Buffer BufferView::buffer()
     {
         return m_buffer;
+    }
+
+    RWTexture::RWTexture(Device & device, const info::TextureInfo & info, const info::TextureViewInfo & viewInfo)
+    {
+        srv = device.createTextureSRV(info, viewInfo);
+
+        if (info.allowUAV)          uav = device.createTextureUAV(srv.texture(), viewInfo);
+        // if (info.allowRenderTarget) rtv = device.createTextureRTV(srv.texture(), viewInfo);
+        if (info.allowDepthStencil) dsv = device.createTextureDSV(srv.texture(), viewInfo);
     }
 }

@@ -87,6 +87,14 @@ namespace xor
         }
     }
 
+    uint Format::structureByteStride() const
+    {
+        if (isStructured())
+            return size();
+        else
+            return 0;
+    }
+
     bool Format::isDepthFormat() const
     {
         switch (dxgiFormat())
@@ -142,7 +150,7 @@ namespace xor
         return Format::structure(size());
     }
 
-    Format Format::readFormat() const
+    Format Format::shaderViewFormat() const
     {
         switch (dxgiFormat())
         {

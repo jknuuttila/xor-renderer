@@ -461,7 +461,10 @@ namespace xor
 			auto &nameBuffer = S().profilingDataHierarchicalName;
 
 			nameBuffer.insert(nameBuffer.end(), name.begin(), name.end());
-			uint64_t eventKey = Hash().bytes(asBytes(nameBuffer)).done();
+			uint64_t eventKey = Hash()
+                .bytes(asBytes(nameBuffer))
+                .pod(data->id)
+                .done();
 
 			int historyLength = std::max(1, S().profilingDataHistoryLength);
 			auto &history = S().profilingDataHistory[eventKey];
@@ -558,11 +561,10 @@ namespace xor
         {
             auto cmd = initializerCommandList();
             cmd.updateBuffer(buffer, bytes(offset, offset + InitialDataLimit), offset);
-            auto number = cmd.number();
             execute(cmd);
 
             if (WaitForLargeInitialData && isLarge)
-                waitUntilCompleted(number);
+                waitUntilCompleted(cmd.number());
         }
     }
 
@@ -613,11 +615,10 @@ namespace xor
 
                     auto cmd = initializerCommandList();
                     cmd.updateTexture(texture, block, ImageRect(int2(0, begin), sr));
-                    auto number = cmd.number();
                     execute(cmd);
 
                     if (WaitForLargeInitialData)
-                        waitUntilCompleted(number);
+                        waitUntilCompleted(cmd.number());
                 }
             }
             else
@@ -728,9 +729,48 @@ namespace xor
         return createBufferIBV(createBuffer(bufferInfo), viewInfo);
     }
 
+    BufferSRV Device::createBufferSRV(Buffer buffer, const BufferSRV::Info & viewInfo)
+    {
+        auto info = viewInfo.defaults(buffer.info(), true);
+
+        BufferSRV srv;
+        srv.m_buffer = buffer;
+        srv.makeState().setParent(this);
+        srv.S().descriptor = S().shaderViews.allocateFromHeap();
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
+        desc.Format                          = info.format;
+        desc.ViewDimension                   = D3D12_SRV_DIMENSION_BUFFER;
+        desc.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        desc.Buffer.FirstElement             = info.firstElement;
+        desc.Buffer.NumElements              = info.numElements;
+        desc.Buffer.StructureByteStride      = info.format.structureByteStride();
+        desc.Buffer.Flags                    = D3D12_BUFFER_SRV_FLAG_NONE;
+
+        if (desc.Format == DXGI_FORMAT_R32_TYPELESS)
+            desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
+
+        device()->CreateShaderResourceView(
+            buffer.get(),
+            &desc,
+            srv.S().descriptor.staging);
+
+        device()->CopyDescriptorsSimple(1,
+                                        srv.S().descriptor.cpu,
+                                        srv.S().descriptor.staging,
+                                        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+        return srv;
+    }
+
+    BufferSRV Device::createBufferSRV(const Buffer::Info & bufferInfo, const BufferSRV::Info & viewInfo)
+    {
+        return createBufferSRV(createBuffer(bufferInfo), viewInfo);
+    }
+
     BufferUAV Device::createBufferUAV(Buffer buffer, const BufferUAV::Info & viewInfo)
     {
-        auto info = viewInfo.defaults(buffer.info());
+        auto info = viewInfo.defaults(buffer.info(), true);
 
         BufferUAV uav;
         uav.m_buffer = buffer;
@@ -742,7 +782,7 @@ namespace xor
         desc.ViewDimension                    = D3D12_UAV_DIMENSION_BUFFER;
         desc.Buffer.FirstElement              = info.firstElement;
         desc.Buffer.NumElements               = info.numElements;
-        desc.Buffer.StructureByteStride       = info.format.isStructured() ? info.format.size() : 0;
+        desc.Buffer.StructureByteStride       = info.format.structureByteStride();
         desc.Buffer.CounterOffsetInBytes      = 0;
 
         if (desc.Format == DXGI_FORMAT_R32_TYPELESS)
@@ -921,7 +961,7 @@ namespace xor
 
     TextureUAV Device::createTextureUAV(Texture texture, const TextureUAV::Info & viewInfo)
     {
-        auto info = viewInfo.defaults(texture.info());
+        auto info = viewInfo.defaults(texture.info(), true);
 
         TextureUAV uav;
         uav.m_texture = texture;
@@ -1008,6 +1048,17 @@ namespace xor
         swapChain.S().swapChain->Present(vsync ? 1 : 0, 0);
         S().shaderLoader->scanChangedSources();
         retireCommandLists();
+        ++S().frameNumber;
+    }
+
+    void Device::resetFrameNumber(uint64_t newFrameNumber)
+    {
+        S().frameNumber = newFrameNumber;
+    }
+
+    uint64_t Device::frameNumber() const
+    {
+        return S().frameNumber;
     }
 
     Device::ImguiInput Device::imguiInput(const Input & input)

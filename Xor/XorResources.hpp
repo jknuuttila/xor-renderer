@@ -10,6 +10,9 @@
 
 namespace xor
 {
+    class GraphicsPipeline;
+    class ComputePipeline;
+
     namespace info
     {
         struct SameShader {};
@@ -48,6 +51,8 @@ namespace xor
         protected:
             ResourceInitializer<Buffer> m_initializer;
             friend class Device;
+
+            void initializeWith(Span<const uint8_t> data);
         public:
             size_t size = 0;
             Format format;
@@ -80,6 +85,7 @@ namespace xor
             BufferInfoBuilder &size(size_t sz)    { BufferInfo::size = sz; return *this; }
             BufferInfoBuilder &format(Format fmt) { BufferInfo::format = fmt; return *this; }
             BufferInfoBuilder &rawBuffer(size_t sizeInBytes) { size(sizeInBytes / sizeof(uint32_t)); return format(DXGI_FORMAT_R32_TYPELESS); }
+            BufferInfoBuilder &initialData(Span<const uint8_t> data) { BufferInfo::initializeWith(data); return *this; }
             BufferInfoBuilder &allowUAV(bool allowUAV = true) { BufferInfo::allowUAV = allowUAV; return *this; }
         };
 
@@ -90,7 +96,8 @@ namespace xor
             uint   numElements  = 0;
             Format format;
 
-            BufferViewInfo defaults(const BufferInfo &bufferInfo) const;
+            BufferViewInfo defaults(const BufferInfo &bufferInfo,
+                                    bool shaderView = false) const;
             uint sizeBytes() const;
         };
 
@@ -158,7 +165,7 @@ namespace xor
             TextureViewInfo(Format format) : format(format) {}
 
             TextureViewInfo defaults(const TextureInfo &textureInfo,
-                                     bool srv = false) const;
+                                     bool shaderView = false) const;
         };
 
         class TextureViewInfoBuilder : public TextureViewInfo 
@@ -231,7 +238,7 @@ namespace xor
         class GraphicsPipelineInfo : private D3D12_GRAPHICS_PIPELINE_STATE_DESC
         {
             friend class Device;
-            friend class GraphicsPipeline;
+            friend class xor::GraphicsPipeline;
             friend struct backend::PipelineState;
             ShaderDesc                             m_vs;
             ShaderDesc                             m_ps;
@@ -273,7 +280,7 @@ namespace xor
         class ComputePipelineInfo
         {
             friend class Device;
-            friend class ComputePipeline;
+            friend class xor::ComputePipeline;
             friend struct backend::PipelineState;
             ShaderDesc                             m_cs;
         public:
@@ -493,5 +500,23 @@ namespace xor
 
         using Info    = info::BufferViewInfo;
         using Builder = info::BufferViewInfoBuilder;
+    };
+
+    struct RWTexture
+    {
+        TextureSRV srv;
+        TextureUAV uav;
+        TextureRTV rtv;
+        TextureDSV dsv;
+
+        RWTexture() = default;
+        RWTexture(Device &device,
+                  const info::TextureInfo &info,
+                  const info::TextureViewInfo &viewInfo = info::TextureViewInfo());
+
+        bool valid() const { return srv.valid(); }
+        explicit operator bool() const { return valid(); }
+
+        Texture texture() { return srv.texture(); }
     };
 }

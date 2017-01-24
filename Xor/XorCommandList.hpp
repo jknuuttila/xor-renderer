@@ -50,7 +50,7 @@ namespace xor
             ComPtr<ID3D12Fence> timesCompleted;
             Handle              completedEvent;
 
-            SeqNum seqNum = 0;
+            SeqNum seqNum = -1;
             GPUTransientChunk uploadChunk;
             GPUTransientChunk readbackChunk;
             bool closed = false;
@@ -81,6 +81,8 @@ namespace xor
         friend class ProfilingEvent;
         friend struct backend::DeviceState;
         friend struct backend::GPUProgressTracking;
+
+        SeqNum m_number = -1;
     public:
         CommandList() = default;
 
@@ -105,6 +107,8 @@ namespace xor
         void clearDSV(TextureDSV &dsv, float depth = 0);
         void clearUAV(TextureUAV &uav, uint4 clearValue = uint4(0));
         void clearUAV(TextureUAV &uav, float4 clearValue);
+        void clearUAV(BufferUAV &uav, uint4 clearValue = uint4(0));
+        void clearUAV(BufferUAV &uav, float4 clearValue);
 
         void setViewport(uint2 size);
         void setViewport(uint2 size, Rect scissor);
@@ -128,6 +132,8 @@ namespace xor
 
         void setShaderView(unsigned slot, const TextureSRV &srv);
         void setShaderView(unsigned slot, TextureUAV &uav);
+        void setShaderView(unsigned slot, const BufferSRV &srv);
+        void setShaderView(unsigned slot, BufferUAV &uav);
         void setShaderViewNullTextureSRV(unsigned slot);
         void setShaderViewNullTextureUAV(unsigned slot);
 
@@ -175,8 +181,8 @@ namespace xor
         void imguiBeginFrame(SwapChain &swapChain, double deltaTime);
         void imguiEndFrame(SwapChain &swapChain);
 
-        ProfilingEvent profilingEvent(const char *name);
-        ProfilingEvent profilingEventPrint(const char *name);
+        ProfilingEvent profilingEvent(const char *name, uint64_t uniqueId = 0);
+        ProfilingEvent profilingEventPrint(const char *name, uint64_t uniqueId = 0);
 
     private:
         ID3D12GraphicsCommandList *cmd();
@@ -195,7 +201,7 @@ namespace xor
         void setupRootArguments(bool compute);
         backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment = DefaultAlignment);
 
-        ProfilingEvent profilingEventInternal(const char * name, bool print);
+        ProfilingEvent profilingEventInternal(const char * name, uint64_t uniqueId, bool print);
         static void handleShaderDebug(SeqNum cmdListNumber, Span<const uint8_t> shaderDebugData,
                                       uint4 *shaderDebugFeedback = nullptr);
     };

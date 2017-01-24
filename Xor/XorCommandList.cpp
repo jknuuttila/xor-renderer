@@ -94,6 +94,8 @@ namespace xor
 
         ++S().timesStarted;
         S().seqNum = progress.startNewCommandList();
+        m_number = S().seqNum;
+
         S().uploadChunk.reset();
         S().readbackChunk.reset();
 
@@ -114,30 +116,14 @@ namespace xor
     {
         auto completed = S().timesCompleted->GetCompletedValue();
 
-#if 0
-        do {
-            auto completed = S().timesCompleted->GetCompletedValue();
-            log("FenceDebug", "%p == %zu (%zx)\n", S().timesCompleted.Get(), completed, completed);
-#if 1
-            if (completed > 1000000)
-                DebugBreak();
-#endif
-        } while (completed > 1000000);
-
-#else
-#endif
-#if 1
-        constexpr uint64_t BuggyFence = static_cast<uint64_t>(-1LL);
-        if (completed == BuggyFence)
+        constexpr uint64_t TDRFence = static_cast<uint64_t>(-1LL);
+        if (completed == TDRFence)
         {
             log("CommandList",
-                "WARNING: Fence returned 0xffffffffffffffff, which is likely a bug somewhere. Treating as completed.\n");
-            // Fixup the fence.
-            //S().timesCompleted->Signal(S().timesStarted);
-            XOR_CHECK_HR(S().allocator->Reset());
+                "WARNING: Fence returned 0xffffffffffffffff, which is likely a TDR. Treating as completed.\n");
             return true;
         }
-#endif
+
         XOR_ASSERT(completed <= S().timesStarted,
                    "Command list completion count out of sync. %p = %llu",
                    S().timesCompleted.Get(),
@@ -161,6 +147,7 @@ namespace xor
     CommandList::CommandList(StatePtr state)
     {
         m_state = std::move(state);
+        m_number = S().seqNum;
     }
 
     void CommandList::release()
@@ -301,7 +288,8 @@ namespace xor
 
     CommandList::CommandList(CommandList && c)
     {
-        m_state = std::move(c.m_state);
+        m_number   = c.number();
+        m_state    = std::move(c.m_state);
     }
 
     CommandList & CommandList::operator=(CommandList && c)
@@ -309,14 +297,15 @@ namespace xor
         if (this != &c)
         {
             release();
-            m_state = std::move(c.m_state);
+            m_number   = c.number();
+            m_state    = std::move(c.m_state);
         }
         return *this;
     }
 
     SeqNum CommandList::number() const
     {
-        return S().seqNum;
+        return m_number;
     }
 
     Device CommandList::device()
@@ -430,6 +419,28 @@ namespace xor
         cmd()->ClearUnorderedAccessViewFloat(uav.S().descriptor.gpu,
                                              uav.S().descriptor.staging,
                                              uav.m_texture.get(),
+                                             clearValue.data(),
+                                             0, nullptr);
+    }
+
+    void CommandList::clearUAV(BufferUAV & uav, uint4 clearValue)
+    {
+        transition(uav.m_buffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+        cmd()->ClearUnorderedAccessViewUint(uav.S().descriptor.gpu,
+                                             uav.S().descriptor.staging,
+                                             uav.m_buffer.get(),
+                                             clearValue.data(),
+                                             0, nullptr);
+    }
+
+    void CommandList::clearUAV(BufferUAV & uav, float4 clearValue)
+    {
+        transition(uav.m_buffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+        cmd()->ClearUnorderedAccessViewFloat(uav.S().descriptor.gpu,
+                                             uav.S().descriptor.staging,
+                                             uav.m_buffer.get(),
                                              clearValue.data(),
                                              0, nullptr);
     }
@@ -587,6 +598,30 @@ namespace xor
             uavs[slot] = uav.S().descriptor.staging;
         else
             uavs[slot] = device().S().nullTextureUAV.staging;
+    }
+
+    void CommandList::setShaderView(unsigned slot, const BufferSRV & srv)
+    {
+        transition(srv.m_buffer,
+                   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+                   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        auto &srvs = S().srvs;
+        if (srv)
+            srvs[slot] = srv.S().descriptor.staging;
+        else
+            srvs[slot] = device().S().nullBufferSRV.staging;
+    }
+
+    void CommandList::setShaderView(unsigned slot, BufferUAV & uav)
+    {
+        transition(uav.m_buffer,
+                   D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+        auto &uavs = S().uavs;
+        if (uav)
+            uavs[slot] = uav.S().descriptor.staging;
+        else
+            uavs[slot] = device().S().nullBufferUAV.staging;
     }
 
     void CommandList::setShaderViewNullTextureSRV(unsigned slot)
@@ -806,12 +841,12 @@ namespace xor
         setRenderTargets();
     }
 
-    ProfilingEvent CommandList::profilingEventInternal(const char * name, bool print)
+    ProfilingEvent CommandList::profilingEventInternal(const char * name, uint64_t uniqueId, bool print)
     {
         ProfilingEvent e;
 		e.m_cmd       = cmd();
 		e.m_queryHeap = S().queryHeap.get();
-		e.m_offset    = e.m_queryHeap->beginEvent(e.m_cmd, name, print, number());
+		e.m_offset    = e.m_queryHeap->beginEvent(e.m_cmd, name, uniqueId, print, number());
 
 		if (S().firstProfilingEvent < 0)
 			S().firstProfilingEvent = e.m_offset;
@@ -898,14 +933,14 @@ namespace xor
         }
     }
 
-    ProfilingEvent CommandList::profilingEvent(const char * name)
+    ProfilingEvent CommandList::profilingEvent(const char * name, uint64_t uniqueId)
     {
-        return profilingEventInternal(name, false);
+        return profilingEventInternal(name, uniqueId, false);
     }
 
-    ProfilingEvent CommandList::profilingEventPrint(const char * name)
+    ProfilingEvent CommandList::profilingEventPrint(const char * name, uint64_t uniqueId)
     {
-        return profilingEventInternal(name, true);
+        return profilingEventInternal(name, uniqueId, true);
     }
 
 	void ProfilingEvent::done()

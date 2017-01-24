@@ -73,6 +73,16 @@
       <Project>{ac764c74-7d44-43bc-9cab-b470883b5549}</Project>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="LoadBalancedShader.sig.h" />
+    <ClInclude Include="LoadBalancingDefs.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="LoadBalancedShader.cs.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+    </FxCompile>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
