@@ -1,8 +1,37 @@
 #include "LoadBalancedShader.sig.h"
 
-// TODO: Implement Kogge-Stone prefix sum.
-// log N iterations, each thread keeps a sum
-// each iter, calc offset -i*2. if nonnegative, add that index to own sum.
+// Kogge-Stone prefix sum calculation.
+groupshared uint prefixSum[LBThreadGroupSize + 1];
+uint computePrefixSum(uint threadId, uint thisThreadsValue)
+{
+    int ownIndex = threadId + 1;
+    uint sum     = thisThreadsValue;
+
+    prefixSum[0]        = 0;
+    prefixSum[ownIndex] = thisThreadsValue;
+
+    GroupMemoryBarrierWithGroupSync();
+
+    int accumulateFrom = -1;
+    for (uint i = 0; i < LBThreadGroupSizeLog2; ++i)
+    {
+        int index = ownIndex + accumulateFrom;
+        index     = max(0, index);
+
+        uint partialSum = prefixSum[index];
+        sum += partialSum;
+
+        GroupMemoryBarrierWithGroupSync();
+
+        prefixSum[ownIndex] = sum;
+        accumulateFrom <<= 1;
+
+        GroupMemoryBarrierWithGroupSync();
+    }
+}
+
+uint exclusivePrefixSum(uint i) { return prefixSum[i];     }
+uint inclusivePrefixSum(uint i) { return prefixSum[i + 1]; }
 
 [RootSignature(LOADBALANCEDSHADER_ROOT_SIGNATURE)]
 [numthreads(XOR_NUMTHREADS)]
