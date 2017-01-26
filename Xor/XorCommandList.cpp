@@ -868,7 +868,11 @@ namespace xor
             : 0;
         uint32_t length = writtenBytes / sizeof(uint32_t);
 
-        data = data(1);
+        data   = data(1);
+        length = std::min(length, static_cast<uint32_t>(data.size()));
+
+        log("ShaderDebug", "--- List %lld, %u opcodes\n", lld(cmdListNumber), length);
+
         uint32_t i = 0;
         while (i < length)
         {

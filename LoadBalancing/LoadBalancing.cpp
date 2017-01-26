@@ -25,14 +25,16 @@ class LoadBalancing : public Window
 
     struct WorkloadSettings
     {
-        int iterations = 15;
+        //int iterations = 15;
+        int iterations = 1;
 #if defined(_DEBUG)
-        int sizeExp = 8;
+        int sizeExp = 4;
 #else
         int sizeExp = 18;
 #endif
         int minItems = 0;
-        int maxItems = 30;
+        //int maxItems = 30;
+        int maxItems = 5;
         bool verify  = false;
 
         uint size() const { return 1u << uint(sizeExp) ; }

@@ -2,12 +2,12 @@
 
 // Kogge-Stone prefix sum calculation.
 groupshared uint prefixSum[LBThreadGroupSize + 1];
-uint computePrefixSum(uint threadId, uint thisThreadsValue)
+void computePrefixSum(uint threadId, uint thisThreadsValue)
 {
     int ownIndex = threadId + 1;
     uint sum     = thisThreadsValue;
 
-    prefixSum[0]        = 0;
+    if (threadId == 0) prefixSum[0] = 0;
     prefixSum[ownIndex] = thisThreadsValue;
 
     GroupMemoryBarrierWithGroupSync();
@@ -32,21 +32,53 @@ uint computePrefixSum(uint threadId, uint thisThreadsValue)
 
 uint exclusivePrefixSum(uint i) { return prefixSum[i];     }
 uint inclusivePrefixSum(uint i) { return prefixSum[i + 1]; }
+uint totalCount() { return prefixSum[LBThreadGroupSize]; }
 
-[RootSignature(LOADBALANCEDSHADER_ROOT_SIGNATURE)]
-[numthreads(XOR_NUMTHREADS)]
-void main(uint3 tid : SV_DispatchThreadID)
+groupshared uint groupBaseShared;
+groupshared uint groupOutputHigh[LBThreadGroupSize];
+void prefixLinear(uint tid, uint gid, uint index, uint items)
 {
-    bool D = tid.x == 0;
+    computePrefixSum(gid, items);
 
-    if (tid.x >= size)
-        return;
+    uint total = totalCount();
+    debugPrint1(uint4(tid, items, inclusivePrefixSum(tid), total));
 
-    uint inputValue = input.Load(tid.x * 4);
+    uint outputHighBits  = index << WorkItemCountBits;
+    groupOutputHigh[gid] = outputHighBits;
 
-    uint index = inputValue >> WorkItemCountBits;
-    uint items = inputValue  & WorkItemCountMask;
+    uint groupBase;
+    if (gid == 0)
+    {
+        outputCounter.InterlockedAdd(0, total, groupBase);
+        groupBaseShared = groupBase;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    groupBase = groupBaseShared;
 
+    uint i = 0;
+    for (uint base = 0; base < total; base += LBThreadGroupSize)
+    {
+        uint workItem = base + tid;
+        if (workItem < total)
+        {
+            while (inclusivePrefixSum(i) <= workItem)
+                ++i;
+
+            uint workItemBase   = exclusivePrefixSum(i);
+            uint workItemOffset = workItem - workItemBase;
+
+            outputHighBits = groupOutputHigh[i];
+            debugPrint2(uint2(tid, base), uint4(i, workItem, outputHighBits, workItemOffset));
+
+            uint offset         = groupBase + workItem;
+            uint outputValue    = outputHighBits | workItemOffset;
+            output.Store(offset, outputValue);
+        }
+    }
+}
+
+void naive(uint tid, uint gid, uint index, uint items)
+{
     uint base;
     outputCounter.InterlockedAdd(0, items, base);
 
@@ -58,4 +90,22 @@ void main(uint3 tid : SV_DispatchThreadID)
         offset *= 4;
         output.Store(offset, outputValue);
     }
+}
+
+[RootSignature(LOADBALANCEDSHADER_ROOT_SIGNATURE)]
+[numthreads(XOR_NUMTHREADS)]
+void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
+{
+    uint inputValue;
+
+    if (tid.x >= size)
+        inputValue = 0;
+    else
+        inputValue = input.Load(tid.x * 4);
+
+    uint index = inputValue >> WorkItemCountBits;
+    uint items = inputValue  & WorkItemCountMask;
+
+    // naive(tid.x, gid.x, index, items);
+    prefixLinear(tid.x, gid.x, index, items);
 }
