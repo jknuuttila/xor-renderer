@@ -36,6 +36,11 @@ namespace xor
             return *this;
         }
 
+        Hash &string(const char *cString)
+        {
+            return bytes(cString, std::strlen(cString));
+        }
+
         template <typename T>
         Hash &pod(const T &t)
         {

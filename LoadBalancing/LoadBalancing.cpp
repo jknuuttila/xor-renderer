@@ -25,17 +25,19 @@ class LoadBalancing : public Window
 
     struct WorkloadSettings
     {
-        //int iterations = 15;
-        int iterations = 1;
 #if defined(_DEBUG)
+        int iterations = 1;
         int sizeExp = 4;
-#else
-        int sizeExp = 18;
-#endif
         int minItems = 0;
-        //int maxItems = 30;
         int maxItems = 5;
+        bool verify  = true;
+#else
+        int iterations = 15;
+        int sizeExp = 18;
+        int minItems = 0;
+        int maxItems = 30;
         bool verify  = false;
+#endif
 
         uint size() const { return 1u << uint(sizeExp) ; }
     } workloadSettings;
@@ -136,13 +138,11 @@ public:
     void runBenchmark()
     {
         bool verified = false;
-        bool correct  = false;
 
         if (!workloadSettings.verify)
-        {
             verified = true;
-            correct  = true;
-        }
+
+        float time = 1e12f;
 
         auto cmd = device.graphicsCommandList("Benchmark");
 
@@ -161,6 +161,7 @@ public:
 
             auto e = cmd.profilingEvent("Iteration", i);
             cmd.dispatchThreads(LoadBalancedShader::threadGroupSize, uint3(workloadSettings.size(), 0, 0));
+            time = std::min(time, e.minimumMs());
         }
 
         double timeToVerify = 0;
@@ -169,9 +170,10 @@ public:
             cmd.readbackBuffer(workload.outputUAV.buffer(), [&](auto results)
             {
                 Timer t;
-                correct      = this->verifyOutput(reinterpretSpan<const uint>(results));
+                bool correct = this->verifyOutput(reinterpretSpan<const uint>(results));
                 verified     = true;
                 timeToVerify = t.milliseconds();
+                XOR_CHECK(correct, "Output was incorrect");
             });
         }
 
@@ -181,12 +183,11 @@ public:
         double cpuTime = cpuTimer.milliseconds() - timeToVerify;
 
         XOR_CHECK(verified, "Output was not verified");
-        XOR_CHECK(correct,  "Output was incorrect");
 
         measuredCpuTime = std::min(measuredCpuTime, cpuTime);
         if (device.frameNumber() % 60 == 0)
         {
-            log("runBenchmark", "Minimum measured CPU time: %.4f ms\n", measuredCpuTime);
+            log("runBenchmark", "Minimum CPU time: %.4f ms, GPU time: %.4f\n", measuredCpuTime, time);
             measuredCpuTime = 1e12;
         }
     }
@@ -202,14 +203,13 @@ public:
 
         if (ImGui::Begin("Workload", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            bool changed = false;
             ImGui::SliderInt("Shader iterations", &workloadSettings.iterations, 1, 50);
-            changed |= ImGui::SliderInt("Size exponent", &workloadSettings.sizeExp, 0, 24);
+            ImGui::SliderInt("Size exponent", &workloadSettings.sizeExp, 0, 24);
             ImGui::Text("Size: %u", workloadSettings.size());
-            changed |= ImGui::InputInt("Minimum items", &workloadSettings.minItems);
-            changed |= ImGui::InputInt("Maximum items", &workloadSettings.maxItems);
+            ImGui::InputInt("Minimum items", &workloadSettings.minItems);
+            ImGui::InputInt("Maximum items", &workloadSettings.maxItems);
             ImGui::Checkbox("Verify output", &workloadSettings.verify);
-            if (changed)
+            if (ImGui::Button("Update workload"))
                 generateWorkload();
         }
         ImGui::End();

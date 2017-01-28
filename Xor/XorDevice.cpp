@@ -446,70 +446,6 @@ namespace xor
         return block;
     }
 
-	const ProfilingEventData *Device::processProfilingEvent(const ProfilingEventData *data,
-															const ProfilingEventData *end,
-															float ticksToMs,
-															int indent)
-	{
-		for (;;)
-		{
-			if (data == end || data->indent < indent)
-				return data;
-
-			auto name        = StringView(data->name);
-			auto ms          = data->ticks * ticksToMs;
-			auto &nameBuffer = S().profilingDataHierarchicalName;
-
-			nameBuffer.insert(nameBuffer.end(), name.begin(), name.end());
-			uint64_t eventKey = Hash()
-                .bytes(asBytes(nameBuffer))
-                .pod(data->id)
-                .done();
-
-			int historyLength = std::max(1, S().profilingDataHistoryLength);
-			auto &history = S().profilingDataHistory[eventKey];
-			history.values.resize(historyLength);
-
-			if (history.next >= historyLength)
-				history.next = 0;
-			history.values[history.next] = ms;
-			++history.next;
-
-			double minMs = 1e12;
-			double maxMs = 0;
-			for (double v : history.values)
-            {
-                minMs = std::min(minMs, v);
-                maxMs = std::max(maxMs, v);
-            }
-
-            if (data->print || history.printToConsole)
-            {
-                log("Profiling", "%s (%lld): Min %.4f ms, Max %.4f ms\n",
-                    data->name, lld(now()), minMs, maxMs);
-            }
-
-            // FIXME: This 'if' causes profilingEventPrint() to not print anything for non-toplevel stuff
-			if (ImGui::TreeNode(history.values.data(),
-                                "%s: Min %.3f ms, Max %.3f ms",
-								data->name,
-								minMs, maxMs))
-			{
-                ImGui::Checkbox("Print to console", &history.printToConsole);
-				data = processProfilingEvent(data + 1, end, ticksToMs, indent + 1);
-				ImGui::TreePop();
-			}
-			else
-			{
-				++data;
-				while (data != end && data->indent > indent)
-					++data;
-			}
-
-			nameBuffer.erase(nameBuffer.end() - name.length(), nameBuffer.end());
-		}
-	}
-
     void Device::retireCommandLists()
     {
         S().readbackHeap->flushHeap();
@@ -518,30 +454,91 @@ namespace xor
 
 	void Device::processProfilingEvents()
 	{
-		auto &data = S().profilingData;
-		data.clear();
-
 		if (ImGui::Begin("Profiling", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
 			ImGui::SetWindowPos(float2(600, 0));
 			ImGui::SliderInt("History length", &S().profilingDataHistoryLength, 1, 30);
+            ImGui::Text("Min / Avg / Max");
 
 			uint64_t freq = 0;
 			XOR_CHECK_HR(S().graphicsQueue->GetTimestampFrequency(&freq));
-			auto dFreq = static_cast<double>(freq);
-			S().queryHeap->process(S().progress, [&](ProfilingEventData d) { data.emplace_back(d); });
 
-			if (!data.empty())
-			{
-				S().profilingDataHierarchicalName.clear();
-				processProfilingEvent(data.data(),
-									  data.data() + data.size(),
-									  static_cast<float>(1.0 / dFreq * 1000.0));
-			}
+			double dFreq = static_cast<double>(freq);
+			double ticksToMs = static_cast<double>(1.0 / dFreq * 1000.0);
 
-			ImGui::End();
+            auto &profilingEventStack   = S().profilingEventStack;
+            auto &activeProfilingEvents = S().activeProfilingEvents;
+            profilingEventStack.resize(1, nullptr);
+            activeProfilingEvents.resize(1, nullptr);
+
+			S().queryHeap->process(S().progress, ticksToMs,
+                                   [&](ProfilingEventData *data)
+            {
+                data->timesMs.resize(S().profilingDataHistoryLength);
+
+                bool childOfTop = profilingEventStack.back() == data->parent;
+                if (!childOfTop)
+                {
+                    if (activeProfilingEvents.back() == profilingEventStack.back())
+                    {
+                        activeProfilingEvents.pop_back();
+                        ImGui::TreePop();
+                    }
+
+                    profilingEventStack.pop_back();
+                }
+
+                bool parentIsOpened = activeProfilingEvents.back() == data->parent;
+                if (parentIsOpened)
+                {
+                    if (ImGui::TreeNode(data,
+                                        "%s: %.3f ms / %.3f ms / %.3f ms",
+                                        data->name,
+                                        data->minimumMs(), data->averageMs(), data->maximumMs()))
+                        activeProfilingEvents.emplace_back(data);
+
+                    profilingEventStack.emplace_back(data);
+                }
+            });
+
+            while (activeProfilingEvents.size() > 1)
+            {
+                activeProfilingEvents.pop_back();
+                ImGui::TreePop();
+            }
 		}
+
+        ImGui::End();
 	}
+
+    backend::ProfilingEventData * Device::profilingEventData(const char * name,
+                                                             uint64_t uniqueId,
+                                                             ProfilingEventData * parent)
+    {
+        auto key = Hash()
+            .string(name)
+            .pod(uniqueId)
+            .pod(parent)
+            .done();
+
+        auto &data = S().profilingEventData[key];
+
+        if (!data)
+        {
+            data = std::make_unique<ProfilingEventData>();
+            data->name = name;
+            data->parent = parent;
+
+            if (parent)
+                data->indent = parent->indent + 1;
+            else
+                data->indent = 0;
+
+            data->timesMs.resize(S().profilingDataHistoryLength);
+        }
+
+        return data.get();
+    }
 
     ID3D12Device * Device::device()
     {

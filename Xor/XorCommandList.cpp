@@ -102,6 +102,7 @@ namespace xor
         S().debugConstants.cursorPosition    = device().S().debugMousePosition;
         S().debugConstants.eventNumber       = 0;
 
+        S().profilingEventStackTop = nullptr;
         S().firstProfilingEvent = -1;
         S().lastProfilingEvent  = -1;
 
@@ -841,21 +842,6 @@ namespace xor
         setRenderTargets();
     }
 
-    ProfilingEvent CommandList::profilingEventInternal(const char * name, uint64_t uniqueId, bool print)
-    {
-        ProfilingEvent e;
-		e.m_cmd       = cmd();
-		e.m_queryHeap = S().queryHeap.get();
-		e.m_offset    = e.m_queryHeap->beginEvent(e.m_cmd, name, uniqueId, print, number());
-
-		if (S().firstProfilingEvent < 0)
-			S().firstProfilingEvent = e.m_offset;
-
-		S().lastProfilingEvent = e.m_offset;
-
-		return e;
-    }
-
     void CommandList::handleShaderDebug(SeqNum cmdListNumber,
                                         Span<const uint8_t> shaderDebugData,
                                         uint4 *shaderDebugFeedback)
@@ -871,7 +857,8 @@ namespace xor
         data   = data(1);
         length = std::min(length, static_cast<uint32_t>(data.size()));
 
-        log("ShaderDebug", "--- List %lld, %u opcodes\n", lld(cmdListNumber), length);
+        if (length > 0)
+            log("ShaderDebug", "--- List %lld, %u opcodes ---\n", lld(cmdListNumber), length);
 
         uint32_t i = 0;
         while (i < length)
@@ -939,12 +926,21 @@ namespace xor
 
     ProfilingEvent CommandList::profilingEvent(const char * name, uint64_t uniqueId)
     {
-        return profilingEventInternal(name, uniqueId, false);
-    }
+        ProfilingEvent e;
+		e.m_cmd       = &S();
+		e.m_queryHeap = S().queryHeap.get();
 
-    ProfilingEvent CommandList::profilingEventPrint(const char * name, uint64_t uniqueId)
-    {
-        return profilingEventInternal(name, uniqueId, true);
+        auto data = device().profilingEventData(name, uniqueId, S().profilingEventStackTop);
+        e.m_data      = data;
+		e.m_offset    = e.m_queryHeap->beginEvent(cmd(), data, number());
+        S().profilingEventStackTop = data;
+
+		if (S().firstProfilingEvent < 0)
+			S().firstProfilingEvent = e.m_offset;
+
+		S().lastProfilingEvent = e.m_offset;
+
+		return e;
     }
 
 	void ProfilingEvent::done()
@@ -952,8 +948,13 @@ namespace xor
 		if (m_queryHeap)
 		{
 			XOR_ASSERT(static_cast<bool>(m_offset), "No valid event offset");
-			m_queryHeap->endEvent(m_cmd.get(), m_offset);
+            m_cmd->profilingEventStackTop = m_data->parent;
+			m_queryHeap->endEvent(m_cmd->cmd.Get(), m_offset);
 			m_queryHeap = nullptr;
 		}
 	}
+
+    float ProfilingEvent::minimumMs() const { return m_data->minimumMs(); }
+    float ProfilingEvent::averageMs() const { return m_data->averageMs(); }
+    float ProfilingEvent::maximumMs() const { return m_data->maximumMs(); }
 }

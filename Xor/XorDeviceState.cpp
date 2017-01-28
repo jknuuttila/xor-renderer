@@ -281,24 +281,18 @@ namespace xor
 		}
 
 		int64_t QueryHeap::beginEvent(ID3D12GraphicsCommandList * cmdList,
-                                      const char * name, uint64_t uniqueId,
-                                      bool print,
+                                      ProfilingEventData *data,
                                       SeqNum cmdListNumber)
 		{
 			int64_t offset = ringbuffer.allocate();
 			XOR_CHECK(offset >= 0, "Out of ringbuffer space");
 			auto &m         = metadata[offset];
-			m.name          = name;
-            m.id            = uniqueId;
 			m.cmdListNumber = cmdListNumber;
-			m.parent        = top;
-            m.print         = print;
+            m.data          = data;
 
 			cmdList->EndQuery(timestamps.Get(),
 							  D3D12_QUERY_TYPE_TIMESTAMP,
 							  static_cast<UINT>(offset * 2));
-
-			top = offset;
 
 			return offset;
 		}
@@ -306,13 +300,9 @@ namespace xor
 		void QueryHeap::endEvent(ID3D12GraphicsCommandList * cmdList, int64_t eventOffset)
 		{
 			XOR_CHECK(eventOffset >= 0, "Invalid event");
-			auto &m = metadata[eventOffset];
-
 			cmdList->EndQuery(timestamps.Get(),
 							  D3D12_QUERY_TYPE_TIMESTAMP,
 							  static_cast<UINT>(eventOffset * 2 + 1));
-
-			top = m.parent;
 		}
 
 // #define XOR_GPU_TRANSIENT_VERBOSE_LOGGING
@@ -436,5 +426,53 @@ namespace xor
             // have been executed. Fail.
             return -1;
         }
-    }
+
+        void ProfilingEventData::writeTime(double milliseconds)
+        {
+            uint i = writes % static_cast<uint>(timesMs.size());
+            timesMs[i] = static_cast<float>(milliseconds);
+            ++writes;
+        }
+
+        uint ProfilingEventData::size() const
+        {
+            return std::min(writes, static_cast<uint>(timesMs.size()));
+        }
+
+        float ProfilingEventData::minimumMs() const
+        {
+            auto sz = size();
+
+            float ms = 1e12f;
+
+            for (uint i = 0; i < sz; ++i) 
+                ms = std::min(ms, timesMs[i]);
+
+            return ms;
+        }
+
+        float ProfilingEventData::averageMs() const
+        {
+            auto sz = size();
+
+            float ms = 0;
+
+            for (uint i = 0; i < sz; ++i) 
+                ms += timesMs[i];
+
+            return ms / static_cast<float>(sz);
+        }
+
+        float ProfilingEventData::maximumMs() const
+        {
+            auto sz = size();
+
+            float ms = 0;
+
+            for (uint i = 0; i < sz; ++i) 
+                ms = std::max(ms, timesMs[i]);
+
+            return ms;
+        }
+}
 }

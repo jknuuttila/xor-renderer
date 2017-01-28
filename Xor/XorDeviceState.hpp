@@ -361,13 +361,21 @@ namespace xor
         using UploadHeap   = CPUVisibleHeap<D3D12_HEAP_TYPE_UPLOAD>;
         using ReadbackHeap = CPUVisibleHeap<D3D12_HEAP_TYPE_READBACK>;
 
+        using ProfilingEventKey = uint64_t;
 		struct ProfilingEventData
 		{
-			const char *name;
-            uint64_t id;
-			uint64_t ticks;
-			int indent;
-            bool print;
+			const char *name           = nullptr;
+            ProfilingEventData *parent = nullptr;
+            std::vector<float> timesMs;
+            uint writes                = 0;
+			int indent                 = 0;
+
+            void writeTime(double milliseconds);
+
+            uint size() const;
+            float minimumMs() const;
+            float averageMs() const;
+            float maximumMs() const;
 		};
 
         struct QueryHeap
@@ -376,31 +384,24 @@ namespace xor
             ComPtr<ID3D12Resource>  readback;
             struct Metadata
             {
-                const char *name     = nullptr;
-                uint64_t id          = 0;
-                int64_t parent       = -1;
-                SeqNum cmdListNumber = -1;
-                bool print           = false;
+                SeqNum cmdListNumber     = -1;
+                ProfilingEventData *data = nullptr;
             };
             std::vector<Metadata> metadata;
             OffsetRing ringbuffer;
-            int64_t top = -1;
 
 			QueryHeap(ID3D12Device *device, size_t size);
 
 			void resolve(ID3D12GraphicsCommandList *cmdList, int64_t first, int64_t last);
 
 			int64_t beginEvent(ID3D12GraphicsCommandList *cmdList,
-                               const char *name, uint64_t uniqueId, bool print,
+                               ProfilingEventData *data,
                                SeqNum cmdListNumber);
 			void endEvent(ID3D12GraphicsCommandList *cmdList, int64_t eventOffset);
 
             template <typename F>
-            void process(GPUProgressTracking &progress, F &&f)
+            void process(GPUProgressTracking &progress, double ticksToMs, F &&f)
             {
-                int indent         = 0;
-                int64_t prevParent = -1;
-
                 int64_t i = ringbuffer.oldest();
                 void *mappedReadback = nullptr;
                 XOR_CHECK_HR(readback->Map(0, nullptr, &mappedReadback));
@@ -423,18 +424,14 @@ namespace xor
                     if (!progress.hasCompleted(m.cmdListNumber))
                         break;
 
-                    if (m.parent > prevParent)
-                        ++indent;
-                    else if (m.parent < prevParent)
-                        --indent;
-
-					prevParent = m.parent;
-
                     uint64_t begin = queryData[i * 2];
                     uint64_t end   = queryData[i * 2 + 1];
                     uint64_t time  = (end < begin) ? 0 : end - begin;
 
-					f(ProfilingEventData { m.name, m.id, time, indent, m.print });
+                    double milliseconds = static_cast<double>(time) * ticksToMs;
+                    m.data->writeTime(milliseconds);
+
+					f(m.data);
 
                     ringbuffer.release(i);
                     i = ringbuffer.oldest();
@@ -454,16 +451,10 @@ namespace xor
             std::shared_ptr<CPUVisibleHeap<D3D12_HEAP_TYPE_READBACK>> readbackHeap;
 			std::shared_ptr<QueryHeap> queryHeap;
 
-			std::vector<ProfilingEventData> profilingData;
-			struct ProfilingEventHistory
-			{
-				std::vector<float> values;
-				int next = 0;
-                bool printToConsole = false;
-			};
-			int profilingDataHistoryLength = 10;
-			std::unordered_map<uint64_t, ProfilingEventHistory> profilingDataHistory;
-			std::vector<char> profilingDataHierarchicalName;
+			std::unordered_map<ProfilingEventKey, std::unique_ptr<ProfilingEventData>> profilingEventData;
+            int profilingDataHistoryLength = 10;
+            std::vector<ProfilingEventData *> profilingEventStack;
+            std::vector<ProfilingEventData *> activeProfilingEvents;
 
             ViewHeap rtvs;
             ViewHeap dsvs;

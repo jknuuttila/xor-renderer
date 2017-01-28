@@ -41,7 +41,7 @@ void prefixLinear(uint tid, uint gid, uint index, uint items)
     computePrefixSum(gid, items);
 
     uint total = totalCount();
-    debugPrint1(uint4(tid, items, inclusivePrefixSum(tid), total));
+    // debugPrint1(uint4(tid, items, inclusivePrefixSum(tid), total));
 
     uint outputHighBits  = index << WorkItemCountBits;
     groupOutputHigh[gid] = outputHighBits;
@@ -68,7 +68,7 @@ void prefixLinear(uint tid, uint gid, uint index, uint items)
             uint workItemOffset = workItem - workItemBase;
 
             outputHighBits = groupOutputHigh[i];
-            debugPrint2(uint2(tid, base), uint4(i, workItem, outputHighBits, workItemOffset));
+            // debugPrint2(uint2(tid, base), uint4(i, workItem, outputHighBits, workItemOffset));
 
             uint offset         = groupBase + workItem;
             uint outputValue    = outputHighBits | workItemOffset;
@@ -106,6 +106,9 @@ void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
     uint index = inputValue >> WorkItemCountBits;
     uint items = inputValue  & WorkItemCountMask;
 
-    // naive(tid.x, gid.x, index, items);
+#if 1
+    naive(tid.x, gid.x, index, items);
+#else
     prefixLinear(tid.x, gid.x, index, items);
+#endif
 }

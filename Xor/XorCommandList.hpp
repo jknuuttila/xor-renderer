@@ -11,15 +11,18 @@ namespace xor
     namespace backend
     {
 		struct QueryHeap;
+        struct ProfilingEventData;
+        struct CommandListState;
 	}
 
 	class ProfilingEvent
 	{
 		friend class Device;
 		friend class CommandList;
-		MovingPtr<backend::QueryHeap *>        m_queryHeap;
-		MovingPtr<ID3D12GraphicsCommandList *> m_cmd;
-		MovingValue<int64_t, -1>               m_offset;
+		MovingPtr<backend::QueryHeap *>          m_queryHeap;
+		MovingPtr<backend::CommandListState *>   m_cmd;
+		MovingValue<int64_t, -1>                 m_offset;
+		MovingPtr<backend::ProfilingEventData *> m_data;
 	public:
 		ProfilingEvent() = default;
 		~ProfilingEvent() { done(); }
@@ -31,10 +34,15 @@ namespace xor
 			m_queryHeap = std::move(e.m_queryHeap);
 			m_cmd       = std::move(e.m_cmd);
 			m_offset    = std::move(e.m_offset);
+			m_data      = std::move(e.m_data);
 			return *this;
 		}
 
 		void done();
+
+        float minimumMs() const;
+        float averageMs() const;
+        float maximumMs() const;
 	};
 
     namespace backend
@@ -68,6 +76,7 @@ namespace xor
 
 			std::shared_ptr<QueryHeap> queryHeap;
 			ProfilingEvent cmdListEvent;
+            backend::ProfilingEventData *profilingEventStackTop = nullptr;
 			int64_t firstProfilingEvent = -1;
 			int64_t lastProfilingEvent  = -1;
 
@@ -182,7 +191,6 @@ namespace xor
         void imguiEndFrame(SwapChain &swapChain);
 
         ProfilingEvent profilingEvent(const char *name, uint64_t uniqueId = 0);
-        ProfilingEvent profilingEventPrint(const char *name, uint64_t uniqueId = 0);
 
     private:
         ID3D12GraphicsCommandList *cmd();
@@ -201,7 +209,6 @@ namespace xor
         void setupRootArguments(bool compute);
         backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment = DefaultAlignment);
 
-        ProfilingEvent profilingEventInternal(const char * name, uint64_t uniqueId, bool print);
         static void handleShaderDebug(SeqNum cmdListNumber, Span<const uint8_t> shaderDebugData,
                                       uint4 *shaderDebugFeedback = nullptr);
     };

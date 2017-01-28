@@ -117,11 +117,10 @@ namespace xor
                                        SeqNum cmdListNumber, backend::GPUTransientChunk &chunk,
                                        uint alignment);
 
+        backend::ProfilingEventData *profilingEventData(const char *name,
+                                                        uint64_t uniqueId,
+                                                        backend::ProfilingEventData *parent = nullptr);
 		void processProfilingEvents();
-		const backend::ProfilingEventData *processProfilingEvent(const backend::ProfilingEventData *data,
-																 const backend::ProfilingEventData *end,
-																 float ticksToMs,
-																 int indent = 0);
 
         void retireCommandLists();
 
