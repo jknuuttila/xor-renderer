@@ -4,7 +4,9 @@
 // #define ZERO_SKIPPING
 // #define SKIP_TO_LAST
 
-#if !defined(NAIVE) && !defined(PREFIX_LINEAR)
+// #define PREFIX_LINEAR_STORE4
+
+#if !defined(NAIVE) && !defined(PREFIX_LINEAR) && !defined(PREFIX_LINEAR_STORE4)
 #define NAIVE
 #endif
 
@@ -155,6 +157,82 @@ void prefixLinear(uint tid, uint gid, uint index, uint items)
     }
 }
 
+void prefixLinearStore4(uint tid, uint gid, uint index, uint items)
+{
+
+    computePrefixSum(gid, items);
+
+    uint total = totalCount();
+
+    // debugPrint1(uint4(tid, items, inclusivePrefixSum(tid), total));
+
+    uint outputHighBits  = index << WorkItemCountBits;
+    groupOutputHigh[gid] = outputHighBits;
+
+    uint groupBase;
+    if (gid == 0)
+    {
+        outputCounter.InterlockedAdd(0, total, groupBase);
+        groupBaseShared = groupBase;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    groupBase = groupBaseShared;
+
+    uint i = 0;
+    uint store4Limit = total - 4;
+    for (uint base = 0; base < total; base += LBThreadGroupSize * 4)
+    {
+        uint threadBase = base + tid * 4;
+        uint4 outputValues;
+
+        uint ips = inclusivePrefixSum(i);
+
+        [unroll]
+        for (uint j = 0; j < 4; ++j)
+        {
+            uint workItem = threadBase + j;
+            uint outputValue = 0;
+
+            if (workItem < total)
+            {
+                // debugPrint1(uint4(tid, base, workItem, inclusivePrefixSum(i) <= workItem));
+                while (ips <= workItem)
+                {
+                    ++i;
+                    ips = inclusivePrefixSum(i);
+                }
+
+                uint workItemBase = exclusivePrefixSum(i);
+                uint workItemOffset = workItem - workItemBase;
+
+                outputHighBits = groupOutputHigh[i];
+
+                outputValue = outputHighBits | workItemOffset;
+
+                // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, outputHighBits, offset, outputValue));
+            }
+
+            outputValues[j] = outputValue;
+        }
+
+        uint offset = groupBase + threadBase;
+        offset *= 4;
+        if (threadBase <= store4Limit)
+        {
+            output.Store4(offset, outputValues);
+        }
+        else
+        {
+            [unroll]
+            for (uint j = 0; j < 4; ++j)
+            {
+                output.Store(offset, outputValues[j]);
+                offset += 4;
+            }
+        }
+    }
+}
+
 void naive(uint tid, uint gid, uint index, uint items)
 {
     uint base;
@@ -188,5 +266,7 @@ void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
     naive(tid.x, gid.x, index, items);
 #elif defined(PREFIX_LINEAR)
     prefixLinear(tid.x, gid.x, index, items);
+#elif defined(PREFIX_LINEAR_STORE4)
+    prefixLinearStore4(tid.x, gid.x, index, items);
 #endif
 }
