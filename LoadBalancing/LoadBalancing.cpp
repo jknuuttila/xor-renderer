@@ -27,7 +27,8 @@ class LoadBalancing : public Window
     {
 #if defined(_DEBUG)
         int iterations = 1;
-        int sizeExp = 4;
+        //int sizeExp = 4;
+        int sizeExp = 5;
         int minItems = 0;
         int maxItems = 5;
         float zeroProb = .5f;
@@ -42,7 +43,7 @@ class LoadBalancing : public Window
         int minItems = 0;
         int maxItems = 30;
         float zeroProb = .5f;
-        bool verify  = false;
+        bool verify = true;
 #endif
 
         uint size() const { return 1u << uint(sizeExp) ; }
@@ -139,10 +140,31 @@ public:
 
     bool verifyOutput(Span<const uint> output)
     {
-        std::vector<uint> sortedOutput(output.begin(), output.begin() + workload.correctOutput.size());
+        constexpr uint MaximumFailures = 10;
+
+        auto &correct = workload.correctOutput;
+
+        size_t size = std::min(output.size(), correct.size());
+        std::vector<uint> sortedOutput(output.begin(), output.begin() + size);
         sort(sortedOutput);
 
-        return memcmp(workload.correctOutput.data(), sortedOutput.data(), sizeBytes(workload.correctOutput)) == 0;
+        uint failures = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (correct[i] != sortedOutput[i])
+            {
+                if (failures < MaximumFailures)
+                {
+                    log("verifyOutput", "INCORRECT OUTPUT: correct[%zu] == %08x, output[%zu] == %08x\n",
+                        i, correct[i],
+                        i, sortedOutput[i]);
+                }
+                ++failures;
+            }
+        }
+
+        return failures == 0;
     }
 
     void runBenchmark()
@@ -179,11 +201,12 @@ public:
         {
             cmd.readbackBuffer(workload.outputUAV.buffer(), [&](auto results)
             {
+                Sleep(100);
                 Timer t;
                 bool correct = this->verifyOutput(reinterpretSpan<const uint>(results));
                 verified     = true;
                 timeToVerify = t.milliseconds();
-                XOR_CHECK(correct, "Output was incorrect");
+                //XOR_CHECK(correct, "Output was incorrect");
             });
         }
 

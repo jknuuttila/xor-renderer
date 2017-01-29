@@ -413,6 +413,10 @@ namespace xor
             for (uint j = 0; j < p.DescriptorTable.NumDescriptorRanges; ++j)
             {
                 auto &dr = p.DescriptorTable.pDescriptorRanges[j];
+
+                if (dr.RegisterSpace != 0)
+                    continue;
+
                 switch (dr.RangeType)
                 {
                 case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:

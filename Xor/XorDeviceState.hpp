@@ -223,10 +223,12 @@ namespace xor
             static_assert(HeapType == D3D12_HEAP_TYPE_UPLOAD || HeapType == D3D12_HEAP_TYPE_READBACK,
                           "Unsupported heap type");
 
-            static constexpr size_t HeapSize = 32 * 1024 * 1024;
-            static constexpr size_t ChunkSize = 2 * 1024 * 1024;
             static constexpr bool IsUploadHeap   = HeapType == D3D12_HEAP_TYPE_UPLOAD;
             static constexpr bool IsReadbackHeap = HeapType == D3D12_HEAP_TYPE_READBACK;
+            static constexpr size_t HeapSize = 32 * 1024 * 1024;
+            static constexpr size_t ChunkSize = IsReadbackHeap
+                ? 8 * 1024 * 1024
+                : 2 * 1024 * 1024;
 
             MovingPtr<GPUProgressTracking *> progress;
             ComPtr<ID3D12Resource> heap;

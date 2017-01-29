@@ -264,13 +264,15 @@ namespace xor
             {
                 cmd()->SetComputeRootDescriptorTable(0, table);
                 cmd()->SetComputeRoot32BitConstants(1, XorShaderDebugConstantCount, &S().debugConstants, 0);
-                cmd()->SetComputeRootUnorderedAccessView(2, S().shaderDebugData.m_buffer.S().resource->GetGPUVirtualAddress());
+                cmd()->SetComputeRootDescriptorTable(2, S().shaderDebugData.S().descriptor.gpu);
+                //cmd()->SetComputeRootUnorderedAccessView(2, S().shaderDebugData.m_buffer.S().resource->GetGPUVirtualAddress());
             }
             else
             {
                 cmd()->SetGraphicsRootDescriptorTable(0, table);
                 cmd()->SetGraphicsRoot32BitConstants(1, XorShaderDebugConstantCount, &S().debugConstants, 0);
-                cmd()->SetGraphicsRootUnorderedAccessView(2, S().shaderDebugData.m_buffer.S().resource->GetGPUVirtualAddress());
+                cmd()->SetGraphicsRootDescriptorTable(2, S().shaderDebugData.S().descriptor.gpu);
+                //cmd()->SetGraphicsRootUnorderedAccessView(2, S().shaderDebugData.m_buffer.S().resource->GetGPUVirtualAddress());
             }
 
             ++S().debugConstants.eventNumber;
@@ -719,6 +721,8 @@ namespace xor
                                      size_t offset,
                                      size_t bytes)
     {
+        constexpr size_t ReadbackBlockLimit = ReadbackHeap::ChunkSize;
+
         if (bytes == 0)
             bytes = buffer->sizeBytes();
 
