@@ -1,11 +1,11 @@
 #include "LoadBalancedShader.sig.h"
 
-#define PREFIX_LINEAR
+// #define PREFIX_LINEAR
 // #define ZERO_SKIPPING
 // #define SKIP_TO_LAST
 
 // #define PREFIX_LINEAR_STORE4
-// #define PREFIX_BINARY
+#define PREFIX_BINARY
 
 #if !defined(NAIVE) && !defined(PREFIX_LINEAR) && !defined(PREFIX_LINEAR_STORE4) && !defined(PREFIX_BINARY)
 #define NAIVE
@@ -54,12 +54,13 @@ uint binarySearchForLastLessOrEqual(uint needle)
     [unroll]
     for (uint i = 0; i < LBThreadGroupSizeLog2; ++i)
     {
-        uint value = prefixSum[probe];
+        uint value       = prefixSum[probe];
         bool lessOrEqual = value <= needle;
-        min = lessOrEqual ? probe : min;
-        max = lessOrEqual ?   max : probe;
-        uint diff = max - min;
-        probe = min + diff / 2;
+        min              = lessOrEqual ? probe : min;
+        max              = lessOrEqual ?   max : probe;
+
+        uint diff        = max - min;
+        probe            = min + diff / 2;
     }
 
     return max;
@@ -102,7 +103,7 @@ void prefixLinear(uint tid, uint gid, uint index, uint items)
 
     uint total = totalCount();
 
-    debugPrint1(uint4(tid, items, inclusivePrefixSum(gid), total));
+    // debugPrint1(uint4(tid, items, inclusivePrefixSum(gid), total));
 
     uint outputHighBits  = index << WorkItemCountBits;
     groupOutputHigh[gid] = outputHighBits;
@@ -163,7 +164,7 @@ void prefixLinear(uint tid, uint gid, uint index, uint items)
             uint offset         = groupBase + workItem;
             uint outputValue    = outputHighBits | workItemOffset;
 
-            debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, offset, outputValue));
+            // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, offset, outputValue));
 
             output.Store(offset * 4, outputValue);
 #ifdef SKIP_TO_LAST
@@ -180,7 +181,6 @@ void prefixLinear(uint tid, uint gid, uint index, uint items)
 
 void prefixLinearStore4(uint tid, uint gid, uint index, uint items)
 {
-
     computePrefixSum(gid, items);
 
     uint total = totalCount();
@@ -230,7 +230,7 @@ void prefixLinearStore4(uint tid, uint gid, uint index, uint items)
 
                 outputValue = outputHighBits | workItemOffset;
 
-                // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, outputHighBits, offset, outputValue));
+                // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, groupBase + threadBase + j, outputValue));
             }
 
             outputValues[j] = outputValue;
@@ -240,15 +240,21 @@ void prefixLinearStore4(uint tid, uint gid, uint index, uint items)
         offset *= 4;
         if (threadBase <= store4Limit)
         {
+            // debugPrint2(offset / 4, outputValues);
             output.Store4(offset, outputValues);
         }
-        else
+        else if (threadBase < total)
         {
+            uint remaining = total - threadBase;
             [unroll]
             for (uint j = 0; j < 4; ++j)
             {
-                output.Store(offset, outputValues[j]);
-                offset += 4;
+                if (j < remaining)
+                {
+                    // debugPrint2(offset / 4, outputValues[j]);
+                    output.Store(offset, outputValues[j]);
+                    offset += 4;
+                }
             }
         }
     }
@@ -280,7 +286,7 @@ void prefixBinary(uint tid, uint gid, uint index, uint items)
         if (workItem < total)
         {
             // debugPrint1(uint4(tid, base, workItem, inclusivePrefixSum(i) <= workItem));
-            uint i = binarySearchForLastLessOrEqual(workItem);
+            uint i = binarySearchForLastLessOrEqual(workItem) - 1;
 
             uint workItemBase   = exclusivePrefixSum(i);
             uint workItemOffset = workItem - workItemBase;
@@ -290,7 +296,7 @@ void prefixBinary(uint tid, uint gid, uint index, uint items)
             uint offset         = groupBase + workItem;
             uint outputValue    = outputHighBits | workItemOffset;
 
-            // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, outputHighBits, offset, outputValue));
+            // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, offset, outputValue));
 
             output.Store(offset * 4, outputValue);
         }

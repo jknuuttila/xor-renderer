@@ -164,6 +164,29 @@ public:
             }
         }
 
+        if (failures)
+        {
+            uint missing = 0;
+            std::unordered_map<uint, uint> correctSet;
+
+            for (size_t i = 0; i < size; ++i)
+                correctSet[correct[i]] = static_cast<uint>(i);
+
+            std::unordered_set<uint> outputSet(sortedOutput.begin(), sortedOutput.end());
+
+            for (auto &kv : correctSet)
+            {
+                if (missing >= MaximumFailures)
+                    break;
+
+                if (!outputSet.count(kv.first))
+                {
+                    log("verifyOutput", "MISSING OUTPUT: correct[%u] == %08x\n",
+                        kv.second, kv.first);
+                }
+            }
+        }
+
         return failures == 0;
     }
 
