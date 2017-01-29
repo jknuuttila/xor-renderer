@@ -1,11 +1,11 @@
 #include "LoadBalancedShader.sig.h"
 
-// #define PREFIX_LINEAR
+#define PREFIX_LINEAR
 // #define ZERO_SKIPPING
 // #define SKIP_TO_LAST
 
 // #define PREFIX_LINEAR_STORE4
-#define PREFIX_BINARY
+// #define PREFIX_BINARY
 
 #if !defined(NAIVE) && !defined(PREFIX_LINEAR) && !defined(PREFIX_LINEAR_STORE4) && !defined(PREFIX_BINARY)
 #define NAIVE
