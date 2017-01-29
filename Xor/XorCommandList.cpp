@@ -918,9 +918,15 @@ namespace xor
             }
             break;
             default:
-                XOR_CHECK(false, "Unknown print opcode");
+                XOR_CHECK(false, "Unknown debug opcode");
                 break;
             }
+        }
+
+        if (i >= data.size())
+        {
+            print("\n");
+            log("ShaderDebug", "Debug opcode maximum limit reached\n");
         }
     }
 

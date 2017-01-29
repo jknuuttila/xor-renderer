@@ -30,12 +30,18 @@ class LoadBalancing : public Window
         int sizeExp = 4;
         int minItems = 0;
         int maxItems = 5;
+        float zeroProb = .5f;
+#if 1
         bool verify  = true;
+#else
+        bool verify  = false;
+#endif
 #else
         int iterations = 15;
         int sizeExp = 18;
         int minItems = 0;
         int maxItems = 30;
+        float zeroProb = .5f;
         bool verify  = false;
 #endif
 
@@ -94,12 +100,16 @@ public:
 
         std::mt19937 gen(2358279);
         std::uniform_int_distribution<uint> dist(workloadSettings.minItems, workloadSettings.maxItems);
+        std::uniform_real_distribution<float> zeroDist;
 
         uint size = workloadSettings.size();
         workload.input.reserve(size);
         for (uint i = 0; i < size; ++i)
         {
             uint items = dist(gen) & WorkItemCountMask;
+
+            if (zeroDist(gen) < workloadSettings.zeroProb)
+                items = 0;
 
             uint inputValue = (i << WorkItemCountBits) | items;
             workload.input.emplace_back(inputValue);
@@ -208,6 +218,7 @@ public:
             ImGui::Text("Size: %u", workloadSettings.size());
             ImGui::InputInt("Minimum items", &workloadSettings.minItems);
             ImGui::InputInt("Maximum items", &workloadSettings.maxItems);
+            ImGui::SliderFloat("Probability of zero items", &workloadSettings.zeroProb, 0, 1);
             ImGui::Checkbox("Verify output", &workloadSettings.verify);
             if (ImGui::Button("Update workload"))
                 generateWorkload();

@@ -10,6 +10,9 @@
       <InlineFunctionExpansion>Default</InlineFunctionExpansion>
       <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
     </ClCompile>
+    <FxCompile>
+      <PreprocessorDefinitions>_DEBUG</PreprocessorDefinitions>
+    </FxCompile>
   </ItemDefinitionGroup>
   <ItemGroup />
 </Project>
