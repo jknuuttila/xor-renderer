@@ -9,7 +9,7 @@ namespace xor
     {
         if (IsDebuggerPresent())
         {
-            char msg[1024];
+            char msg[4096];
             vsprintf_s(msg, fmt, ap);
             OutputDebugStringA(msg);
         }

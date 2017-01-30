@@ -214,7 +214,8 @@ struct HeightmapRenderer
 
     void computeNormalMap(CommandList &cmd)
     {
-        auto e = cmd.profilingEventPrint("computeNormalMap");
+        //auto e = cmd.profilingEventPrint("computeNormalMap");
+        auto e = cmd.profilingEvent("computeNormalMap");
 
         cmd.bind(computeNormalMapCS);
 
@@ -245,7 +246,8 @@ struct HeightmapRenderer
             samples = 1000;
 #endif
         }
-        auto e = cmd.profilingEventPrint("computeAmbientOcclusion");
+        // auto e = cmd.profilingEventPrint("computeAmbientOcclusion");
+        auto e = cmd.profilingEvent("computeAmbientOcclusion");
 
         auto renderAO = device.createGraphicsPipeline(
 			GraphicsPipeline::Info()

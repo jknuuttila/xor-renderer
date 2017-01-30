@@ -10,6 +10,15 @@
 
 using namespace xor;
 
+enum class LBShaderVariant
+{
+    Naive,
+    PrefixLinear,
+    PrefixLinearSkipZeros,
+    PrefixLinearStore4,
+    PrefixBinary,
+};
+
 class LoadBalancing : public Window
 {
     Xor xor;
@@ -21,6 +30,7 @@ class LoadBalancing : public Window
 
     struct ShaderSettings
     {
+        LBShaderVariant shaderVariant = LBShaderVariant::Naive;
     } shaderSettings;
 
     struct WorkloadSettings
@@ -43,7 +53,7 @@ class LoadBalancing : public Window
         int minItems = 0;
         int maxItems = 30;
         float zeroProb = .5f;
-        bool verify = true;
+        bool verify = false;
 #endif
 
         uint size() const { return 1u << uint(sizeExp) ; }
@@ -192,6 +202,32 @@ public:
 
     void runBenchmark()
     {
+        std::vector<info::ShaderDefine> defines;
+        defines.reserve(2);
+
+        switch (shaderSettings.shaderVariant)
+        {
+        case LBShaderVariant::Naive:
+        default:
+            break;
+        case LBShaderVariant::PrefixLinear:
+            defines.emplace_back("PREFIX_LINEAR");
+            break;
+        case LBShaderVariant::PrefixLinearSkipZeros:
+            defines.emplace_back("PREFIX_LINEAR");
+            defines.emplace_back("SKIP_ZEROS");
+            break;
+        case LBShaderVariant::PrefixLinearStore4:
+            defines.emplace_back("PREFIX_LINEAR_STORE4");
+            break;
+        case LBShaderVariant::PrefixBinary:
+            defines.emplace_back("PREFIX_BINARY");
+            break;
+        }
+
+        auto variant = loadBalancedShader.variant()
+            .computeShader(info::SameShader {}, defines);
+
         bool verified = false;
 
         if (!workloadSettings.verify)
@@ -208,7 +244,7 @@ public:
             LoadBalancedShader::Constants constants;
             constants.size = workloadSettings.size();
 
-            cmd.bind(loadBalancedShader);
+            cmd.bind(variant);
             cmd.setConstants(constants);
             cmd.setShaderView(LoadBalancedShader::input,         workload.inputSRV);
             cmd.setShaderView(LoadBalancedShader::output,        workload.outputUAV);
@@ -224,12 +260,11 @@ public:
         {
             cmd.readbackBuffer(workload.outputUAV.buffer(), [&](auto results)
             {
-                Sleep(100);
                 Timer t;
                 bool correct = this->verifyOutput(reinterpretSpan<const uint>(results));
                 verified     = true;
                 timeToVerify = t.milliseconds();
-                //XOR_CHECK(correct, "Output was incorrect");
+                XOR_CHECK(correct, "Output was incorrect");
             });
         }
 
@@ -241,7 +276,7 @@ public:
         XOR_CHECK(verified, "Output was not verified");
 
         measuredCpuTime = std::min(measuredCpuTime, cpuTime);
-        if (device.frameNumber() % 60 == 0)
+        if (device.frameNumber() % 20 == 0)
         {
             log("runBenchmark", "Minimum CPU time: %.4f ms, GPU time: %.4f\n", measuredCpuTime, time);
             measuredCpuTime = 1e12;
@@ -257,6 +292,7 @@ public:
 
         cmd.clearRTV(backbuffer, float4(.1f, .1f, .25f, 1.f));
 
+        ImGui::SetNextWindowPos(float2(100, 100));
         if (ImGui::Begin("Workload", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::SliderInt("Shader iterations", &workloadSettings.iterations, 1, 50);
@@ -268,6 +304,18 @@ public:
             ImGui::Checkbox("Verify output", &workloadSettings.verify);
             if (ImGui::Button("Update workload"))
                 generateWorkload();
+        }
+        ImGui::End();
+
+        ImGui::SetNextWindowPos(float2(100, 500));
+        if (ImGui::Begin("Shader variant", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Combo("Variant", reinterpret_cast<int *>(&shaderSettings.shaderVariant),
+                         "Naive\0"
+                         "PrefixLinear\0"
+                         "PrefixLinearSkipZeros\0"
+                         "PrefixLinearStore4\0"
+                         "PrefixBinary\0");
         }
         ImGui::End();
 
