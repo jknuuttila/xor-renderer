@@ -7,44 +7,41 @@
 // #define PREFIX_LINEAR_STORE4
 // #define PREFIX_BINARY
 
-#define SUBGROUPS_DISABLED
-
-#if defined(SUBGROUPS_DISABLED)
-static const uint SubgroupSize     = LBThreadGroupSize;
-static const uint SubgroupSizeLog2 = LBThreadGroupSizeLog2;
-static const uint SubgroupCount    = 1;
-
-uint subgroupID(uint groupID)
-{
-    return 0;
-}
-uint subgroupThreadID(uint groupID)
-{
-    return groupID;
-}
-
-#else
-static const uint SubgroupSize     = 16;
-static const uint SubgroupSizeLog2 = 4;
-static const uint SubgroupCount    = LBThreadGroupSize / SubgroupSize;
-
-uint subgroupID(uint groupID)
-{
-    return groupID / SubgroupSize;
-}
-uint subgroupThreadID(uint groupID)
-{
-    return groupID % SubgroupSize;
-}
-
+#ifndef LB_SUBGROUP_SIZE
+#define LB_SUBGROUP_SIZE        16
+#define LB_SUBGROUP_SIZE_LOG2   4
 #endif
+
+static const uint ThreadGroupSize     = LB_THREADGROUP_SIZE;
+static const uint ThreadGroupSizeLog2 = LB_THREADGROUP_SIZE_LOG2;
+
+static const uint SubgroupSize     = LB_SUBGROUP_SIZE;
+static const uint SubgroupSizeLog2 = LB_SUBGROUP_SIZE_LOG2;
+static const uint SubgroupCount    = ThreadGroupSize / SubgroupSize;
+
+uint subgroupID(uint groupID)
+{
+#if LB_SUBGROUP_SIZE == LB_THREADGROUP_SIZE
+    return 0;
+#else
+    return groupID / SubgroupSize;
+#endif
+}
+uint subgroupThreadID(uint groupID)
+{
+#if LB_SUBGROUP_SIZE == LB_THREADGROUP_SIZE
+    return groupID;
+#else
+    return groupID % SubgroupSize;
+#endif
+}
 
 #if !defined(NAIVE) && !defined(PREFIX_LINEAR) && !defined(PREFIX_LINEAR_STORE4) && !defined(PREFIX_BINARY)
 #define NAIVE
 #endif
 
 // Kogge-Stone prefix sum calculation.
-groupshared uint prefixSum[SubgroupCount][LBThreadGroupSize + 1];
+groupshared uint prefixSum[SubgroupCount][ThreadGroupSize + 1];
 void computePrefixSum(uint sgid, uint stid, uint thisThreadsValue)
 {
     int ownIndex = stid + 1;
@@ -159,7 +156,7 @@ void prefixLinear(uint tid, uint gid, uint index, uint items)
         total     = totalCount(sgid);
 
         uint i = 0;
-        for (uint base = 0; base < total; base += LBThreadGroupSize)
+        for (uint base = 0; base < total; base += ThreadGroupSize)
         {
             uint workItem = base + gid;
             if (workItem < total)
@@ -321,7 +318,7 @@ void prefixBinary(uint tid, uint gid, uint index, uint items)
         total     = totalCount(sgid);
         groupBase = groupBaseShared[sgid];
 
-        for (uint base = 0; base < total; base += LBThreadGroupSize)
+        for (uint base = 0; base < total; base += ThreadGroupSize)
         {
             uint workItem = base + gid;
             if (workItem < total)

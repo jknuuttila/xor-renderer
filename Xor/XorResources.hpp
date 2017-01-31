@@ -222,6 +222,11 @@ namespace xor
                 : define(std::move(define))
                 , value(std::move(value))
             {}
+
+            ShaderDefine(String define, int intValue)
+                : define(std::move(define))
+                , value(String::format("%d", intValue))
+            {}
         };
 
         struct ShaderDesc

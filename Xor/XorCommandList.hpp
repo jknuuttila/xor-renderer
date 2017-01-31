@@ -166,10 +166,14 @@ namespace xor
         void drawIndexed(uint indices, uint startIndex = 0);
 
         void dispatch(uint3 threadGroups);
+        void dispatchThreads(uint3 threadGroupSize, uint3 threads)
+        {
+            dispatch(max(uint3(1), divRoundUp(threads, threadGroupSize)));
+        }
         template <unsigned SX, unsigned SY, unsigned SZ>
         void dispatchThreads(const backend::ThreadGroupSize<SX, SY, SZ> &, uint3 threads)
         {
-            dispatch(max(uint3(1), divRoundUp(threads, uint3(SX, SY, SZ))));
+            dispatchThreads(uint3(SX, SY, SZ), threads);
         }
 
         void updateBuffer(Buffer &buffer,

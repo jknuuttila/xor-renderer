@@ -19,6 +19,15 @@ enum class LBShaderVariant
     PrefixBinary,
 };
 
+const char *ShaderSettingNames[] =
+{
+    "Naive",
+    "PrefixLinear",
+    "PrefixLinearSkipZeros",
+    "PrefixLinearStore4",
+    "PrefixBinary",
+};
+
 class LoadBalancing : public Window
 {
     Xor xor;
@@ -26,11 +35,15 @@ class LoadBalancing : public Window
     SwapChain swapChain;
 
     ComputePipeline loadBalancedShader;
-    double measuredCpuTime = 1e12;
 
     struct ShaderSettings
     {
         LBShaderVariant shaderVariant = LBShaderVariant::Naive;
+        int threadGroupSizeExp        = 6;
+        int subgroupSizeExp           = 4;
+
+        int threadGroupSize() const { return 1 << threadGroupSizeExp; }
+        int subgroupSize() const { return 1 << subgroupSizeExp; }
     } shaderSettings;
 
     struct WorkloadSettings
@@ -225,6 +238,14 @@ public:
             break;
         }
 
+        int sgs     = std::min(shaderSettings.subgroupSize(),  shaderSettings.threadGroupSize());
+        int sgsLog2 = std::min(shaderSettings.subgroupSizeExp, shaderSettings.threadGroupSizeExp);
+
+        defines.emplace_back("LB_THREADGROUP_SIZE",      shaderSettings.threadGroupSize());
+        defines.emplace_back("LB_THREADGROUP_SIZE_LOG2", shaderSettings.threadGroupSizeExp);
+        defines.emplace_back("LB_SUBGROUP_SIZE",      sgs);
+        defines.emplace_back("LB_SUBGROUP_SIZE_LOG2", sgsLog2);
+
         auto variant = loadBalancedShader.variant()
             .computeShader(info::SameShader {}, defines);
 
@@ -251,35 +272,33 @@ public:
             cmd.setShaderView(LoadBalancedShader::outputCounter, workload.outputCounter);
 
             auto e = cmd.profilingEvent("Iteration", i);
-            cmd.dispatchThreads(LoadBalancedShader::threadGroupSize, uint3(workloadSettings.size(), 0, 0));
+            cmd.dispatchThreads(uint3(shaderSettings.threadGroupSize(), 1, 1),
+                                uint3(workloadSettings.size(), 0, 0));
             time = std::min(time, e.minimumMs());
         }
 
-        double timeToVerify = 0;
         if (workloadSettings.verify)
         {
             cmd.readbackBuffer(workload.outputUAV.buffer(), [&](auto results)
             {
-                Timer t;
                 bool correct = this->verifyOutput(reinterpretSpan<const uint>(results));
                 verified     = true;
-                timeToVerify = t.milliseconds();
                 XOR_CHECK(correct, "Output was incorrect");
             });
         }
 
-        Timer cpuTimer;
         device.execute(cmd);
         device.waitUntilCompleted(cmd.number());
-        double cpuTime = cpuTimer.milliseconds() - timeToVerify;
 
         XOR_CHECK(verified, "Output was not verified");
 
-        measuredCpuTime = std::min(measuredCpuTime, cpuTime);
-        if (device.frameNumber() % 20 == 0)
+        if (device.frameNumber() % 10 == 0)
         {
-            log("runBenchmark", "Minimum CPU time: %.4f ms, GPU time: %.4f\n", measuredCpuTime, time);
-            measuredCpuTime = 1e12;
+            log("runBenchmark", "Variant: %25s, TGS: %3d, SGS: %3d, minimum GPU time: %.4f\n",
+                ShaderSettingNames[static_cast<int>(shaderSettings.shaderVariant)],
+                shaderSettings.threadGroupSize(),
+                shaderSettings.subgroupSize(),
+                time);
         }
     }
 
@@ -316,6 +335,10 @@ public:
                          "PrefixLinearSkipZeros\0"
                          "PrefixLinearStore4\0"
                          "PrefixBinary\0");
+            ImGui::SliderInt("Thread group size", &shaderSettings.threadGroupSizeExp, 4, 8); 
+            ImGui::Text("Thread group size: %d", shaderSettings.threadGroupSize());
+            ImGui::SliderInt("Subgroup size",     &shaderSettings.subgroupSizeExp,    4, 8); 
+            ImGui::Text("Subgroup size: %d", shaderSettings.subgroupSize());
         }
         ImGui::End();
 
