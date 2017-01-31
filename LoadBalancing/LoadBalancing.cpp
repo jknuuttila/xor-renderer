@@ -215,7 +215,7 @@ public:
             break;
         case LBShaderVariant::PrefixLinearSkipZeros:
             defines.emplace_back("PREFIX_LINEAR");
-            defines.emplace_back("SKIP_ZEROS");
+            defines.emplace_back("ZERO_SKIPPING");
             break;
         case LBShaderVariant::PrefixLinearStore4:
             defines.emplace_back("PREFIX_LINEAR_STORE4");

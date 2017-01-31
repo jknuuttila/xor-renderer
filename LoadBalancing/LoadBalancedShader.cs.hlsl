@@ -7,6 +7,23 @@
 // #define PREFIX_LINEAR_STORE4
 // #define PREFIX_BINARY
 
+#define SUBGROUPS_DISABLED
+
+#if defined(SUBGROUPS_DISABLED)
+static const uint SubgroupSize     = LBThreadGroupSize;
+static const uint SubgroupSizeLog2 = LBThreadGroupSizeLog2;
+static const uint SubgroupCount    = 1;
+
+uint subgroupID(uint groupID)
+{
+    return 0;
+}
+uint subgroupThreadID(uint groupID)
+{
+    return groupID;
+}
+
+#else
 static const uint SubgroupSize     = 16;
 static const uint SubgroupSizeLog2 = 4;
 static const uint SubgroupCount    = LBThreadGroupSize / SubgroupSize;
@@ -19,6 +36,8 @@ uint subgroupThreadID(uint groupID)
 {
     return groupID % SubgroupSize;
 }
+
+#endif
 
 #if !defined(NAIVE) && !defined(PREFIX_LINEAR) && !defined(PREFIX_LINEAR_STORE4) && !defined(PREFIX_BINARY)
 #define NAIVE
@@ -133,62 +152,67 @@ void prefixLinear(uint tid, uint gid, uint index, uint items)
         groupBaseShared[sgid] = groupBase;
     }
     GroupMemoryBarrierWithGroupSync();
-    groupBase = groupBaseShared[sgid];
 
-    uint i = 0;
-    for (uint base = 0; base < total; base += SubgroupSize)
+    for (sgid = 0; sgid < SubgroupCount; ++sgid)
     {
-        uint workItem = base + stid;
-        if (workItem < total)
+        groupBase = groupBaseShared[sgid];
+        total     = totalCount(sgid);
+
+        uint i = 0;
+        for (uint base = 0; base < total; base += LBThreadGroupSize)
         {
-#ifdef SKIP_TO_LAST
-            i = groupLastActiveWorkItem[sgid];
-#endif
-            // debugPrint1(uint4(tid, base, workItem, inclusivePrefixSum(i) <= workItem));
-            while (inclusivePrefixSum(sgid, i) <= workItem)
+            uint workItem = base + gid;
+            if (workItem < total)
             {
-                // If zero skipping is enabled, use bitscan to directly
-                // advance to a nonzero index.
+#ifdef SKIP_TO_LAST
+                i = groupLastActiveWorkItem[sgid];
+#endif
+                // debugPrint1(uint4(tid, base, workItem, inclusivePrefixSum(i) <= workItem));
+                while (inclusivePrefixSum(sgid, i) <= workItem)
+                {
+                    // If zero skipping is enabled, use bitscan to directly
+                    // advance to a nonzero index.
 #ifdef ZERO_SKIPPING
-                uint zeroIndex = i / 32;
-                uint zeroBit   = i % 32;
-                uint zeroMask  = (0xfffffffe << zeroBit);
-                uint zeroValue = groupZeroCount[sgid][zeroIndex];
-                zeroValue &= zeroMask;
+                    uint zeroIndex = i / 32;
+                    uint zeroBit = i % 32;
+                    uint zeroMask = (0xfffffffe << zeroBit);
+                    uint zeroValue = groupZeroCount[sgid][zeroIndex];
+                    zeroValue &= zeroMask;
 
-                uint increment = (zeroValue != 0)
-                    ? firstbitlow(zeroValue)
-                    : 32;
-                increment -= zeroBit;
+                    uint increment = (zeroValue != 0)
+                        ? firstbitlow(zeroValue)
+                        : 32;
+                    increment -= zeroBit;
 
-                // debugPrint3(uint4(tid, i, inclusivePrefixSum(i), workItem), uint3(zeroIndex, zeroBit, zeroValue), uint2(increment, i + increment));
+                    // debugPrint3(uint4(tid, i, inclusivePrefixSum(i), workItem), uint3(zeroIndex, zeroBit, zeroValue), uint2(increment, i + increment));
 
-                i += increment;
+                    i += increment;
 #else
-                ++i;
+                    ++i;
+#endif
+                }
+
+                uint workItemBase = exclusivePrefixSum(sgid, i);
+                uint workItemOffset = workItem - workItemBase;
+
+                outputHighBits = groupOutputHigh[sgid][i];
+
+                uint offset = groupBase + workItem;
+                uint outputValue = outputHighBits | workItemOffset;
+
+                // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, offset, outputValue));
+
+                output.Store(offset * 4, outputValue);
+#ifdef SKIP_TO_LAST
+                if (stid == SubgroupSize - 1)
+                    groupLastActiveWorkItem[sgid] = i;
 #endif
             }
 
-            uint workItemBase   = exclusivePrefixSum(sgid, i);
-            uint workItemOffset = workItem - workItemBase;
-
-            outputHighBits = groupOutputHigh[sgid][i];
-
-            uint offset         = groupBase + workItem;
-            uint outputValue    = outputHighBits | workItemOffset;
-
-            // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, offset, outputValue));
-
-            output.Store(offset * 4, outputValue);
 #ifdef SKIP_TO_LAST
-            if (stid == SubgroupSize - 1)
-                groupLastActiveWorkItem[sgid] = i;
+            GroupMemoryBarrierWithGroupSync();
 #endif
         }
-
-#ifdef SKIP_TO_LAST
-        GroupMemoryBarrierWithGroupSync();
-#endif
     }
 }
 
@@ -291,27 +315,32 @@ void prefixBinary(uint tid, uint gid, uint index, uint items)
         groupBaseShared[sgid] = groupBase;
     }
     GroupMemoryBarrierWithGroupSync();
-    groupBase = groupBaseShared[sgid];
 
-    for (uint base = 0; base < total; base += SubgroupSize)
+    for (sgid = 0; sgid < SubgroupCount; ++sgid)
     {
-        uint workItem = base + stid;
-        if (workItem < total)
+        total     = totalCount(sgid);
+        groupBase = groupBaseShared[sgid];
+
+        for (uint base = 0; base < total; base += LBThreadGroupSize)
         {
-            // debugPrint1(uint4(tid, base, workItem, inclusivePrefixSum(i) <= workItem));
-            uint i = binarySearchForFirstGreater(sgid, workItem) - 1;
+            uint workItem = base + gid;
+            if (workItem < total)
+            {
+                // debugPrint1(uint4(tid, base, workItem, inclusivePrefixSum(i) <= workItem));
+                uint i = binarySearchForFirstGreater(sgid, workItem) - 1;
 
-            uint workItemBase   = exclusivePrefixSum(sgid, i);
-            uint workItemOffset = workItem - workItemBase;
+                uint workItemBase = exclusivePrefixSum(sgid, i);
+                uint workItemOffset = workItem - workItemBase;
 
-            outputHighBits = groupOutputHigh[sgid][i];
+                outputHighBits = groupOutputHigh[sgid][i];
 
-            uint offset         = groupBase + workItem;
-            uint outputValue    = outputHighBits | workItemOffset;
+                uint offset = groupBase + workItem;
+                uint outputValue = outputHighBits | workItemOffset;
 
-            // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, offset, outputValue));
+                // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, offset, outputValue));
 
-            output.Store(offset * 4, outputValue);
+                output.Store(offset * 4, outputValue);
+            }
         }
     }
 }
