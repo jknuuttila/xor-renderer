@@ -7,6 +7,7 @@
 
 // #define PREFIX_LINEAR_STORE4
 // #define PREFIX_BINARY
+// #define PREFIX_BITSCAN
 
 #ifndef LB_SUBGROUP_SIZE
 #define LB_SUBGROUP_SIZE        16
@@ -37,7 +38,13 @@ uint subgroupThreadID(uint groupID)
 #endif
 }
 
-#if !defined(NAIVE) && !defined(NAIVE_LDS_ATOMICS) && !defined(PREFIX_LINEAR) && !defined(PREFIX_LINEAR_STORE4) && !defined(PREFIX_BINARY)
+#if !defined(NAIVE) \
+    && !defined(NAIVE_LDS_ATOMICS) \
+    && !defined(PREFIX_LINEAR) \
+    && !defined(PREFIX_LINEAR_STORE4) \
+    && !defined(PREFIX_BINARY) \
+    && !defined(PREFIX_BITSCAN)
+
 #define NAIVE
 #endif
 
@@ -327,19 +334,124 @@ void prefixBinary(uint tid, uint gid, uint index, uint items)
                 // debugPrint1(uint4(tid, base, workItem, inclusivePrefixSum(i) <= workItem));
                 uint i = binarySearchForFirstGreater(sgid, workItem) - 1;
 
-                uint workItemBase = exclusivePrefixSum(sgid, i);
+                uint workItemBase   = exclusivePrefixSum(sgid, i);
                 uint workItemOffset = workItem - workItemBase;
 
-                outputHighBits = groupOutputHigh[sgid][i];
+                outputHighBits      = groupOutputHigh[sgid][i];
 
-                uint offset = groupBase + workItem;
-                uint outputValue = outputHighBits | workItemOffset;
+                uint offset         = groupBase + workItem;
+                uint outputValue    = outputHighBits | workItemOffset;
 
                 // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, offset, outputValue));
 
                 output.Store(offset * 4, outputValue);
             }
         }
+    }
+}
+
+#if defined(PREFIX_BITSCAN)
+#if LB_SUBGROUP_SIZE > 32
+#error Subgroup sizes above 32 are not supported because there are no 64-bit integers
+#endif
+#endif
+groupshared uint groupWorkBits[SubgroupCount];
+groupshared uint groupWorkIndices[SubgroupCount][SubgroupSize];
+void prefixBitscan(uint tid, uint gid, uint index, uint items)
+{
+    uint sgid = subgroupID(gid);
+    uint stid = subgroupThreadID(gid);
+
+    computePrefixSum(sgid, stid, items);
+
+    uint total = totalCount(sgid);
+
+    // debugPrint2(uint3(tid, sgid, stid), uint3(items, inclusivePrefixSum(sgid, stid), total));
+
+    uint outputHighBits = index << WorkItemCountBits;
+    groupOutputHigh[sgid][stid] = outputHighBits;
+
+    uint groupBase;
+    if (stid == 0)
+    {
+        outputCounter.InterlockedAdd(0, total, groupBase);
+        groupBaseShared[sgid] = groupBase;
+        groupWorkBits[sgid] = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    total                = totalCount(sgid);
+    groupBase            = groupBaseShared[sgid];
+
+    uint maxTotal = 0;
+    for (uint sg = 0; sg < SubgroupCount; ++sg)
+        maxTotal = max(maxTotal, totalCount(sg));
+
+    uint sumHere         = inclusivePrefixSum(sgid, stid);
+    uint sumPrev         = inclusivePrefixSum(sgid, stid - 1);
+    uint maxWorkItemHere = sumHere - 1;
+
+    uint begin = sumPrev;
+    uint end   = sumHere;
+
+    end = (items == 0) ? 0 : end;
+
+    // debugPrint2(uint3(tid, stid, maxTotal), uint4(begin, end, maxWorkItemHere, total));
+
+    for (uint base = 0; base < maxTotal; base += SubgroupSize)
+    {
+        uint maxWorkItemNow = base + (SubgroupSize - 1);
+        uint inRange = maxWorkItemNow >= begin;
+        inRange     &= base < end;
+        
+        // debugPrint2(uint2(tid, stid), uint4(begin, base, end, inRange));
+
+        if (inRange)
+        {
+            uint maxWorkItemHereNow                = min(maxWorkItemHere, maxWorkItemNow);
+            uint maxStidHereNow                    = maxWorkItemHereNow - base;
+            uint workItemMask                      = 1 << maxStidHereNow;
+
+            // debugPrint2(uint2(tid, stid), uint2(maxWorkItemHereNow, maxStidHereNow));
+
+            groupWorkIndices[sgid][maxStidHereNow] = stid;
+            InterlockedOr(groupWorkBits[sgid], workItemMask);
+        }
+        GroupMemoryBarrierWithGroupSync();
+
+        uint workItem     = base + stid;
+        uint workItemMask = 0xffffffff << stid;
+
+        uint workBits     = groupWorkBits[sgid];
+
+        // debugPrint3(uint2(tid, stid),
+        //            uint4(workItem, workBits, workItemMask, workBits & workItemMask),
+        //            uint2(firstbitlow(workBits & workItemMask), groupWorkIndices[sgid][clamp(firstbitlow(workBits & workItemMask), 0, 31)]));
+
+        workBits         &= workItemMask;
+
+        if (workBits && workItem < total)
+        {
+            uint workAt         = firstbitlow(workBits);
+            uint i              = groupWorkIndices[sgid][workAt];
+
+            uint workItemBase   = exclusivePrefixSum(sgid, i);
+            uint workItemOffset = workItem - workItemBase;
+
+            outputHighBits      = groupOutputHigh[sgid][i];
+
+            uint offset         = groupBase + workItem;
+            uint outputValue    = outputHighBits | workItemOffset;
+
+            // debugPrint2(uint4(tid, workItemBase, workItemOffset, workItem), uint4(i, groupBase, offset, outputValue));
+
+            output.Store(offset * 4, outputValue);
+        }
+        
+        if (stid == 0)
+            groupWorkBits[sgid] = 0;
+
+        GroupMemoryBarrierWithGroupSync();
     }
 }
 
@@ -413,5 +525,7 @@ void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
     prefixLinearStore4(tid.x, gid.x, index, items);
 #elif defined(PREFIX_BINARY)
     prefixBinary(tid.x, gid.x, index, items);
+#elif defined(PREFIX_BITSCAN)
+    prefixBitscan(tid.x, gid.x, index, items);
 #endif
 }

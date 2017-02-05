@@ -18,6 +18,7 @@ enum class LBShaderVariant
     PrefixLinearSkipZeros,
     PrefixLinearStore4,
     PrefixBinary,
+    PrefixBitscan,
 };
 
 const char *ShaderSettingNames[] =
@@ -28,6 +29,7 @@ const char *ShaderSettingNames[] =
     "PrefixLinearSkipZeros",
     "PrefixLinearStore4",
     "PrefixBinary",
+    "PrefixBitscan",
 };
 
 class LoadBalancing : public Window
@@ -52,16 +54,11 @@ class LoadBalancing : public Window
     {
 #if defined(_DEBUG)
         int iterations = 1;
-        //int sizeExp = 4;
         int sizeExp = 5;
         int minItems = 0;
         int maxItems = 5;
         float zeroProb = .5f;
-#if 1
         bool verify  = true;
-#else
-        bool verify  = false;
-#endif
 #else
         int iterations = 15;
         int sizeExp = 18;
@@ -242,6 +239,10 @@ public:
         case LBShaderVariant::PrefixBinary:
             defines.emplace_back("PREFIX_BINARY");
             break;
+        case LBShaderVariant::PrefixBitscan:
+            defines.emplace_back("PREFIX_BITSCAN");
+            shaderSettings.subgroupSizeExp = std::min(shaderSettings.subgroupSizeExp, 5);
+            break;
         }
 
         int sgs     = std::min(shaderSettings.subgroupSize(),  shaderSettings.threadGroupSize());
@@ -342,7 +343,9 @@ public:
                          "PrefixLinear\0"
                          "PrefixLinearSkipZeros\0"
                          "PrefixLinearStore4\0"
-                         "PrefixBinary\0");
+                         "PrefixBinary\0"
+                         "PrefixBitscan\0"
+            );
             ImGui::SliderInt("Thread group size", &shaderSettings.threadGroupSizeExp, 4, 8); 
             ImGui::Text("Thread group size: %d", shaderSettings.threadGroupSize());
             ImGui::SliderInt("Subgroup size",     &shaderSettings.subgroupSizeExp,    4, 8); 
