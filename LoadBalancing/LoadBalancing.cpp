@@ -70,6 +70,7 @@ class LoadBalancing : public Window
         float zeroProb = .5f;
         bool verify = false;
 #endif
+		bool vsync = true;
 
         uint size() const { return 1u << uint(sizeExp) ; }
     } workloadSettings;
@@ -325,6 +326,7 @@ public:
             ImGui::InputInt("Minimum items", &workloadSettings.minItems);
             ImGui::InputInt("Maximum items", &workloadSettings.maxItems);
             ImGui::SliderFloat("Probability of zero items", &workloadSettings.zeroProb, 0, 1);
+			ImGui::Checkbox("VSync", &workloadSettings.vsync);
             ImGui::Checkbox("Verify output", &workloadSettings.verify);
             if (ImGui::Button("Update workload"))
                 generateWorkload();
@@ -354,7 +356,7 @@ public:
 
         runBenchmark();
 
-        device.present(swapChain);
+        device.present(swapChain, workloadSettings.vsync);
     }
 };
 
