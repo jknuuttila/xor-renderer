@@ -13,6 +13,7 @@ using namespace xor;
 enum class LBShaderVariant
 {
     Naive,
+    NaiveLDSAtomics,
     PrefixLinear,
     PrefixLinearSkipZeros,
     PrefixLinearStore4,
@@ -22,6 +23,7 @@ enum class LBShaderVariant
 const char *ShaderSettingNames[] =
 {
     "Naive",
+    "NaiveLDSAtomics",
     "PrefixLinear",
     "PrefixLinearSkipZeros",
     "PrefixLinearStore4",
@@ -223,6 +225,9 @@ public:
         case LBShaderVariant::Naive:
         default:
             break;
+        case LBShaderVariant::NaiveLDSAtomics:
+            defines.emplace_back("NAIVE_LDS_ATOMICS");
+            break;
         case LBShaderVariant::PrefixLinear:
             defines.emplace_back("PREFIX_LINEAR");
             break;
@@ -331,6 +336,7 @@ public:
         {
             ImGui::Combo("Variant", reinterpret_cast<int *>(&shaderSettings.shaderVariant),
                          "Naive\0"
+                         "NaiveLDSAtomics\0"
                          "PrefixLinear\0"
                          "PrefixLinearSkipZeros\0"
                          "PrefixLinearStore4\0"

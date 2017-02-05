@@ -1,5 +1,6 @@
 #include "LoadBalancedShader.sig.h"
 
+// #define NAIVE_LDS_ATOMICS
 // #define PREFIX_LINEAR
 // #define ZERO_SKIPPING
 // #define SKIP_TO_LAST
@@ -36,7 +37,7 @@ uint subgroupThreadID(uint groupID)
 #endif
 }
 
-#if !defined(NAIVE) && !defined(PREFIX_LINEAR) && !defined(PREFIX_LINEAR_STORE4) && !defined(PREFIX_BINARY)
+#if !defined(NAIVE) && !defined(NAIVE_LDS_ATOMICS) && !defined(PREFIX_LINEAR) && !defined(PREFIX_LINEAR_STORE4) && !defined(PREFIX_BINARY)
 #define NAIVE
 #endif
 
@@ -357,6 +358,37 @@ void naive(uint tid, uint gid, uint index, uint items)
     }
 }
 
+groupshared uint groupTotal;
+void naiveLDSAtomics(uint tid, uint gid, uint index, uint items)
+{
+
+    if (gid == 0) groupTotal = 0;
+    GroupMemoryBarrierWithGroupSync();
+
+    uint base;
+    InterlockedAdd(groupTotal, items, base);
+    GroupMemoryBarrierWithGroupSync();
+
+    if (gid == 0)
+    {
+        uint groupBase;
+        outputCounter.InterlockedAdd(0, groupTotal, groupBase);
+        groupBaseShared[0] = groupBase;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    base += groupBaseShared[0];
+
+    uint outputHighBits = index << WorkItemCountBits;
+    for (uint i = 0; i < items; ++i)
+    {
+        uint outputValue = outputHighBits | i;
+        uint offset = base + i;
+        offset *= 4;
+        output.Store(offset, outputValue);
+    }
+}
+
 [RootSignature(LOADBALANCEDSHADER_ROOT_SIGNATURE)]
 [numthreads(XOR_NUMTHREADS)]
 void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
@@ -373,6 +405,8 @@ void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
 
 #if defined(NAIVE)
     naive(tid.x, gid.x, index, items);
+#elif defined(NAIVE_LDS_ATOMICS)
+    naiveLDSAtomics(tid.x, gid.x, index, items);
 #elif defined(PREFIX_LINEAR)
     prefixLinear(tid.x, gid.x, index, items);
 #elif defined(PREFIX_LINEAR_STORE4)
