@@ -19,6 +19,7 @@ enum class LBShaderVariant
     PrefixLinearStore4,
     PrefixBinary,
     PrefixBitscan,
+    WorkStealing,
 };
 
 const char *ShaderSettingNames[] =
@@ -30,6 +31,7 @@ const char *ShaderSettingNames[] =
     "PrefixLinearStore4",
     "PrefixBinary",
     "PrefixBitscan",
+    "WorkStealing",
 };
 
 class LoadBalancing : public Window
@@ -243,6 +245,10 @@ public:
             defines.emplace_back("PREFIX_BITSCAN");
             shaderSettings.subgroupSizeExp = std::min(shaderSettings.subgroupSizeExp, 5);
             break;
+        case LBShaderVariant::WorkStealing:
+            defines.emplace_back("WORK_STEALING");
+            shaderSettings.subgroupSizeExp = std::min(shaderSettings.subgroupSizeExp, 5);
+            break;
         }
 
         int sgs     = std::min(shaderSettings.subgroupSize(),  shaderSettings.threadGroupSize());
@@ -345,6 +351,7 @@ public:
                          "PrefixLinearStore4\0"
                          "PrefixBinary\0"
                          "PrefixBitscan\0"
+                         "WorkStealing\0"
             );
             ImGui::SliderInt("Thread group size", &shaderSettings.threadGroupSizeExp, 4, 8); 
             ImGui::Text("Thread group size: %d", shaderSettings.threadGroupSize());

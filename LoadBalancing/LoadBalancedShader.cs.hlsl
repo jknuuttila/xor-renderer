@@ -9,6 +9,12 @@
 // #define PREFIX_BINARY
 // #define PREFIX_BITSCAN
 
+#define WORK_STEALING
+
+#ifndef WORK_STEALING_THRESHOLD
+#define WORK_STEALING_THRESHOLD 8
+#endif
+
 #ifndef LB_SUBGROUP_SIZE
 #define LB_SUBGROUP_SIZE        16
 #define LB_SUBGROUP_SIZE_LOG2   4
@@ -43,7 +49,8 @@ uint subgroupThreadID(uint groupID)
     && !defined(PREFIX_LINEAR) \
     && !defined(PREFIX_LINEAR_STORE4) \
     && !defined(PREFIX_BINARY) \
-    && !defined(PREFIX_BITSCAN)
+    && !defined(PREFIX_BITSCAN) \
+    && !defined(WORK_STEALING)
 
 #define NAIVE
 #endif
@@ -501,6 +508,124 @@ void naiveLDSAtomics(uint tid, uint gid, uint index, uint items)
     }
 }
 
+#if defined(WORK_STEALING)
+#if LB_SUBGROUP_SIZE > 32
+#error Subgroup sizes above 32 are not supported because there are no 64-bit integers
+#endif
+#endif
+groupshared uint4 groupWorkItems[SubgroupCount][SubgroupSize];
+groupshared uint  groupWorkInSlot[SubgroupCount];
+groupshared uint  groupWorkLeft;
+void workStealing(uint tid, uint gid, uint index, uint items)
+{
+    uint sgid = subgroupID(gid);
+    uint stid = subgroupThreadID(gid);
+
+    uint base;
+    outputCounter.InterlockedAdd(0, items, base);
+
+    if (stid == 0) groupWorkInSlot[sgid] = 0;
+    if (gid  == 0) groupWorkLeft = 0xffffffff >> (32 - SubgroupCount);
+    GroupMemoryBarrierWithGroupSync();
+
+    uint outputHighBits = index << WorkItemCountBits;
+
+    uint workBegin = 0;
+    uint workSize  = items;
+    uint ownMask   = 1 << stid;
+    uint rotShift  = (32 - stid) % 32;
+
+    for (;;)
+    {
+        // debugPrint2(uint3(tid, sgid, stid), uint2(workBegin, workSize));
+
+        // If we have too much work and there is no work in our slot, split
+        // our work and put it up for stealing.
+        bool tooMuchWork  = workSize > WORK_STEALING_THRESHOLD;
+        uint workInSlot = groupWorkInSlot[sgid] & ownMask;
+        if (tooMuchWork && !workInSlot)
+        {
+            uint split     = workSize / 2;
+            uint leftForMe = workSize - split;
+
+            uint4 workToSteal = uint4(workBegin + leftForMe, split, base, outputHighBits);
+            workSize          = leftForMe;
+
+            // debugPrint3(uint4(tid, sgid, stid, ownMask), uint2(workBegin, workSize), uint2(workToSteal.x, workToSteal.y));
+
+            groupWorkItems[sgid][stid] = workToSteal;
+            InterlockedOr(groupWorkInSlot[sgid], ownMask);
+        }
+        GroupMemoryBarrierWithGroupSync();
+
+        // If we have no work, try to steal from some slot, starting from our
+        // own (i.e. try to get back our own work first).
+        uint workLeft = workSize;
+        if (!workLeft)
+        {
+            uint workBits = groupWorkInSlot[sgid];
+            workLeft      = workBits;
+            // Rotate so that we are LSB
+            uint rotatedWorkBits = (workBits >> stid) | (workBits << rotShift);
+
+            // If there is work to be stolen, try to steal
+            if (rotatedWorkBits)
+            {
+                uint moreWorkAt = firstbitlow(rotatedWorkBits);
+                moreWorkAt      = (moreWorkAt + stid) % SubgroupSize;
+
+                // Attempt the steal with an atomic, check if successful
+                uint stealMask  = 1 << moreWorkAt;
+                uint prevMask;
+                InterlockedAnd(groupWorkInSlot[sgid], ~stealMask, prevMask);
+
+                if (prevMask & stealMask)
+                {
+                    // Successfully stole work, fetch it
+                    uint4 stolenWork = groupWorkItems[sgid][moreWorkAt];
+                    workBegin        = stolenWork.x;
+                    workSize         = stolenWork.y;
+                    base             = stolenWork.z;
+                    outputHighBits   = stolenWork.w;
+
+                    // debugPrint3(uint3(tid, sgid, stid), uint3(workBits, rotatedWorkBits, moreWorkAt), uint3(prevMask & stealMask, workBegin, workSize));
+                }
+            }
+        }
+
+        // If at least one thread has no more work left after trying to steal,
+        // it will zero the bit of this subgroup.
+        // If at least one thread has work left, it will set the bit afterward.
+        // After the block, the subgroup bit will be set iff at least one
+        // thread in the subgroup has work.
+        {
+            uint groupWorkMask = 1 << sgid;
+            if (!workLeft) InterlockedAnd(groupWorkLeft, ~groupWorkMask);
+            GroupMemoryBarrierWithGroupSync();
+            if (workLeft) InterlockedOr(groupWorkLeft, groupWorkMask);
+        }
+
+        if (workSize > 0)
+        {
+            uint i           = workBegin;
+            uint outputValue = outputHighBits | i;
+            uint offset      = base + i;
+            offset          *= 4;
+
+            // debugPrint2(uint3(tid, sgid, stid), uint3(i, offset, outputValue));
+
+            output.Store(offset, outputValue);
+
+            ++workBegin;
+            --workSize;
+        }
+
+        GroupMemoryBarrierWithGroupSync();
+
+        if (!groupWorkLeft) return;
+    }
+}
+
 [RootSignature(LOADBALANCEDSHADER_ROOT_SIGNATURE)]
 [numthreads(XOR_NUMTHREADS)]
 void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
@@ -527,5 +652,7 @@ void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
     prefixBinary(tid.x, gid.x, index, items);
 #elif defined(PREFIX_BITSCAN)
     prefixBitscan(tid.x, gid.x, index, items);
+#elif defined(WORK_STEALING)
+    workStealing(tid.x, gid.x, index, items);
 #endif
 }
