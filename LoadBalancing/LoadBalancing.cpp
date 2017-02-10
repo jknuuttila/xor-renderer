@@ -20,6 +20,7 @@ enum class LBShaderVariant
     PrefixBinary,
     PrefixBitscan,
     WorkStealing,
+    OneAtATime,
 };
 
 const char *ShaderSettingNames[] =
@@ -32,6 +33,7 @@ const char *ShaderSettingNames[] =
     "PrefixBinary",
     "PrefixBitscan",
     "WorkStealing",
+    "OneAtATime",
 };
 
 class LoadBalancing : public Window
@@ -44,9 +46,14 @@ class LoadBalancing : public Window
 
     struct ShaderSettings
     {
-        LBShaderVariant shaderVariant = LBShaderVariant::Naive;
+        LBShaderVariant shaderVariant = LBShaderVariant::OneAtATime;
+#if defined(_DEBUG)
+        int threadGroupSizeExp        = 5;
+        int subgroupSizeExp           = 4;
+#else
         int threadGroupSizeExp        = 6;
         int subgroupSizeExp           = 4;
+#endif
 
         int threadGroupSize() const { return 1 << threadGroupSizeExp; }
         int subgroupSize() const { return 1 << subgroupSizeExp; }
@@ -59,6 +66,7 @@ class LoadBalancing : public Window
         int sizeExp = 5;
         int minItems = 0;
         int maxItems = 5;
+        int multiplier = 1;
         float zeroProb = .5f;
         bool verify  = true;
 #else
@@ -66,6 +74,7 @@ class LoadBalancing : public Window
         int sizeExp = 18;
         int minItems = 0;
         int maxItems = 30;
+        int multiplier = 1;
         float zeroProb = .5f;
         bool verify = false;
 #endif
@@ -133,6 +142,7 @@ public:
         for (uint i = 0; i < size; ++i)
         {
             uint items = dist(gen) & WorkItemCountMask;
+            items *= workloadSettings.multiplier;
 
             if (zeroDist(gen) < workloadSettings.zeroProb)
                 items = 0;
@@ -249,6 +259,9 @@ public:
             defines.emplace_back("WORK_STEALING");
             shaderSettings.subgroupSizeExp = std::min(shaderSettings.subgroupSizeExp, 5);
             break;
+        case LBShaderVariant::OneAtATime:
+            defines.emplace_back("ONE_AT_A_TIME");
+            break;
         }
 
         int sgs     = std::min(shaderSettings.subgroupSize(),  shaderSettings.threadGroupSize());
@@ -296,7 +309,7 @@ public:
             {
                 bool correct = this->verifyOutput(reinterpretSpan<const uint>(results));
                 verified     = true;
-                XOR_CHECK(correct, "Output was incorrect");
+                // XOR_CHECK(correct, "Output was incorrect");
             });
         }
 
@@ -332,6 +345,7 @@ public:
             ImGui::Text("Size: %u", workloadSettings.size());
             ImGui::InputInt("Minimum items", &workloadSettings.minItems);
             ImGui::InputInt("Maximum items", &workloadSettings.maxItems);
+            ImGui::InputInt("Item count multiplier", &workloadSettings.multiplier);
             ImGui::SliderFloat("Probability of zero items", &workloadSettings.zeroProb, 0, 1);
 			ImGui::Checkbox("VSync", &workloadSettings.vsync);
             ImGui::Checkbox("Verify output", &workloadSettings.verify);
@@ -352,6 +366,7 @@ public:
                          "PrefixBinary\0"
                          "PrefixBitscan\0"
                          "WorkStealing\0"
+                         "OneAtATime\0"
             );
             ImGui::SliderInt("Thread group size", &shaderSettings.threadGroupSizeExp, 4, 8); 
             ImGui::Text("Thread group size: %d", shaderSettings.threadGroupSize());

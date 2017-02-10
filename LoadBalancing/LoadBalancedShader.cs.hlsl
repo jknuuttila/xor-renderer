@@ -9,7 +9,9 @@
 // #define PREFIX_BINARY
 // #define PREFIX_BITSCAN
 
-#define WORK_STEALING
+// #define WORK_STEALING
+
+#define ONE_AT_A_TIME
 
 #ifndef WORK_STEALING_THRESHOLD
 #define WORK_STEALING_THRESHOLD 8
@@ -50,7 +52,8 @@ uint subgroupThreadID(uint groupID)
     && !defined(PREFIX_LINEAR_STORE4) \
     && !defined(PREFIX_BINARY) \
     && !defined(PREFIX_BITSCAN) \
-    && !defined(WORK_STEALING)
+    && !defined(WORK_STEALING) \
+    && !defined(ONE_AT_A_TIME)
 
 #define NAIVE
 #endif
@@ -626,6 +629,48 @@ void workStealing(uint tid, uint gid, uint index, uint items)
     }
 }
 
+groupshared uint groupItemCounts[SubgroupCount][SubgroupSize];
+groupshared uint groupItemBases[SubgroupCount][SubgroupSize];
+void oneAtATime(uint tid, uint gid, uint index, uint items)
+{
+    uint sgid = subgroupID(gid);
+    uint stid = subgroupThreadID(gid);
+
+    uint base;
+    outputCounter.InterlockedAdd(0, items, base);
+
+    // debugPrint2(uint3(tid, sgid, stid), uint3(base, index, items));
+
+    uint outputHighBits = index << WorkItemCountBits;
+    groupOutputHigh[sgid][stid] = outputHighBits;
+    groupItemBases[sgid][stid]  = base;
+    groupItemCounts[sgid][stid] = items;
+
+    for (uint i = 0; i < SubgroupSize; ++i)
+    {
+        items = groupItemCounts[sgid][i];
+        if (items > 0)
+        {
+            base           = groupItemBases[sgid][i];
+            outputHighBits = groupOutputHigh[sgid][i];
+
+            for (uint j = 0; j < items; j += SubgroupSize)
+            {
+                uint workItem = j + stid;
+                if (workItem < items)
+                {
+                    uint offset = base + workItem;
+                    uint outputValue = outputHighBits | workItem;
+
+                    // debugPrint3(uint3(tid, sgid, stid), uint2(i, items), uint4(j, workItem, offset, outputValue));
+
+                    output.Store(offset * 4, outputValue);
+                }
+            }
+        }
+    }
+}
+
 [RootSignature(LOADBALANCEDSHADER_ROOT_SIGNATURE)]
 [numthreads(XOR_NUMTHREADS)]
 void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
@@ -654,5 +699,7 @@ void main(uint3 tid : SV_DispatchThreadID, uint3 gid : SV_GroupThreadID)
     prefixBitscan(tid.x, gid.x, index, items);
 #elif defined(WORK_STEALING)
     workStealing(tid.x, gid.x, index, items);
+#elif defined(ONE_AT_A_TIME)
+    oneAtATime(tid.x, gid.x, index, items);
 #endif
 }
