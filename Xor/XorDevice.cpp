@@ -904,7 +904,7 @@ namespace xor
         srv.S().descriptor = S().shaderViews.allocateFromHeap();
 
         D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
-        desc.Format                          = info.format;
+        desc.Format                          = info.format.shaderViewFormat();
         desc.ViewDimension                   = D3D12_SRV_DIMENSION_TEXTURE2D;
         desc.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         desc.Texture2D.MostDetailedMip       = 0;

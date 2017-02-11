@@ -23,16 +23,16 @@ float4 main(PSInput i) : SV_Target
 
     float ambientOcclusion = terrainAO.Sample(bilinearSampler, i.uv.zw);
 
-#if defined(LIGHTING)
-    float3 N = normalize(terrainNormal.Sample(bilinearSampler, uv).xyz);
-    N = N.xzy;
-
     float4 shadowPos = mul(shadowViewProj, i.worldPos);
     shadowPos.xyz   /= shadowPos.w;
     float2 shadowUV  = ndcToUV(shadowPos.xy);
     float shadowZ    = terrainShadows.Sample(pointSampler, shadowUV);
 
     float shadow     = shadowPos.z >= shadowZ ? 1 : 0;
+
+#if defined(LIGHTING)
+    float3 N = normalize(terrainNormal.Sample(bilinearSampler, uv).xyz);
+    N = N.xzy;
 
     float3 L = sunDirection.xyz;
     // float3 color = saturate(dot(N, L)) / Pi * sunColor.rgb * albedo;
@@ -43,6 +43,9 @@ float4 main(PSInput i) : SV_Target
 	return float4(color, 1);
 #elif defined(SHOW_AO)
     float3 color = ambientOcclusion;
+	return float4(color, 1);
+#elif defined(SHADOW_TERM)
+    float3 color = lerp(0.1, 0.9, shadow) * ambientOcclusion;
 	return float4(color, 1);
 #else
 	return float4(albedo, 1);

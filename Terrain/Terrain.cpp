@@ -17,9 +17,7 @@
 #include <random>
 #include <unordered_set>
 
-// TODO: Ambient occlusion
 // TODO: Helper visualizations (lines etc.)
-// TODO: Shadows
 // TODO: Tiled meshing
 // TODO: Continuous LOD
 // TODO: Superfluous vertex removal
@@ -125,6 +123,7 @@ enum class RenderingMode
     Height,
     Lighting,
     AmbientOcclusion,
+    ShadowTerm,
 };
 
 enum class VisualizationMode
@@ -411,21 +410,28 @@ struct HeightmapRenderer
 #endif
     }
 
-    void setLightingProperties(LightingProperties *props = nullptr, bool showAO = false)
+    void setLightingProperties(LightingProperties *props = nullptr,
+                               RenderingMode renderingMode = RenderingMode::Lighting)
     {
         lightingDefines.clear();
 
         if (props)
-        {
             lighting = *props;
-            if (heightmap->colorSRV)
-                lightingDefines.emplace_back("TEXTURED");
 
+        if (heightmap->colorSRV)
+            lightingDefines.emplace_back("TEXTURED");
+
+        if (renderingMode == RenderingMode::Lighting)
+        {
             lightingDefines.emplace_back("LIGHTING");
         }
-        else if (showAO)
+        else if (renderingMode == RenderingMode::AmbientOcclusion)
         {
             lightingDefines.emplace_back("SHOW_AO");
+        }
+        else if (renderingMode == RenderingMode::ShadowTerm)
+        {
+            lightingDefines.emplace_back("SHADOW_TERM");
         }
         else
         {
@@ -1509,24 +1515,17 @@ public:
 
     void updateLighting()
     {
-        if (renderingMode == RenderingMode::Lighting)
-        {
-            HeightmapRenderer::LightingProperties props = {};
-            auto M = Matrix::azimuthElevation(lighting.sunAzimuth, lighting.sunElevation);
-            props.sunDirection  = normalize(float3(M.transform(float3(0, 0, -1))));
-            props.sunColor      = float3(1) * lighting.sunIntensity;
-            props.ambient       = lighting.ambient;
-            props.shadowBiasExp = lighting.shadowBiasExp;
-            props.shadowSSBias  = lighting.shadowSSBias;
+        HeightmapRenderer::LightingProperties props = {};
+        auto M = Matrix::azimuthElevation(lighting.sunAzimuth, lighting.sunElevation);
+        props.sunDirection  = normalize(float3(M.transform(float3(0, 0, -1))));
+        props.sunColor      = float3(1) * lighting.sunIntensity;
+        props.ambient       = lighting.ambient;
+        props.shadowBiasExp = lighting.shadowBiasExp;
+        props.shadowSSBias  = lighting.shadowSSBias;
 
-            heightmapRenderer.setLightingProperties(&props);
-            heightmapRenderer.setShadowMapDim(1 << lighting.shadowDimExp);
-        }
-        else
-        {
-            heightmapRenderer.setLightingProperties(nullptr,
-                                                    renderingMode == RenderingMode::AmbientOcclusion);
-        }
+        heightmapRenderer.setLightingProperties(&props, renderingMode);
+
+        heightmapRenderer.setShadowMapDim(1 << lighting.shadowDimExp);
     }
 
     void measureTerrain()
@@ -1595,7 +1594,9 @@ public:
                          reinterpret_cast<int *>(&renderingMode),
                          "Height\0"
                          "Lighting\0"
-                         "Ambient occlusion\0"))
+                         "Ambient occlusion\0"
+                         "Shadow term\0"
+                ))
                 updateLighting();
             if (ImGui::SliderFloat("Sun azimuth",   &lighting.sunAzimuth.radians, 0, 2 * Pi))
                 updateLighting();
