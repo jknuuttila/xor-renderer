@@ -163,6 +163,15 @@ struct BlueNoise
     {
         return blueNoise[frameNumber % Count].imageData();
     }
+
+    float4 sequentialNoise(int frameNumber = 0)
+    {
+        auto img     = data(0);
+        uint2 coords = morton2DDecode(frameNumber);
+        coords       = coords % img.size;
+        auto noise   = img.pixel<ColorUnorm>(coords).toFloat4();
+        return noise;
+    }
 };
 
 struct HeightmapRenderer
@@ -197,6 +206,7 @@ struct HeightmapRenderer
         int shadowBiasExp  = 0;
         float shadowSSBias = 0;
         float shadowNoisePixels = 0;
+        bool shadowJitter = false;
     };
     LightingProperties lighting;
     std::vector<info::ShaderDefine> lightingDefines;
@@ -1305,16 +1315,12 @@ struct HeightmapRenderer
         float3 terrainViewMin = float3(1e10f);
         float3 terrainViewMax = float3(-1e10f);
 
-        static float  shadowRot = 0;
-        static float2 shadowJitter = 0;
-        ImGui::Begin("Pls");
-        ImGui::SliderFloat("Shadow rotation", &shadowRot, 0, 1);
-        ImGui::SliderFloat("Shadow jitter X", &shadowJitter.x, -10, 10);
-        ImGui::SliderFloat("Shadow jitter Y", &shadowJitter.y, -10, 10);
-        ImGui::End();
+        float4 noise = blueNoise.sequentialNoise(int(device.frameNumber()));
 
-        Matrix R = Matrix::axisAngle(float3(0, 0, -1), Angle::degrees(shadowRot * 360));
-        float2 px = 2.f / shadowMap.texture()->sizeFloat();
+        Angle shadowRotation = lighting.shadowJitter ? Angle::degrees(noise.z * 360) : Angle(0);
+        float2 shadowJitter  = lighting.shadowJitter ? lerp(float2(-.5f), float2(.5f), noise.s_xy) : 0;
+
+        Matrix R = Matrix::axisAngle(float3(0, 0, -1), shadowRotation);
         Matrix shadowView = R * Matrix::lookAt(lighting.sunDirection * worldDiameter, float3(0));
 
         for (auto c : terrainCorners)
@@ -1336,7 +1342,8 @@ struct HeightmapRenderer
         Matrix shadowProj = Matrix::projectionOrtho(float2(terrainDims),
                                                     terrainNear,
                                                     terrainFar);
-        Matrix shadowViewProj = (shadowProj * shadowView) + Matrix::projectionJitter(shadowJitter * px);
+        Matrix shadowViewProj = (shadowProj * shadowView)
+            + Matrix::projectionJitter(shadowJitter * (2.f / shadowMap.texture()->sizeFloat()));
 
 #if 0
         for (auto c : terrainCorners)
@@ -1466,6 +1473,7 @@ class Terrain : public Window
         float shadowSSBias = -2;
         int shadowDimExp   = 10;
         float shadowNoiseAmplitude = 0;
+        bool shadowJitter = false;
     } lighting;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
@@ -1568,12 +1576,13 @@ public:
     {
         HeightmapRenderer::LightingProperties props = {};
         auto M = Matrix::azimuthElevation(lighting.sunAzimuth, lighting.sunElevation);
-        props.sunDirection  = normalize(float3(M.transform(float3(0, 0, -1))));
-        props.sunColor      = float3(1) * lighting.sunIntensity;
-        props.ambient       = lighting.ambient;
-        props.shadowBiasExp = lighting.shadowBiasExp;
-        props.shadowSSBias  = lighting.shadowSSBias;
+        props.sunDirection      = normalize(float3(M.transform(float3(0, 0, -1))));
+        props.sunColor          = float3(1) * lighting.sunIntensity;
+        props.ambient           = lighting.ambient;
+        props.shadowBiasExp     = lighting.shadowBiasExp;
+        props.shadowSSBias      = lighting.shadowSSBias;
         props.shadowNoisePixels = lighting.shadowNoiseAmplitude;
+        props.shadowJitter      = lighting.shadowJitter;
 
         heightmapRenderer.setLightingProperties(&props, renderingMode);
 
@@ -1665,6 +1674,8 @@ public:
             if (ImGui::SliderInt("Shadow map size exponent", &lighting.shadowDimExp, 8, 12))
                 updateLighting();
             if (ImGui::SliderFloat("Shadow noise amplitude", &lighting.shadowNoiseAmplitude, 0, 10))
+                updateLighting();
+            if (ImGui::Checkbox("Shadow jittering", &lighting.shadowJitter))
                 updateLighting();
 
             ImGui::Separator();

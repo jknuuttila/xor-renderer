@@ -22,6 +22,7 @@
     <ClCompile Include="Exception.cpp" />
     <ClCompile Include="File.cpp" />
     <ClCompile Include="Log.cpp" />
+    <ClCompile Include="MathMorton.cpp" />
     <ClCompile Include="MathVectors.cpp" />
     <ClCompile Include="Serialization.cpp" />
     <ClCompile Include="String.cpp" />
@@ -41,9 +42,11 @@
     <ClInclude Include="Hash.hpp" />
     <ClInclude Include="Log.hpp" />
     <ClInclude Include="Math.hpp" />
+    <ClInclude Include="MathColors.hpp" />
     <ClInclude Include="MathFloat.hpp" />
     <ClInclude Include="MathGeom.hpp" />
     <ClInclude Include="MathInteger.hpp" />
+    <ClInclude Include="MathMorton.hpp" />
     <ClInclude Include="MathVectors.hpp" />
     <ClInclude Include="MathVectorSwizzle.hpp" />
     <ClInclude Include="OS.hpp" />

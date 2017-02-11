@@ -431,6 +431,12 @@ namespace xor
             };
         }
 
+        template <typename T, uint N>
+        inline Vector<T, N> clamp(Vector<T, N> x, Vector<T, N> minimum, Vector<T, N> maximum)
+        {
+            return max(minimum, min(maximum, x));
+        }
+
         static const float RadToDeg = 180.f / Pi;
         static const float DegToRad = Pi / 180.f;
 

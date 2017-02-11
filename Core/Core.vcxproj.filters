@@ -15,6 +15,7 @@
     <ClCompile Include="Exception.cpp" />
     <ClCompile Include="CorePCH.cpp" />
     <ClCompile Include="Serialization.cpp" />
+    <ClCompile Include="MathMorton.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Utils.hpp" />
@@ -40,6 +41,8 @@
     <ClInclude Include="MathVectorSwizzle.hpp" />
     <ClInclude Include="Sorting.hpp" />
     <ClInclude Include="MathGeom.hpp" />
+    <ClInclude Include="MathMorton.hpp" />
+    <ClInclude Include="MathColors.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="MathVectors.natvis" />
