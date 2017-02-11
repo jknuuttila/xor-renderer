@@ -8,6 +8,8 @@
 
 namespace xor
 {
+    static constexpr int MaxRenderTargets = 8;
+
     namespace backend
     {
 		struct QueryHeap;
@@ -63,7 +65,7 @@ namespace xor
             GPUTransientChunk readbackChunk;
             bool closed = false;
 
-            Texture activeRenderTarget;
+            std::array<Texture, MaxRenderTargets> activeRenderTargets;
 
             XorShaderDebugConstants debugConstants;
             BufferUAV shaderDebugData;
@@ -125,6 +127,8 @@ namespace xor
         void setRenderTargets();
         void setRenderTargets(TextureRTV &rtv);
         void setRenderTargets(TextureRTV &rtv, TextureDSV &dsv);
+        void setRenderTargets(Span<TextureRTV * const> rtvs);
+        void setRenderTargets(Span<TextureRTV * const> rtvs, TextureDSV &dsv);
         void setRenderTargets(TextureDSV &dsv);
 
         template <typename T>
@@ -210,8 +214,11 @@ namespace xor
 
         // FIXME: This is horribly inefficient and bad
         void transition(const backend::Resource &resource, D3D12_RESOURCE_STATES state);
+        void resetRenderTargets();
+        void transitionRenderTargets();
         void setupRootArguments(bool compute);
         backend::HeapBlock uploadBytes(Span<const uint8_t> bytes, uint alignment = DefaultAlignment);
+
 
         static void handleShaderDebug(SeqNum cmdListNumber, Span<const uint8_t> shaderDebugData,
                                       uint4 *shaderDebugFeedback = nullptr);

@@ -930,6 +930,36 @@ namespace xor
         return createTextureSRV(createTexture(textureInfo), viewInfo);
     }
 
+    TextureRTV Device::createTextureRTV(Texture texture, const TextureRTV::Info & viewInfo)
+    {
+        auto info = viewInfo.defaults(texture.info());
+
+        TextureRTV rtv;
+        rtv.m_texture = texture;
+        rtv.makeState().setParent(this);
+        rtv.S().descriptor = S().rtvs.allocateFromHeap();
+
+        D3D12_RENDER_TARGET_VIEW_DESC desc   = {};
+        desc.Format                          = info.format;
+        desc.ViewDimension                   = D3D12_RTV_DIMENSION_TEXTURE2D;
+        desc.Texture2D.MipSlice              = 0;
+        desc.Texture2D.PlaneSlice            = 0;
+
+        device()->CreateRenderTargetView(
+            texture.get(),
+            &desc,
+            rtv.S().descriptor.cpu);
+
+        return rtv;
+    }
+
+    TextureRTV Device::createTextureRTV(const Texture::Info & textureInfo, const TextureRTV::Info & viewInfo)
+    {
+        auto info = textureInfo;
+        info.allowRenderTarget = true;
+        return createTextureRTV(createTexture(info), viewInfo);
+    }
+
     TextureDSV Device::createTextureDSV(Texture texture, const TextureDSV::Info & viewInfo)
     {
         auto info = viewInfo.defaults(texture.info());

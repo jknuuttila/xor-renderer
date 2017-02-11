@@ -277,6 +277,12 @@ namespace xor
     template <typename T>
     using ElementType = std::remove_reference_t<decltype(std::declval<T>()[0])>;
 
+    template <typename T, typename... Ts>
+    auto array(T && t, Ts &&... ts)
+    {
+        return std::array<std::decay_t<T>, sizeof...(Ts) + 1> { t, ts... };
+    }
+
     template <typename T>
     auto makeSpan(T *ptr, size_t size = 1)
     {

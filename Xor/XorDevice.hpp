@@ -64,6 +64,8 @@ namespace xor
         Texture    createTexture(const Texture::Info &info);
         TextureSRV createTextureSRV(Texture texture                 , const TextureSRV::Info &viewInfo = TextureSRV::Info());
         TextureSRV createTextureSRV(const Texture::Info &textureInfo, const TextureSRV::Info &viewInfo = TextureSRV::Info());
+        TextureRTV createTextureRTV(Texture texture                 , const TextureRTV::Info &viewInfo = TextureRTV::Info());
+        TextureRTV createTextureRTV(const Texture::Info &textureInfo, const TextureRTV::Info &viewInfo = TextureRTV::Info());
         TextureDSV createTextureDSV(Texture texture                 , const TextureDSV::Info &viewInfo = TextureDSV::Info());
         TextureDSV createTextureDSV(const Texture::Info &textureInfo, const TextureDSV::Info &viewInfo = TextureDSV::Info());
         TextureUAV createTextureUAV(Texture texture                 , const TextureUAV::Info &viewInfo = TextureUAV::Info());

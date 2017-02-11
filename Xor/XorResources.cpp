@@ -706,7 +706,7 @@ namespace xor
         srv = device.createTextureSRV(info, viewInfo);
 
         if (info.allowUAV)          uav = device.createTextureUAV(srv.texture(), viewInfo);
-        // if (info.allowRenderTarget) rtv = device.createTextureRTV(srv.texture(), viewInfo);
+        if (info.allowRenderTarget) rtv = device.createTextureRTV(srv.texture(), viewInfo);
         if (info.allowDepthStencil) dsv = device.createTextureDSV(srv.texture(), viewInfo);
     }
 }

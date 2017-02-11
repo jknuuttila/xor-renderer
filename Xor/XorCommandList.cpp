@@ -77,7 +77,7 @@ namespace xor
 
             XOR_CHECK_HR(cmd()->Close());
             S().closed             = true;
-            S().activeRenderTarget = Texture();
+            resetRenderTargets();
         }
     }
 
@@ -90,7 +90,7 @@ namespace xor
         }
 
         S().closed             = false;
-        S().activeRenderTarget = Texture();
+        resetRenderTargets();
 
         ++S().timesStarted;
         S().seqNum = progress.startNewCommandList();
@@ -204,6 +204,21 @@ namespace xor
         cmd()->ResourceBarrier(1, &barrier);
 
         s = newState;
+    }
+
+    void CommandList::resetRenderTargets()
+    {
+        for (auto &rtv : S().activeRenderTargets)
+            rtv = Texture();
+    }
+
+    void CommandList::transitionRenderTargets()
+    {
+        for (auto &rtv : S().activeRenderTargets)
+        {
+            if (rtv)
+                transition(rtv, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        }
     }
 
     void CommandList::setupRootArguments(bool compute)
@@ -483,7 +498,7 @@ namespace xor
 
     void CommandList::setRenderTargets()
     {
-        S().activeRenderTarget = Texture();
+        resetRenderTargets();
 
         cmd()->OMSetRenderTargets(0,
                                   nullptr,
@@ -494,7 +509,9 @@ namespace xor
     void CommandList::setRenderTargets(TextureRTV &rtv)
     {
         transition(rtv.m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
-        S().activeRenderTarget = rtv.m_texture;
+
+        resetRenderTargets();
+        S().activeRenderTargets[0] = rtv.m_texture;
 
         cmd()->OMSetRenderTargets(1,
                                   &rtv.S().descriptor.cpu,
@@ -507,9 +524,11 @@ namespace xor
     void CommandList::setRenderTargets(TextureRTV & rtv, TextureDSV & dsv)
     {
         transition(rtv.m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        // FIXME: Could also be DEPTH_READ
         transition(dsv.m_texture, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
-        S().activeRenderTarget = rtv.m_texture;
+        resetRenderTargets();
+        S().activeRenderTargets[0] = rtv.m_texture;
 
         cmd()->OMSetRenderTargets(1,
                                   &rtv.S().descriptor.cpu,
@@ -519,11 +538,61 @@ namespace xor
         setViewport(rtv.texture()->size);
     }
 
+    void CommandList::setRenderTargets(Span<TextureRTV * const> rtvs)
+    {
+        XOR_ASSERT(rtvs.size() <= MaxRenderTargets, "Maximum render target count exceeded");
+
+        resetRenderTargets();
+
+        int i = 0;
+        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, MaxRenderTargets> rtvDescriptors;
+        for (auto &rtv : rtvs)
+        {
+            transition(rtv->m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
+            S().activeRenderTargets[i] = rtv->m_texture;
+            rtvDescriptors[i]          = rtv->S().descriptor.cpu;
+            ++i;
+        }
+
+        cmd()->OMSetRenderTargets(static_cast<UINT>(rtvs.size()),
+                                  rtvDescriptors.data(),
+                                  FALSE,
+                                  nullptr);
+
+        setViewport(rtvs[0]->texture()->size);
+    }
+
+    void CommandList::setRenderTargets(Span<TextureRTV * const> rtvs, TextureDSV & dsv)
+    {
+        XOR_ASSERT(rtvs.size() <= MaxRenderTargets, "Maximum render target count exceeded");
+
+        resetRenderTargets();
+        // FIXME: Could also be DEPTH_READ
+        transition(dsv.m_texture, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+        int i = 0;
+        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, MaxRenderTargets> rtvDescriptors;
+        for (auto &rtv : rtvs)
+        {
+            transition(rtv->m_texture, D3D12_RESOURCE_STATE_RENDER_TARGET);
+            S().activeRenderTargets[i] = rtv->m_texture;
+            rtvDescriptors[i]          = rtv->S().descriptor.cpu;
+            ++i;
+        }
+
+        cmd()->OMSetRenderTargets(static_cast<UINT>(rtvs.size()),
+                                  rtvDescriptors.data(),
+                                  FALSE,
+                                  &dsv.S().descriptor.cpu);
+
+        setViewport(rtvs[0]->texture()->size);
+    }
+
     void CommandList::setRenderTargets(TextureDSV & dsv)
     {
         transition(dsv.m_texture, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
-        S().activeRenderTarget = Texture();
+        resetRenderTargets();
 
         cmd()->OMSetRenderTargets(0,
                                   nullptr,
@@ -655,14 +724,14 @@ namespace xor
 
     void CommandList::draw(uint vertices, uint startVertex)
     {
-        transition(S().activeRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        transitionRenderTargets();
         setupRootArguments(false);
         cmd()->DrawInstanced(vertices, 1, startVertex, 0);
     }
 
     void CommandList::drawIndexed(uint indices, uint startIndex)
     {
-        transition(S().activeRenderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        transitionRenderTargets();
         setupRootArguments(false);
         cmd()->DrawIndexedInstanced(indices, 1, startIndex, 0, 0); 
     }

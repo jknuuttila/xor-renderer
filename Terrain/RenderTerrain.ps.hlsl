@@ -7,11 +7,20 @@ struct PSInput
     float4 svPos    : SV_Position;
 };
 
-[RootSignature(RENDERTERRAIN_ROOT_SIGNATURE)]
-float4 main(PSInput i) : SV_Target
+struct PSOutput
 {
-    float2 uv      = i.uv.xy;
-    float2 noiseUV = i.svPos.xy / noiseResolution;
+    float4 color      : SV_Target0;
+    float  shadowTerm : SV_Target1;
+};
+
+[RootSignature(RENDERTERRAIN_ROOT_SIGNATURE)]
+PSOutput main(PSInput i)
+{
+    PSOutput o;
+
+    float2 uv       = i.uv.xy;
+    float2 noiseUV  = i.svPos.xy / noiseResolution;
+    float2 screenUV = i.svPos.xy / resolution;
 
     float h = (i.worldPos.y - heightMin) / (heightMax - heightMin);
 #ifdef WIREFRAME
@@ -32,7 +41,12 @@ float4 main(PSInput i) : SV_Target
     float2 shadowNoiseOffset = lerp(-1, 1, noise.xy) * noiseAmplitude;
     float shadowZ            = terrainShadows.Sample(pointSampler, shadowUV + shadowNoiseOffset);
 
-    float shadow     = shadowPos.z >= shadowZ ? 1 : 0;
+    float reprojectedShadow = shadowHistory.Sample(bilinearSampler, screenUV);
+    float shadow = shadowPos.z >= shadowZ ? 1 : 0;
+
+    shadow = lerp(shadow, reprojectedShadow, shadowHistoryBlend);
+
+    o.shadowTerm = shadow;
 
 #if defined(LIGHTING)
     float3 N = normalize(terrainNormal.Sample(bilinearSampler, uv).xyz);
@@ -44,14 +58,17 @@ float4 main(PSInput i) : SV_Target
     color *= shadow;
     color += ambientOcclusion * ambient.rgb;
 
-	return float4(color, 1);
+    o.color.rgb = color;
 #elif defined(SHOW_AO)
-    float3 color = ambientOcclusion;
-	return float4(color, 1);
+    o.color.rgb = ambientOcclusion;
 #elif defined(SHADOW_TERM)
-    float3 color = lerp(0.1, 0.9, shadow) * ambientOcclusion;
-	return float4(color, 1);
+    o.color.rgb = lerp(0.1, 0.9, shadow) * ambientOcclusion;
+#elif defined(SHADOW_HISTORY)
+    o.color.rgb = o.shadowTerm;
 #else
-	return float4(albedo, 1);
+    o.color.rgb = albedo;
 #endif
+    o.color.a   = 1;
+
+    return o;
 }
