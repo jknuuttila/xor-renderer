@@ -136,6 +136,35 @@ enum class VisualizationMode
 	CPUError,
 };
 
+struct BlueNoise
+{
+    static constexpr int Count = 16;
+
+    Image blueNoise[Count];
+    TextureSRV blueNoiseSRV[Count];
+
+    BlueNoise() = default;
+    BlueNoise(Device &device)
+    {
+        for (int i = 0; i < Count; ++i)
+        {
+            blueNoise[i] = Image(info::ImageInfo(
+                String::format(XOR_DATA "/blue-noise/128_128/LDR_RGBA_%d.png", i)));
+            blueNoiseSRV[i] = device.createTextureSRV(info::TextureInfo(blueNoise[i]));
+        }
+    }
+
+    TextureSRV &srv(int frameNumber = 0)
+    {
+        return blueNoiseSRV[frameNumber % Count];
+    }
+
+    ImageData data(int frameNumber = 0)
+    {
+        return blueNoise[frameNumber % Count].imageData();
+    }
+};
+
 struct HeightmapRenderer
 {
     using DE = DirectedEdge<Empty, int3>;
@@ -158,6 +187,7 @@ struct HeightmapRenderer
     RWTexture normalMap;
     RWTexture aoMap;
     RWTexture shadowMap;
+    BlueNoise blueNoise;
 
     struct LightingProperties
     {
@@ -166,6 +196,7 @@ struct HeightmapRenderer
         float3 ambient;
         int shadowBiasExp  = 0;
         float shadowSSBias = 0;
+        float shadowNoisePixels = 0;
     };
     LightingProperties lighting;
     std::vector<info::ShaderDefine> lightingDefines;
@@ -209,6 +240,8 @@ struct HeightmapRenderer
         }
 
         setShadowMapDim(1024);
+
+        blueNoise = BlueNoise(device);
     }
 
     void computeNormalMap(CommandList &cmd)
@@ -1236,6 +1269,7 @@ struct HeightmapRenderer
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainNormal);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainAO);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainShadows);
+        cmd.setShaderViewNullTextureSRV(RenderTerrain::noiseTexture);
 
         {
             auto p = cmd.profilingEvent("Draw shadows");
@@ -1251,6 +1285,8 @@ struct HeightmapRenderer
                 const Matrix &viewProj,
                 bool wireframe = false)
 	{
+        float2 resolution = rtv.texture()->sizeFloat();
+
         float3 terrainMin = float3(minWorld.x, minWorld.y, heightmap->minHeight);
         float3 terrainMax = float3(maxWorld.x, maxWorld.y, heightmap->maxHeight);
 
@@ -1268,7 +1304,18 @@ struct HeightmapRenderer
 
         float3 terrainViewMin = float3(1e10f);
         float3 terrainViewMax = float3(-1e10f);
-        Matrix shadowView = Matrix::lookAt(lighting.sunDirection * worldDiameter, float3(0));
+
+        static float  shadowRot = 0;
+        static float2 shadowJitter = 0;
+        ImGui::Begin("Pls");
+        ImGui::SliderFloat("Shadow rotation", &shadowRot, 0, 1);
+        ImGui::SliderFloat("Shadow jitter X", &shadowJitter.x, -10, 10);
+        ImGui::SliderFloat("Shadow jitter Y", &shadowJitter.y, -10, 10);
+        ImGui::End();
+
+        Matrix R = Matrix::axisAngle(float3(0, 0, -1), Angle::degrees(shadowRot * 360));
+        float2 px = 2.f / shadowMap.texture()->sizeFloat();
+        Matrix shadowView = R * Matrix::lookAt(lighting.sunDirection * worldDiameter, float3(0));
 
         for (auto c : terrainCorners)
         {
@@ -1289,7 +1336,7 @@ struct HeightmapRenderer
         Matrix shadowProj = Matrix::projectionOrtho(float2(terrainDims),
                                                     terrainNear,
                                                     terrainFar);
-        Matrix shadowViewProj = shadowProj * shadowView;
+        Matrix shadowViewProj = (shadowProj * shadowView) + Matrix::projectionJitter(shadowJitter * px);
 
 #if 0
         for (auto c : terrainCorners)
@@ -1302,12 +1349,14 @@ struct HeightmapRenderer
 #endif
 
 		RenderTerrain::Constants constants;
-		constants.viewProj       = viewProj;
-        constants.shadowViewProj = shadowViewProj;
-		constants.worldMin       = minWorld;
-		constants.worldMax       = maxWorld;
-        constants.heightMin      = heightmap->minHeight;
-        constants.heightMax      = heightmap->maxHeight;
+		constants.viewProj        = viewProj;
+        constants.shadowViewProj  = shadowViewProj;
+		constants.worldMin        = minWorld;
+		constants.worldMax        = maxWorld;
+        constants.heightMin       = heightmap->minHeight;
+        constants.heightMax       = heightmap->maxHeight;
+        constants.noiseResolution = float2(blueNoise.srv().texture()->size);
+        constants.noiseAmplitude  = lighting.shadowNoisePixels / float2(shadowMap.texture()->size);
 
         RenderTerrain::LightingConstants lightingConstants;
         lightingConstants.sunDirection = lighting.sunDirection.s_xyz0;
@@ -1327,6 +1376,7 @@ struct HeightmapRenderer
         cmd.setShaderView(RenderTerrain::terrainNormal,  normalMap.srv);
         cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
         cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
+        cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(int(device.frameNumber())));
         {
             auto p = cmd.profilingEvent("Draw opaque");
             cmd.drawIndexed(mesh.numIndices());
@@ -1415,6 +1465,7 @@ class Terrain : public Window
         int shadowBiasExp  = -20;
         float shadowSSBias = -2;
         int shadowDimExp   = 10;
+        float shadowNoiseAmplitude = 0;
     } lighting;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
@@ -1522,6 +1573,7 @@ public:
         props.ambient       = lighting.ambient;
         props.shadowBiasExp = lighting.shadowBiasExp;
         props.shadowSSBias  = lighting.shadowSSBias;
+        props.shadowNoisePixels = lighting.shadowNoiseAmplitude;
 
         heightmapRenderer.setLightingProperties(&props, renderingMode);
 
@@ -1611,6 +1663,8 @@ public:
             if (ImGui::SliderFloat("Shadow slope scaled depth bias", &lighting.shadowSSBias, -10, 10))
                 updateLighting();
             if (ImGui::SliderInt("Shadow map size exponent", &lighting.shadowDimExp, 8, 12))
+                updateLighting();
+            if (ImGui::SliderFloat("Shadow noise amplitude", &lighting.shadowNoiseAmplitude, 0, 10))
                 updateLighting();
 
             ImGui::Separator();

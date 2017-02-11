@@ -31,6 +31,8 @@ namespace xor
 
 #define XOR_SAMPLER_BILINEAR(samplerName)
 #define XOR_SAMPLER_POINT(samplerName)
+#define XOR_SAMPLER_BILINEAR_WRAP(samplerName)
+#define XOR_SAMPLER_POINT_WRAP(samplerName)
 
 #define XOR_THREADGROUP_SIZE_1D(sizeX)               static constexpr ::xor::backend::ThreadGroupSize<sizeX, 1, 1> threadGroupSize = {};
 #define XOR_THREADGROUP_SIZE_2D(sizeX, sizeY)        static constexpr ::xor::backend::ThreadGroupSize<sizeX, sizeY, 1> threadGroupSize = {};
@@ -56,6 +58,10 @@ namespace xor
     SamplerState samplerName : register(s0);
 #define XOR_SAMPLER_POINT(samplerName) \
     SamplerState samplerName : register(s1);
+#define XOR_SAMPLER_BILINEAR_WRAP(samplerName) \
+    SamplerState samplerName : register(s2);
+#define XOR_SAMPLER_POINT_WRAP(samplerName) \
+    SamplerState samplerName : register(s3);
 
 #define XOR_THREADGROUP_SIZE_1D(sizeX)               static const uint TGSizeX = sizeX; static const uint TGSizeY = 1; static const uint TGSizeZ = 1; static const uint3 TGSize = uint3(sizeX, 1, 1);
 #define XOR_THREADGROUP_SIZE_2D(sizeX, sizeY)        static const uint TGSizeX = sizeX; static const uint TGSizeY = sizeY; static const uint TGSizeZ = 1; static const uint3 TGSize = uint3(sizeX, sizeY, 1);
@@ -70,7 +76,17 @@ namespace xor
     "StaticSampler(s0, " \
         "filter = FILTER_MIN_MAG_LINEAR_MIP_POINT), " \
     "StaticSampler(s1, " \
-        "filter = FILTER_MIN_MAG_MIP_POINT), "
+        "filter = FILTER_MIN_MAG_MIP_POINT), " \
+    "StaticSampler(s2, " \
+        "filter = FILTER_MIN_MAG_LINEAR_MIP_POINT, " \
+        "addressU = TEXTURE_ADDRESS_WRAP, " \
+        "addressV = TEXTURE_ADDRESS_WRAP, " \
+        "addressW = TEXTURE_ADDRESS_WRAP), " \
+    "StaticSampler(s3, " \
+        "filter = FILTER_MIN_MAG_MIP_POINT, " \
+        "addressU = TEXTURE_ADDRESS_WRAP, " \
+        "addressV = TEXTURE_ADDRESS_WRAP, " \
+        "addressW = TEXTURE_ADDRESS_WRAP), "
 
 // Built-in descriptors for ShaderDebug
 #define XOR_ROOT_SIGNATURE_DEBUG \

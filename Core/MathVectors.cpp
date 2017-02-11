@@ -132,6 +132,16 @@ namespace xor
             };
         }
 
+        Matrix Matrix::projectionJitter(float2 jitter)
+        {
+            return Matrix {
+                { 0, 0, 0, jitter.x },
+                { 0, 0, 0, jitter.y },
+                { 0, 0, 0, 0        },
+                { 0, 0, 0, 0        },
+            };
+        }
+
         Matrix Matrix::azimuthElevation(Angle azimuth, Angle elevation)
         {
             Matrix A = Matrix::axisAngle({ 0, 1, 0 }, azimuth);

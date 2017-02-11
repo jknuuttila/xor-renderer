@@ -10,7 +10,8 @@ struct PSInput
 [RootSignature(RENDERTERRAIN_ROOT_SIGNATURE)]
 float4 main(PSInput i) : SV_Target
 {
-    float2 uv = i.uv.xy;
+    float2 uv      = i.uv.xy;
+    float2 noiseUV = i.svPos.xy / noiseResolution;
 
     float h = (i.worldPos.y - heightMin) / (heightMax - heightMin);
 #ifdef WIREFRAME
@@ -21,12 +22,15 @@ float4 main(PSInput i) : SV_Target
     float3 albedo = h;
 #endif
 
+    float4 noise = noiseTexture.Sample(pointWrapSampler, noiseUV);
+
     float ambientOcclusion = terrainAO.Sample(bilinearSampler, i.uv.zw);
 
-    float4 shadowPos = mul(shadowViewProj, i.worldPos);
-    shadowPos.xyz   /= shadowPos.w;
-    float2 shadowUV  = ndcToUV(shadowPos.xy);
-    float shadowZ    = terrainShadows.Sample(pointSampler, shadowUV);
+    float4 shadowPos         = mul(shadowViewProj, i.worldPos);
+    shadowPos.xyz           /= shadowPos.w;
+    float2 shadowUV          = ndcToUV(shadowPos.xy);
+    float2 shadowNoiseOffset = lerp(-1, 1, noise.xy) * noiseAmplitude;
+    float shadowZ            = terrainShadows.Sample(pointSampler, shadowUV + shadowNoiseOffset);
 
     float shadow     = shadowPos.z >= shadowZ ? 1 : 0;
 

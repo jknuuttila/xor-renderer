@@ -656,6 +656,7 @@ namespace xor
             static Matrix projectionOrtho(float2 dims,
                                           float depth1Plane = DefaultDepth1Plane,
                                           float depth0Plane = DefaultDepth0Plane);
+            static Matrix projectionJitter(float2 jitter);
 
             static Matrix azimuthElevation(Angle azimuth, Angle elevation);
         };

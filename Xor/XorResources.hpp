@@ -138,6 +138,8 @@ namespace xor
             TextureInfo(ID3D12Resource *texture);
 
             size_t sizeBytes() const;
+
+            float2 sizeFloat() const { return float2(size); }
         };
 
         class TextureInfoBuilder : public TextureInfo
