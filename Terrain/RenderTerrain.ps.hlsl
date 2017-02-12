@@ -39,11 +39,18 @@ PSOutput main(PSInput i)
     shadowPos.xyz           /= shadowPos.w;
     float2 shadowUV          = ndcToUV(shadowPos.xy);
     float2 shadowNoiseOffset = lerp(-1, 1, noise.xy) * noiseAmplitude;
+    float2 shadowNoiseOffset2 = lerp(-1, 1, noise.zw) * noiseAmplitude;
     float shadowZ            = terrainShadows.Sample(pointSampler, shadowUV + shadowNoiseOffset);
 
     float reprojectedShadow = shadowHistory.Sample(bilinearSampler, screenUV);
     // float shadow = shadowPos.z >= shadowZ ? 1 : 0;
-    float shadow = terrainShadows.SampleCmp(pcfSampler, shadowUV + shadowNoiseOffset, shadowPos.z);
+    //float shadow = terrainShadows.SampleCmp(pcfSampler, shadowUV + shadowNoiseOffset, shadowPos.z);
+    float shadow = sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset, shadowPos.z, 1024);
+    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(1, 0) / 1024.0, shadowPos.z, 1024);
+    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(-1, 0) / 1024.0, shadowPos.z, 1024);
+    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, 1) / 1024.0, shadowPos.z, 1024);
+    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, -1) / 1024.0, shadowPos.z, 1024);
+    // shadow /= 5;
 
     shadow = lerp(shadow, reprojectedShadow, shadowHistoryBlend);
 

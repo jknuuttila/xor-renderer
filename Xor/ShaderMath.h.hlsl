@@ -248,4 +248,265 @@ float GGX(float3 N, float3 V, float3 L, float roughness, float F0)
     return GGX_OPT3(N, V, L, roughness, F0);
 }
 
+#if 0
+float4 bicubicBSpline(Texture2D<float4> tex, SamplerState bilinear, float2 uv)
+{
+    float2 iTc = uv;
+
+    float2 texSize;
+    tex.GetDimensions( texSize.x, texSize.y );
+    float2 invTexSize = 1.0 / texSize;
+ 
+    iTc *= texSize;
+
+    //round tc *down* to the nearest *texel center*
+ 
+    float2 tc = floor( iTc - 0.5 ) + 0.5;
+
+    //compute the fractional offset from that texel center
+    //to the actual coordinate we want to filter at
+ 
+    float2 f = iTc - tc;
+ 
+    //we'll need the second and third powers
+    //of f to compute our filter weights
+ 
+    float2 f2 = f * f;
+    float2 f3 = f2 * f;
+ 
+    //compute the filter weights
+ 
+    float2 a  = f;
+    float2 w0 = (1.0 / 6.0)*(a*(a*(-a + 3.0) - 3.0) + 1.0);
+    float2 w1 = (1.0 / 6.0)*(a*a*(3.0*a - 6.0) + 4.0);
+    float2 w2 = (1.0 / 6.0)*(a*(a*(-3.0*a + 3.0) + 3.0) + 1.0);
+    float2 w3 = (1.0 / 6.0)*(a*a*a);
+
+    //get our texture coordinates
+ 
+    float2 tc0 = tc - 1;
+    float2 tc1 = tc;
+    float2 tc2 = tc + 1;
+    float2 tc3 = tc + 2;
+ 
+    /*
+        If we're only using a portion of the texture,
+        this is where we need to clamp tc2 and tc3 to
+        make sure we don't sample off into the unused
+        part of the texture (tc0 and tc1 only need to
+        be clamped if our subrectangle doesn't start
+        at the origin).
+    */
+ 
+    //convert them to normalized coordinates
+ 
+    tc0 *= invTexSize;
+    tc1 *= invTexSize;
+    tc2 *= invTexSize;
+    tc3 *= invTexSize;
+
+    //get our texture coordinates
+ 
+    float2 s0 = w0 + w1;
+    float2 s1 = w2 + w3;
+ 
+    float2 f0 = w1 / (w0 + w1);
+    float2 f1 = w3 / (w2 + w3);
+ 
+    float2 t0 = tc - 1 + f0;
+    float2 t1 = tc + 1 + f1;
+ 
+    //and sample and blend
+ 
+#if 1
+    return
+        (tex.Sample(bilinear, float2( t0.x, t0.y ) ) * s0.x
+      +  tex.Sample(bilinear, float2( t1.x, t0.y ) ) * s1.x) * s0.y
+      + (tex.Sample(bilinear, float2( t0.x, t1.y ) ) * s0.x
+      +  tex.Sample(bilinear, float2( t1.x, t1.y ) ) * s1.x) * s1.y;
+#else
+    return
+        tex.Sample(bilinear, float2( t0.x, t0.y ) ) * s0.x * s0.y
+      + tex.Sample(bilinear, float2( t1.x, t0.y ) ) * s1.x * s0.y
+      + tex.Sample(bilinear, float2( t0.x, t1.y ) ) * s0.x * s1.y
+      + tex.Sample(bilinear, float2( t1.x, t1.y ) ) * s1.x * s1.y;
+#endif
+#if 0
+    //--------------------------------------------------------------------------------------
+    // Calculate the center of the texel to avoid any filtering
+
+    float2 textureDimensions    = 128;//GetTextureDimensions( tex );
+    float2 invTextureDimensions = 1.f / textureDimensions;
+
+    uv *= textureDimensions;
+
+    float2 texelCenter   = floor( uv - 0.5f ) + 0.5f;
+    float2 fracOffset    = uv - texelCenter;
+    float2 fracOffset_x2 = fracOffset * fracOffset;
+    float2 fracOffset_x3 = fracOffset * fracOffset_x2;
+
+    //--------------------------------------------------------------------------------------
+    // Calculate the filter weights (B-Spline Weighting Function)
+
+    float2 weight0 = fracOffset_x2 - 0.5f * ( fracOffset_x3 + fracOffset );
+    float2 weight1 = 1.5f * fracOffset_x3 - 2.5f * fracOffset_x2 + 1.f;
+    float2 weight3 = 0.5f * ( fracOffset_x3 - fracOffset_x2 );
+    float2 weight2 = 1.f - weight0 - weight1 - weight3;
+
+    //--------------------------------------------------------------------------------------
+    // Calculate the texture coordinates
+
+    float2 scalingFactor0 = weight0 + weight1;
+    float2 scalingFactor1 = weight2 + weight3;
+
+    float2 f0 = weight1 / ( weight0 + weight1 );
+    float2 f1 = weight3 / ( weight2 + weight3 );
+
+    float2 texCoord0 = texelCenter - 1.f + f0;
+    float2 texCoord1 = texelCenter + 1.f + f1;
+
+    texCoord0 *= invTextureDimensions;
+    texCoord1 *= invTextureDimensions;
+
+    //--------------------------------------------------------------------------------------
+    // Sample the texture
+
+    return tex.Sample( bilinear, float2( texCoord0.x, texCoord0.y ) ) * scalingFactor0.x * scalingFactor0.y +
+           tex.Sample( bilinear, float2( texCoord1.x, texCoord0.y ) ) * scalingFactor1.x * scalingFactor0.y +
+           tex.Sample( bilinear, float2( texCoord0.x, texCoord1.y ) ) * scalingFactor0.x * scalingFactor1.y +
+           tex.Sample( bilinear, float2( texCoord1.x, texCoord1.y ) ) * scalingFactor1.x * scalingFactor1.y;
+#endif
+}
+#else
+
+// w0, w1, w2, and w3 are the four cubic B-spline basis functions
+float w0(float a)
+{
+    return (1.0/6.0)*(a*(a*(-a + 3.0) - 3.0) + 1.0);
+}
+
+float w1(float a)
+{
+    return (1.0/6.0)*(a*a*(3.0*a - 6.0) + 4.0);
+}
+
+float w2(float a)
+{
+    return (1.0/6.0)*(a*(a*(-3.0*a + 3.0) + 3.0) + 1.0);
+}
+
+float w3(float a)
+{
+    return (1.0/6.0)*(a*a*a);
+}
+
+// g0 and g1 are the two amplitude functions
+float g0(float a)
+{
+    return w0(a) + w1(a);
+}
+
+float g1(float a)
+{
+    return w2(a) + w3(a);
+}
+
+// h0 and h1 are the two offset functions
+float h0(float a)
+{
+    return -1.0 + w1(a) / (w0(a) + w1(a));
+}
+
+float h1(float a)
+{
+    return 1.0 + w3(a) / (w2(a) + w3(a));
+}
+
+struct BicubicBSplineWeights
+{
+    float g0x;
+    float g1x;
+    float g0y;
+    float g1y;
+	float2 p0;
+	float2 p1;
+	float2 p2;
+	float2 p3;
+};
+
+BicubicBSplineWeights bicubicBSplineWeights(float2 uv, float2 textureSize)
+{
+    float2 invTextureSize = 1 / textureSize;
+
+	uv = uv*textureSize + 0.5;
+	float2 iuv = floor( uv );
+	float2 fuv = frac( uv );
+
+    float g0x = g0(fuv.x);
+    float g1x = g1(fuv.x);
+    float h0x = h0(fuv.x);
+    float h1x = h1(fuv.x);
+    float h0y = h0(fuv.y);
+    float h1y = h1(fuv.y);
+
+	float2 p0 = (float2(iuv.x + h0x, iuv.y + h0y) - 0.5) * invTextureSize;
+	float2 p1 = (float2(iuv.x + h1x, iuv.y + h0y) - 0.5) * invTextureSize;
+	float2 p2 = (float2(iuv.x + h0x, iuv.y + h1y) - 0.5) * invTextureSize;
+	float2 p3 = (float2(iuv.x + h1x, iuv.y + h1y) - 0.5) * invTextureSize;
+
+    BicubicBSplineWeights weights;
+    weights.g0x = g0x;
+    weights.g1x = g1x;
+    weights.g0y = g0(fuv.y);
+    weights.g1y = g1(fuv.y);
+    weights.p0  = p0;
+    weights.p1  = p1;
+    weights.p2  = p2;
+    weights.p3  = p3;
+
+    return weights;
+}
+	
+#define BICUBIC_SAMPLE(texture_, bilinear_, weights_) \
+    return weights_.g0y * (weights_.g0x * texture_.Sample(bilinear_, weights_.p0)  + \
+                           weights_.g1x * texture_.Sample(bilinear_, weights_.p1)) + \
+           weights_.g1y * (weights_.g0x * texture_.Sample(bilinear_, weights_.p2)  + \
+                           weights_.g1x * texture_.Sample(bilinear_, weights_.p3));
+#define BICUBIC_SAMPLE_CMP(texture_, cmpBilinear_, weights_, cmp_) \
+    return weights_.g0y * (weights_.g0x * texture_.SampleCmp(cmpBilinear_, weights_.p0, cmp_)  + \
+                           weights_.g1x * texture_.SampleCmp(cmpBilinear_, weights_.p1, cmp_)) + \
+           weights_.g1y * (weights_.g0x * texture_.SampleCmp(cmpBilinear_, weights_.p2, cmp_)  + \
+                           weights_.g1x * texture_.SampleCmp(cmpBilinear_, weights_.p3, cmp_));
+
+float sampleBicubicBSpline(Texture2D<float> tex, SamplerState bilinear, float2 uv, float2 textureSize)
+{
+    BicubicBSplineWeights weights = bicubicBSplineWeights(uv, textureSize);
+    BICUBIC_SAMPLE(tex, bilinear, weights);
+}
+float2 sampleBicubicBSpline(Texture2D<float2> tex, SamplerState bilinear, float2 uv, float2 textureSize)
+{
+    BicubicBSplineWeights weights = bicubicBSplineWeights(uv, textureSize);
+    BICUBIC_SAMPLE(tex, bilinear, weights);
+}
+float3 sampleBicubicBSpline(Texture2D<float3> tex, SamplerState bilinear, float2 uv, float2 textureSize)
+{
+    BicubicBSplineWeights weights = bicubicBSplineWeights(uv, textureSize);
+    BICUBIC_SAMPLE(tex, bilinear, weights);
+}
+float4 sampleBicubicBSpline(Texture2D<float4> tex, SamplerState bilinear, float2 uv, float2 textureSize)
+{
+    BicubicBSplineWeights weights = bicubicBSplineWeights(uv, textureSize);
+    BICUBIC_SAMPLE(tex, bilinear, weights);
+}
+float sampleCmpBicubicBSpline(Texture2D<float> tex, SamplerComparisonState cmpBilinear, float2 uv, float cmp, float2 textureSize)
+{
+    BicubicBSplineWeights weights = bicubicBSplineWeights(uv, textureSize);
+    BICUBIC_SAMPLE_CMP(tex, cmpBilinear, weights, cmp);
+}
+
+#undef BICUBIC_SAMPLE
+#undef BICUBIC_SAMPLE_CMP
+
+#endif
+
 #endif
