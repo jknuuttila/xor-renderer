@@ -33,6 +33,7 @@ namespace xor
 #define XOR_SAMPLER_POINT(samplerName)
 #define XOR_SAMPLER_BILINEAR_WRAP(samplerName)
 #define XOR_SAMPLER_POINT_WRAP(samplerName)
+#define XOR_SAMPLER_PCF_GE(samplerName)
 
 #define XOR_THREADGROUP_SIZE_1D(sizeX)               static constexpr ::xor::backend::ThreadGroupSize<sizeX, 1, 1> threadGroupSize = {};
 #define XOR_THREADGROUP_SIZE_2D(sizeX, sizeY)        static constexpr ::xor::backend::ThreadGroupSize<sizeX, sizeY, 1> threadGroupSize = {};
@@ -62,6 +63,8 @@ namespace xor
     SamplerState samplerName : register(s2);
 #define XOR_SAMPLER_POINT_WRAP(samplerName) \
     SamplerState samplerName : register(s3);
+#define XOR_SAMPLER_PCF_GE(samplerName) \
+    SamplerComparisonState samplerName : register(s4);
 
 #define XOR_THREADGROUP_SIZE_1D(sizeX)               static const uint TGSizeX = sizeX; static const uint TGSizeY = 1; static const uint TGSizeZ = 1; static const uint3 TGSize = uint3(sizeX, 1, 1);
 #define XOR_THREADGROUP_SIZE_2D(sizeX, sizeY)        static const uint TGSizeX = sizeX; static const uint TGSizeY = sizeY; static const uint TGSizeZ = 1; static const uint3 TGSize = uint3(sizeX, sizeY, 1);
@@ -86,7 +89,10 @@ namespace xor
         "filter = FILTER_MIN_MAG_MIP_POINT, " \
         "addressU = TEXTURE_ADDRESS_WRAP, " \
         "addressV = TEXTURE_ADDRESS_WRAP, " \
-        "addressW = TEXTURE_ADDRESS_WRAP), "
+        "addressW = TEXTURE_ADDRESS_WRAP), " \
+    "StaticSampler(s4, " \
+        "filter = FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, " \
+        "comparisonFunc = COMPARISON_GREATER_EQUAL), " \
 
 // Built-in descriptors for ShaderDebug
 #define XOR_ROOT_SIGNATURE_DEBUG \

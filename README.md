@@ -33,3 +33,7 @@ This software uses the Fast Quadric Mesh Simplification library from
 https://github.com/sp4cerat/Fast-Quadric-Mesh-Simplification . The
 library is used under the MIT license.
 
+This software uses the libmorton library from
+https://github.com/Forceflow/libmorton for encoding and decoding morton
+codes. The library is used under the MIT license.
+

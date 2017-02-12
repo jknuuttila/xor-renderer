@@ -36,6 +36,7 @@ XOR_SRV(Texture2D<float>,  shadowHistory,  5)
 XOR_SAMPLER_BILINEAR(bilinearSampler)
 XOR_SAMPLER_POINT(pointSampler)
 XOR_SAMPLER_POINT_WRAP(pointWrapSampler)
+XOR_SAMPLER_PCF_GE(pcfSampler)
 
 XOR_END_SIGNATURE
 
