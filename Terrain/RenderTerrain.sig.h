@@ -16,6 +16,7 @@ XOR_CBUFFER(Constants, 0)
     float2 noiseResolution;
     float2 noiseAmplitude;
     float2 resolution;
+    float2 shadowResolution;
     float  shadowHistoryBlend;
 };
 

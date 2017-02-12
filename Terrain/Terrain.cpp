@@ -1386,6 +1386,7 @@ struct HeightmapRenderer
         constants.noiseResolution = float2(blueNoise.srv().texture()->size);
         constants.noiseAmplitude  = lighting.shadowNoisePixels / float2(shadowMap.texture()->size);
         constants.resolution      = rtv.texture()->sizeFloat();
+        constants.shadowResolution   = shadowMap.texture()->sizeFloat();
         constants.shadowHistoryBlend = lighting.shadowHistoryBlend;
 
         RenderTerrain::LightingConstants lightingConstants;

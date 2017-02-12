@@ -45,14 +45,23 @@ PSOutput main(PSInput i)
     float reprojectedShadow = shadowHistory.Sample(bilinearSampler, screenUV);
     // float shadow = shadowPos.z >= shadowZ ? 1 : 0;
     //float shadow = terrainShadows.SampleCmp(pcfSampler, shadowUV + shadowNoiseOffset, shadowPos.z);
-    float shadow = sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset, shadowPos.z, 1024);
-    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(1, 0) / 1024.0, shadowPos.z, 1024);
-    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(-1, 0) / 1024.0, shadowPos.z, 1024);
-    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, 1) / 1024.0, shadowPos.z, 1024);
-    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, -1) / 1024.0, shadowPos.z, 1024);
-    // shadow /= 5;
+    shadowUV += shadowNoiseOffset;
+    float shadow = sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV, shadowPos.z, shadowResolution);
+    shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(1, 0) / shadowResolution, shadowPos.z, shadowResolution);
+    shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(-1, 0) / shadowResolution, shadowPos.z, shadowResolution);
+    shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, 1) / shadowResolution, shadowPos.z, shadowResolution);
+    shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, -1) / shadowResolution, shadowPos.z, shadowResolution);
+    shadow /= 5;
 
-    shadow = lerp(shadow, reprojectedShadow, shadowHistoryBlend);
+    float2 shadowUnnormalized = shadowUV * shadowResolution;
+    float2 shadowFrac = frac(shadowUnnormalized);
+    float shadowConfidence = 1 - max(abs(shadowFrac.x - 0.5), abs(shadowFrac.y - 0.5)) * 2;
+    float confExp = 0.3;
+
+    float k = 1 - pow(shadowConfidence, shadowHistoryBlend * 10);
+    shadow = lerp(shadow, reprojectedShadow, k);
+    // shadow = k;
+    //shadow = lerp(shadow, reprojectedShadow, shadowHistoryBlend);
 
     o.shadowTerm = shadow;
 
