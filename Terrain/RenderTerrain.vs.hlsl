@@ -9,9 +9,10 @@ struct VSInput
 
 struct VSOutput
 {
-    float4 worldPos : POSITION0;
-    float4 uv       : TEXCOORD0;
-    float4 pos      : SV_Position;
+    float4 worldPos     : POSITION0;
+    float4 prevPos      : POSITION1;
+    float4 uv           : TEXCOORD0;
+    float4 pos          : SV_Position;
 };
 
 [RootSignature(RENDERTERRAIN_ROOT_SIGNATURE)]
@@ -23,5 +24,7 @@ VSOutput main(VSInput i)
     o.worldPos.w  = 1;
     o.uv          = float4(i.uv, i.normalizedPos);
 	o.pos         = mul(viewProj, o.worldPos);
+    o.prevPos     = mul(prevViewProj, o.worldPos);
+    o.prevPos.xyz /= o.prevPos.w;
     return o;
 }

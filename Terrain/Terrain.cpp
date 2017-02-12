@@ -199,6 +199,7 @@ struct HeightmapRenderer
     RWTexture shadowMap;
     RWTexture shadowHistory[2];
     BlueNoise blueNoise;
+    Matrix prevViewProj = Matrix::identity();
 
     struct LightingProperties
     {
@@ -1379,6 +1380,7 @@ struct HeightmapRenderer
 		RenderTerrain::Constants constants;
 		constants.viewProj        = viewProj;
         constants.shadowViewProj  = shadowViewProj;
+        constants.prevViewProj    = prevViewProj;
 		constants.worldMin        = minWorld;
 		constants.worldMax        = maxWorld;
         constants.heightMin       = heightmap->minHeight;
@@ -1431,6 +1433,7 @@ struct HeightmapRenderer
         }
 
         cmd.setRenderTargets();
+        prevViewProj = viewProj;
 	}
 
 	void visualize(CommandList &cmd, float2 minCorner, float2 maxCorner)

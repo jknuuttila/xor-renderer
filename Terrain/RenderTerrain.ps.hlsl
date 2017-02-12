@@ -3,6 +3,7 @@
 struct PSInput
 {
     float4 worldPos : POSITION0;
+    float4 prevPos  : POSITION1;
     float4 uv       : TEXCOORD0;
     float4 svPos    : SV_Position;
 };
@@ -22,6 +23,9 @@ PSOutput main(PSInput i)
     float2 noiseUV  = i.svPos.xy / noiseResolution;
     float2 screenUV = i.svPos.xy / resolution;
 
+    float4 reprojectedPos = mul(prevViewProj, float4(i.worldPos.xyz, 1));
+    float2 reprojectedUV = ndcToUV(reprojectedPos.xy / reprojectedPos.w);
+
     float h = (i.worldPos.y - heightMin) / (heightMax - heightMin);
 #ifdef WIREFRAME
     float3 albedo = 1;
@@ -39,26 +43,29 @@ PSOutput main(PSInput i)
     shadowPos.xyz           /= shadowPos.w;
     float2 shadowUV          = ndcToUV(shadowPos.xy);
     float2 shadowNoiseOffset = lerp(-1, 1, noise.xy) * noiseAmplitude;
-    float2 shadowNoiseOffset2 = lerp(-1, 1, noise.zw) * noiseAmplitude;
     float shadowZ            = terrainShadows.Sample(pointSampler, shadowUV + shadowNoiseOffset);
 
-    float reprojectedShadow = shadowHistory.Sample(bilinearSampler, screenUV);
+    //reprojectedUV = screenUV;
+    float reprojectedShadow = shadowHistory.Sample(bilinearSampler, reprojectedUV);
     // float shadow = shadowPos.z >= shadowZ ? 1 : 0;
-    //float shadow = terrainShadows.SampleCmp(pcfSampler, shadowUV + shadowNoiseOffset, shadowPos.z);
     shadowUV += shadowNoiseOffset;
-    float shadow = sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV, shadowPos.z, shadowResolution);
-    shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(1, 0) / shadowResolution, shadowPos.z, shadowResolution);
-    shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(-1, 0) / shadowResolution, shadowPos.z, shadowResolution);
-    shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, 1) / shadowResolution, shadowPos.z, shadowResolution);
-    shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, -1) / shadowResolution, shadowPos.z, shadowResolution);
-    shadow /= 5;
+    float shadow = terrainShadows.SampleCmp(pcfSampler, shadowUV + shadowNoiseOffset, shadowPos.z + .01);
+    // float shadow = sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV, shadowPos.z + .01, shadowResolution);
+    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(1, 0)  / shadowResolution, shadowPos.z + .01, shadowResolution);
+    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(-1, 0) / shadowResolution, shadowPos.z + .01, shadowResolution);
+    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, 1)  / shadowResolution, shadowPos.z + .01, shadowResolution);
+    // shadow += sampleCmpBicubicBSpline(terrainShadows, pcfSampler, shadowUV + shadowNoiseOffset + float2(0, -1) / shadowResolution, shadowPos.z + .01, shadowResolution);
+    // shadow /= 5;
 
     float2 shadowUnnormalized = shadowUV * shadowResolution;
     float2 shadowFrac = frac(shadowUnnormalized);
     float shadowConfidence = 1 - max(abs(shadowFrac.x - 0.5), abs(shadowFrac.y - 0.5)) * 2;
-    float confExp = 0.3;
 
-    float k = 1 - pow(shadowConfidence, shadowHistoryBlend * 10);
+    float k = 1 - saturate(pow(saturate(shadowConfidence), saturate(shadowHistoryBlend) * 20));
+
+    if (shadow == 0) k = 0;
+    if (shadow == 1) k = 0;
+
     shadow = lerp(shadow, reprojectedShadow, k);
     // shadow = k;
     //shadow = lerp(shadow, reprojectedShadow, shadowHistoryBlend);

@@ -9,6 +9,7 @@ XOR_CBUFFER(Constants, 0)
 {
     float4x4 viewProj;
     float4x4 shadowViewProj;
+    float4x4 prevViewProj;
 	float2 worldMin;
 	float2 worldMax;
     float heightMin;
