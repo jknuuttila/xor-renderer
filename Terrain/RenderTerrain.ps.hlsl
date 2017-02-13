@@ -46,7 +46,7 @@ PSOutput main(PSInput i)
     float shadowZ            = terrainShadows.Sample(pointSampler, shadowUV + shadowNoiseOffset);
 
     //reprojectedUV = screenUV;
-    float reprojectedShadow = shadowHistory.Sample(bilinearSampler, reprojectedUV);
+    float reprojectedShadow = saturate(shadowHistory.Sample(bilinearSampler, reprojectedUV));
     // float shadow = shadowPos.z >= shadowZ ? 1 : 0;
     shadowUV += shadowNoiseOffset;
     float shadow = terrainShadows.SampleCmp(pcfSampler, shadowUV + shadowNoiseOffset, shadowPos.z + .01);
