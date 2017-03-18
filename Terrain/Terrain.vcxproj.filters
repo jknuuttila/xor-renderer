@@ -13,6 +13,7 @@
     <FxCompile Include="RenderTerrainAO.vs.hlsl" />
     <FxCompile Include="ResolveTerrainAO.cs.hlsl" />
     <FxCompile Include="AccumulateTerrainAO.cs.hlsl" />
+    <FxCompile Include="TerrainShadowPrepass.ps.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="RenderTerrain.sig.h" />

@@ -244,7 +244,7 @@ namespace xor
             GraphicsPipeline::Info()
             .vertexShader("ImguiRenderer.vs")
             .pixelShader("ImguiRenderer.ps")
-            .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM)
+            .renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM)
             .winding(false)
 			.cull(D3D12_CULL_MODE_NONE)
             .blend(0, true)

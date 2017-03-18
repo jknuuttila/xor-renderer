@@ -258,11 +258,11 @@ namespace xor
             GraphicsPipelineInfo &pixelShader();
             GraphicsPipelineInfo &pixelShader(const String &psName, Span<const ShaderDefine> defines = {});
             GraphicsPipelineInfo &pixelShader(SameShader, Span<const ShaderDefine> defines);
-            GraphicsPipelineInfo &renderTargetFormats();
-            GraphicsPipelineInfo &renderTargetFormats(Format format);
-            GraphicsPipelineInfo &renderTargetFormats(DXGI_FORMAT format);
+            GraphicsPipelineInfo &renderTargetFormat();
+            GraphicsPipelineInfo &renderTargetFormat(Format format);
+            GraphicsPipelineInfo &renderTargetFormat(DXGI_FORMAT format);
             GraphicsPipelineInfo &renderTargetFormats(Span<const Format> formats);
-            GraphicsPipelineInfo &renderTargetFormats(Span<const DXGI_FORMAT> formats);
+            GraphicsPipelineInfo &renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats);
             GraphicsPipelineInfo &depthFormat(Format format);
             GraphicsPipelineInfo &depthMode(info::DepthMode mode);
             GraphicsPipelineInfo &depthFunction(D3D12_COMPARISON_FUNC testFunction);

@@ -10,7 +10,7 @@ namespace xor
                                                .pixelShader("Blit.ps")
                                                .cull(D3D12_CULL_MODE_NONE)
                                                .blend(0, true)
-                                               .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB));
+                                               .renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB));
     }
 
     void Blit::blit(CommandList & cmd,

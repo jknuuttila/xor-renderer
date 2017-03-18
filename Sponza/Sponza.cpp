@@ -64,7 +64,7 @@ public:
             .vertexShader("BasicMesh.vs")
             .pixelShader("BasicMesh.ps")
             .inputLayout(meshes[0].inputLayout())
-            .renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+            .renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
             .depthFormat(DXGI_FORMAT_D32_FLOAT)
             .depthMode(info::DepthMode::Write)
         );

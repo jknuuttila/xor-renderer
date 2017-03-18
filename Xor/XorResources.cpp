@@ -217,23 +217,23 @@ namespace xor
             return *this;
         }
 
-        GraphicsPipelineInfo & GraphicsPipelineInfo::renderTargetFormats()
+        GraphicsPipelineInfo & GraphicsPipelineInfo::renderTargetFormat()
         {
             NumRenderTargets = 0;
             memset(RTVFormats, 0, sizeof(RTVFormats));
             return *this;
         }
 
-        GraphicsPipelineInfo &GraphicsPipelineInfo::renderTargetFormats(Format format)
+        GraphicsPipelineInfo &GraphicsPipelineInfo::renderTargetFormat(Format format)
         {
             NumRenderTargets = 1;
             RTVFormats[0] = format;
             return *this;
         }
 
-        GraphicsPipelineInfo & GraphicsPipelineInfo::renderTargetFormats(DXGI_FORMAT format)
+        GraphicsPipelineInfo & GraphicsPipelineInfo::renderTargetFormat(DXGI_FORMAT format)
         {
-            return renderTargetFormats(Format(format));
+            return renderTargetFormat(Format(format));
         }
 
         GraphicsPipelineInfo &GraphicsPipelineInfo::renderTargetFormats(Span<const Format> formats)
@@ -244,11 +244,11 @@ namespace xor
             return *this;
         }
 
-        GraphicsPipelineInfo &GraphicsPipelineInfo::renderTargetFormats(Span<const DXGI_FORMAT> formats)
+        GraphicsPipelineInfo &GraphicsPipelineInfo::renderTargetFormats(std::initializer_list<DXGI_FORMAT> formats)
         {
             NumRenderTargets = static_cast<uint>(formats.size());
             for (uint i = 0; i < NumRenderTargets; ++i)
-                RTVFormats[i] = formats[i];
+                RTVFormats[i] = formats.begin()[i];
             return *this;
         }
 
@@ -602,6 +602,13 @@ namespace xor
             XOR_CHECK(static_cast<int>(!!graphicsInfo) + static_cast<int>(!!computeInfo) == 1,
                       "Pipeline must be either a GraphicsPipeline or a ComputePipeline");
 
+            static bool first = false;
+            if (first)
+            {
+                DebugBreak();
+                first = false;
+            }
+
             if (graphicsInfo)
             {
                 log("Pipeline", "Rebuilding Graphics PSO.\n");
@@ -633,6 +640,8 @@ namespace xor
 
                 releasePSO();
 
+                desc.pRootSignature = rootSignature.rs.Get();
+
                 XOR_CHECK_HR(dev.device()->CreateGraphicsPipelineState(
                     &desc,
                     __uuidof(ID3D12PipelineState),
@@ -658,6 +667,8 @@ namespace xor
                 }
 
                 releasePSO();
+
+                desc.pRootSignature = rootSignature.rs.Get();
 
                 XOR_CHECK_HR(dev.device()->CreateComputePipelineState(
                     &desc,

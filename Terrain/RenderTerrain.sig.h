@@ -33,7 +33,7 @@ XOR_SRV(Texture2D<float4>, terrainNormal,  1)
 XOR_SRV(Texture2D<float>,  terrainAO,      2)
 XOR_SRV(Texture2D<float>,  terrainShadows, 3)
 XOR_SRV(Texture2D<float4>, noiseTexture,   4)
-XOR_SRV(Texture2D<float>,  shadowHistory,  5)
+XOR_SRV(Texture2D<float>,  shadowTerm,     5)
 
 XOR_SAMPLER_BILINEAR(bilinearSampler)
 XOR_SAMPLER_POINT(pointSampler)

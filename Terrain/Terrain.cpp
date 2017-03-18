@@ -124,7 +124,6 @@ enum class RenderingMode
     Lighting,
     AmbientOcclusion,
     ShadowTerm,
-    ShadowHistory,
 };
 
 enum class VisualizationMode
@@ -198,6 +197,7 @@ struct HeightmapRenderer
     RWTexture aoMap;
     RWTexture shadowMap;
     RWTexture shadowHistory[2];
+    RWTexture motionVectors;
     BlueNoise blueNoise;
     Matrix prevViewProj = Matrix::identity();
 
@@ -230,14 +230,14 @@ struct HeightmapRenderer
 			.pixelShader("RenderTerrain.ps")
 			.depthMode(info::DepthMode::Write)
 			.depthFormat(DXGI_FORMAT_D32_FLOAT)
-            .renderTargetFormats(asConstSpan(array(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R16_FLOAT)))
+            .renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
 			.inputLayout(mesh.inputLayout()));
 
         visualizeTriangulation  = device.createGraphicsPipeline(
 			GraphicsPipeline::Info()
 			.vertexShader("VisualizeTriangulation.vs")
 			.pixelShader("VisualizeTriangulation.ps")
-			.renderTargetFormats(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+			.renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
 			.inputLayout(mesh.inputLayout()));
 
         computeNormalMapCS = device.createComputePipeline(
@@ -259,9 +259,10 @@ struct HeightmapRenderer
 
         {
             auto shadowHistoryInfo = info::TextureInfoBuilder()
-                                  .size(resolution)
-                                  .format(DXGI_FORMAT_R16_FLOAT)
-                                  .allowRenderTarget();
+                .size(resolution)
+                .format(DXGI_FORMAT_R16_FLOAT)
+                .allowRenderTarget()
+                .allowUAV();
             shadowHistory[0] = RWTexture(device, shadowHistoryInfo);
             shadowHistory[1] = RWTexture(device, shadowHistoryInfo);
             auto cmd = device.graphicsCommandList();
@@ -269,6 +270,11 @@ struct HeightmapRenderer
             cmd.clearRTV(shadowHistory[1].rtv);
             device.execute(cmd);
         }
+
+        motionVectors = RWTexture(device, info::TextureInfoBuilder()
+                               .size(resolution)
+                               .format(DXGI_FORMAT_R16G16_FLOAT)
+                               .allowRenderTarget());
     }
 
     void computeNormalMap(CommandList &cmd)
@@ -492,10 +498,6 @@ struct HeightmapRenderer
         else if (renderingMode == RenderingMode::ShadowTerm)
         {
             lightingDefines.emplace_back("SHADOW_TERM");
-        }
-        else if (renderingMode == RenderingMode::ShadowHistory)
-        {
-            lightingDefines.emplace_back("SHADOW_HISTORY");
         }
         else
         {
@@ -1287,7 +1289,7 @@ struct HeightmapRenderer
 
         cmd.bind(renderTerrain.variant()
                  .pixelShader()
-                 .renderTargetFormats()
+                 .renderTargetFormat()
                  .cull(D3D12_CULL_MODE_NONE)
                  .depthBias(bias, lighting.shadowSSBias));
 
@@ -1301,7 +1303,7 @@ struct HeightmapRenderer
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainAO);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainShadows);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::noiseTexture);
-        cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowHistory);
+        cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
 
         {
             auto p = cmd.profilingEvent("Draw shadows");
@@ -1402,9 +1404,11 @@ struct HeightmapRenderer
         auto &shadowHistoryWrite = shadowHistory[1 - (device.frameNumber() & 1)];
 
         cmd.clearRTV(shadowHistoryWrite.rtv);
-        cmd.setRenderTargets({&rtv, &shadowHistoryWrite.rtv}, dsv);
+        cmd.setRenderTargets({&shadowHistoryWrite.rtv, &motionVectors.rtv}, dsv);
 
-        cmd.bind(renderTerrain.variant().pixelShader(info::SameShader {}, lightingDefines));
+        cmd.bind(renderTerrain.variant()
+                 .renderTargetFormats({ DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16G16_FLOAT })
+                 .pixelShader("TerrainShadowPrepass.ps"));
 
         cmd.setConstants(constants);
         cmd.setConstants(lightingConstants);
@@ -1414,7 +1418,21 @@ struct HeightmapRenderer
         cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
         cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
         cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(int(device.frameNumber())));
-        cmd.setShaderView(RenderTerrain::shadowHistory,  shadowHistoryRead.srv);
+        cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
+
+        {
+            auto p = cmd.profilingEvent("Draw shadow prepass");
+            cmd.drawIndexed(mesh.numIndices());
+        }
+
+        cmd.setRenderTargets(rtv, dsv);
+        cmd.setShaderView(RenderTerrain::shadowTerm, shadowHistoryWrite.srv);
+
+        cmd.bind(renderTerrain.variant()
+                 .depthFunction(D3D12_COMPARISON_FUNC_EQUAL)
+                 .depthMode(info::DepthMode::ReadOnly)
+                 .pixelShader(info::SameShader {}, lightingDefines));
+
         {
             auto p = cmd.profilingEvent("Draw opaque");
             cmd.drawIndexed(mesh.numIndices());
@@ -1495,7 +1513,7 @@ class Terrain : public Window
     int areaSize  = 2048;
 #endif
 	int triangulationDensity = 6;
-    RenderingMode renderingMode = RenderingMode::Height;
+    RenderingMode renderingMode = RenderingMode::ShadowTerm;
     struct Lighting
     {
         Angle sunAzimuth   = Angle::degrees(45.f);
@@ -1553,6 +1571,8 @@ public:
 
         camera.speed /= 10;
         camera.fastMultiplier *= 5;
+
+        updateLighting();
     }
 
     void handleInput(const Input &input) override

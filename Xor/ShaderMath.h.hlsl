@@ -379,6 +379,8 @@ float4 bicubicBSpline(Texture2D<float4> tex, SamplerState bilinear, float2 uv)
 }
 #else
 
+// FIXME: This code is from Shadertoy and not MIT licensed, need to rewrite
+
 // w0, w1, w2, and w3 are the four cubic B-spline basis functions
 float w0(float a)
 {

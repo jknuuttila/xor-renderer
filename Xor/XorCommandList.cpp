@@ -1009,6 +1009,8 @@ namespace xor
 		e.m_cmd       = &S();
 		e.m_queryHeap = S().queryHeap.get();
 
+        PIXBeginEvent(e.m_cmd->cmd.Get(), PIX_COLOR_DEFAULT, "%s", name);
+
         auto data = device().profilingEventData(name, uniqueId, S().profilingEventStackTop);
         e.m_data      = data;
 		e.m_offset    = e.m_queryHeap->beginEvent(cmd(), data, number());
@@ -1030,6 +1032,8 @@ namespace xor
             m_cmd->profilingEventStackTop = m_data->parent;
 			m_queryHeap->endEvent(m_cmd->cmd.Get(), m_offset);
 			m_queryHeap = nullptr;
+
+            PIXEndEvent(m_cmd->cmd.Get());
 		}
 	}
 
