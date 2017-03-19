@@ -13,6 +13,7 @@
 #include "RenderTerrainAO.sig.h"
 #include "ResolveTerrainAO.sig.h"
 #include "AccumulateTerrainAO.sig.h"
+#include "TerrainShadowFiltering.sig.h"
 
 #include <random>
 #include <unordered_set>
@@ -182,6 +183,7 @@ struct HeightmapRenderer
     GraphicsPipeline renderTerrain;
     GraphicsPipeline visualizeTriangulation;
     ComputePipeline computeNormalMapCS;
+    ComputePipeline shadowFiltering;
 	Mesh mesh;
 	Heightmap *heightmap = nullptr;
     ImageData heightData;
@@ -270,6 +272,9 @@ struct HeightmapRenderer
             cmd.clearRTV(shadowHistory[1].rtv);
             device.execute(cmd);
         }
+
+        shadowFiltering = device.createComputePipeline(
+            info::ComputePipelineInfo("TerrainShadowFiltering.cs"));
 
         motionVectors = RWTexture(device, info::TextureInfoBuilder()
                                .size(resolution)
@@ -1403,38 +1408,70 @@ struct HeightmapRenderer
         auto &shadowHistoryRead  = shadowHistory[device.frameNumber() & 1];
         auto &shadowHistoryWrite = shadowHistory[1 - (device.frameNumber() & 1)];
 
-        cmd.clearRTV(shadowHistoryWrite.rtv);
-        cmd.setRenderTargets({&shadowHistoryWrite.rtv, &motionVectors.rtv}, dsv);
-
-        cmd.bind(renderTerrain.variant()
-                 .renderTargetFormats({ DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16G16_FLOAT })
-                 .pixelShader("TerrainShadowPrepass.ps"));
-
-        cmd.setConstants(constants);
-        cmd.setConstants(lightingConstants);
-        mesh.setForRendering(cmd);
-        cmd.setShaderView(RenderTerrain::terrainColor,   heightmap->colorSRV);
-        cmd.setShaderView(RenderTerrain::terrainNormal,  normalMap.srv);
-        cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
-        cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
-        cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(int(device.frameNumber())));
-        cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
 
         {
             auto p = cmd.profilingEvent("Draw shadow prepass");
+
+            cmd.clearRTV(shadowHistoryWrite.rtv);
+
+            cmd.bind(renderTerrain.variant()
+                     .renderTargetFormats({ DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16G16_FLOAT })
+                     .pixelShader("TerrainShadowPrepass.ps"));
+
+            cmd.setRenderTargets({ &shadowHistoryWrite.rtv, &motionVectors.rtv }, dsv);
+
+            mesh.setForRendering(cmd);
+
+            cmd.setShaderView(RenderTerrain::terrainColor,   heightmap->colorSRV);
+            cmd.setShaderView(RenderTerrain::terrainNormal,  normalMap.srv);
+            cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
+            cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
+            cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(int(device.frameNumber())));
+            cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
+
+            cmd.setConstants(constants);
+            cmd.setConstants(lightingConstants);
+
             cmd.drawIndexed(mesh.numIndices());
         }
 
-        cmd.setRenderTargets(rtv, dsv);
-        cmd.setShaderView(RenderTerrain::shadowTerm, shadowHistoryWrite.srv);
+        {
+            auto p = cmd.profilingEvent("Shadow filtering");
+            cmd.bind(shadowFiltering);
 
-        cmd.bind(renderTerrain.variant()
-                 .depthFunction(D3D12_COMPARISON_FUNC_EQUAL)
-                 .depthMode(info::DepthMode::ReadOnly)
-                 .pixelShader(info::SameShader {}, lightingDefines));
+            TerrainShadowFiltering::Constants tsfConstants;
+            tsfConstants.resolution = int2(rtv.texture()->size);
+
+            cmd.setShaderView(TerrainShadowFiltering::shadowTerm,    shadowHistoryWrite.uav);
+            cmd.setShaderView(TerrainShadowFiltering::shadowHistory, shadowHistoryRead.srv);
+            cmd.setShaderView(TerrainShadowFiltering::motionVectors, motionVectors.srv);
+            cmd.setConstants(tsfConstants);
+
+            cmd.dispatchThreads(TerrainShadowFiltering::threadGroupSize, uint3(tsfConstants.resolution));
+        }
 
         {
             auto p = cmd.profilingEvent("Draw opaque");
+
+            cmd.bind(renderTerrain.variant()
+                     .depthFunction(D3D12_COMPARISON_FUNC_EQUAL)
+                     .depthMode(info::DepthMode::ReadOnly)
+                     .pixelShader(info::SameShader{}, lightingDefines));
+
+            cmd.setRenderTargets(rtv, dsv);
+
+            mesh.setForRendering(cmd);
+
+            cmd.setShaderView(RenderTerrain::terrainColor,   heightmap->colorSRV);
+            cmd.setShaderView(RenderTerrain::terrainNormal,  normalMap.srv);
+            cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
+            cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
+            cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(int(device.frameNumber())));
+            cmd.setShaderView(RenderTerrain::shadowTerm,     shadowHistoryWrite.srv);
+
+            cmd.setConstants(constants);
+            cmd.setConstants(lightingConstants);
+
             cmd.drawIndexed(mesh.numIndices());
         }
 

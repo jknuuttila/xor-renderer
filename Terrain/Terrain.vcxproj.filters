@@ -14,6 +14,7 @@
     <FxCompile Include="ResolveTerrainAO.cs.hlsl" />
     <FxCompile Include="AccumulateTerrainAO.cs.hlsl" />
     <FxCompile Include="TerrainShadowPrepass.ps.hlsl" />
+    <FxCompile Include="TerrainShadowFiltering.cs.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="RenderTerrain.sig.h" />
@@ -22,6 +23,7 @@
     <ClInclude Include="RenderTerrainAO.sig.h" />
     <ClInclude Include="ResolveTerrainAO.sig.h" />
     <ClInclude Include="AccumulateTerrainAO.sig.h" />
+    <ClInclude Include="TerrainShadowFiltering.sig.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

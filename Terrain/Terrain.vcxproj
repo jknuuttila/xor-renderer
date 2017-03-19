@@ -118,6 +118,12 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
     </FxCompile>
+    <FxCompile Include="TerrainShadowFiltering.cs.hlsl">
+      <SubType>
+      </SubType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+    </FxCompile>
     <FxCompile Include="TerrainShadowPrepass.ps.hlsl">
       <SubType>
       </SubType>
@@ -143,6 +149,10 @@
     <ClInclude Include="RenderTerrain.sig.h" />
     <ClInclude Include="RenderTerrainAO.sig.h" />
     <ClInclude Include="ResolveTerrainAO.sig.h" />
+    <ClInclude Include="TerrainShadowFiltering.sig.h">
+      <SubType>
+      </SubType>
+    </ClInclude>
     <ClInclude Include="VisualizeTriangulation.sig.h">
       <SubType>
       </SubType>
