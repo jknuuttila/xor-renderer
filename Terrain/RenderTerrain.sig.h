@@ -15,10 +15,12 @@ XOR_CBUFFER(Constants, 0)
     float heightMin;
     float heightMax;
     float2 noiseResolution;
-    float2 noiseAmplitude;
+    float  noiseAmplitude;
+    float  padding;
     float2 resolution;
     float2 shadowResolution;
     float  shadowHistoryBlend;
+    float  shadowBias;
 };
 
 XOR_CBUFFER(LightingConstants, 1)

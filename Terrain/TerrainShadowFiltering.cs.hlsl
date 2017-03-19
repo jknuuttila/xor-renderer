@@ -53,6 +53,7 @@ void main(uint3 tid    : SV_DispatchThreadID,
         return;
 
     float shadowFiltered = 0;
+    float centerShadow = ldsShadow[ldsCoords.y][ldsCoords.x];
 
 #if defined(TSF_FILTER_WIDTH) && TSF_FILTER_WIDTH > 0
     static const uint Weights = TSF_FILTER_WIDTH - 1;
@@ -80,8 +81,27 @@ void main(uint3 tid    : SV_DispatchThreadID,
     shadowFiltered /= totalWeight;
 
 #else
-    shadowFiltered = ldsShadow[ldsCoords.y][ldsCoords.x];
+    shadowFiltered = centerShadow;
 #endif
 
-    shadowTerm[coords] = shadowFiltered;
+    float2 motionVector  = motionVectors[coords];
+    float2 screenUV      = (float2(coords) + 0.5) / float2(resolution);
+    float2 reprojectedUV = screenUV + motionVector;
+
+    bool notInPenumbra       = false;//centerShadow < .001 || centerShadow > .999;
+    bool previousOutOfScreen = any(reprojectedUV != saturate(reprojectedUV));
+    
+    float finalShadow;
+
+    if (notInPenumbra || previousOutOfScreen)
+    {
+        finalShadow = shadowFiltered;
+    }
+    else
+    {
+        float previousShadow = shadowHistory.SampleLevel(bilinearSampler, reprojectedUV, 0);
+        finalShadow = lerp(shadowFiltered, previousShadow, shadowHistoryBlend);
+    }
+
+    shadowTerm[coords] = finalShadow;
 }

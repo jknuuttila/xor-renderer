@@ -208,11 +208,14 @@ struct HeightmapRenderer
         float3 sunDirection = normalize(float3(1, 1, 1));
         float3 sunColor;
         float3 ambient;
-        int shadowBiasExp  = 0;
+        float shadowBias = 0.01f;
         float shadowSSBias = 0;
         float shadowNoisePixels = 0;
         float shadowHistoryBlend = 0;
+        int shadowNoiseSamples = 0;
+        int shadowFilterWidth  = 1;
         bool shadowJitter = false;
+        int noisePeriod = 8;
     };
     LightingProperties lighting;
     std::vector<info::ShaderDefine> lightingDefines;
@@ -508,6 +511,14 @@ struct HeightmapRenderer
         {
             memset(&lighting, 0, sizeof(lighting));
         }
+    }
+
+    int noiseIndex()
+    {
+        if (lighting.noisePeriod <= 0)
+            return int(device.frameNumber());
+        else
+            return int(device.frameNumber()) % lighting.noisePeriod;
     }
 
     void setShadowMapDim(int shadowDim)
@@ -1285,18 +1296,11 @@ struct HeightmapRenderer
         cmd.clearDSV(shadowMap.dsv);
         cmd.setRenderTargets(shadowMap.dsv);
 
-        int bias = static_cast<int>(
-            std::exp2(std::abs(lighting.shadowBiasExp) / 2.f));
-        if (lighting.shadowBiasExp < 0)
-            bias = -bias;
-        else if (lighting.shadowBiasExp == 0)
-            bias = 0;
-
         cmd.bind(renderTerrain.variant()
                  .pixelShader()
                  .renderTargetFormat()
                  .cull(D3D12_CULL_MODE_NONE)
-                 .depthBias(bias, lighting.shadowSSBias));
+                 .depthBias(0, lighting.shadowSSBias));
 
         auto c = constants;
         c.viewProj = c.shadowViewProj;
@@ -1344,7 +1348,7 @@ struct HeightmapRenderer
         float3 terrainViewMin = float3(1e10f);
         float3 terrainViewMax = float3(-1e10f);
 
-        float4 noise = blueNoise.sequentialNoise(int(device.frameNumber()));
+        float4 noise = blueNoise.sequentialNoise(noiseIndex());
 
         Angle shadowRotation = lighting.shadowJitter ? Angle::degrees(noise.z * 360) : Angle(0);
         float2 shadowJitter  = lighting.shadowJitter ? lerp(float2(-.5f), float2(.5f), noise.s_xy) : 0;
@@ -1393,10 +1397,11 @@ struct HeightmapRenderer
         constants.heightMin       = heightmap->minHeight;
         constants.heightMax       = heightmap->maxHeight;
         constants.noiseResolution = float2(blueNoise.srv().texture()->size);
-        constants.noiseAmplitude  = lighting.shadowNoisePixels / float2(shadowMap.texture()->size);
+        constants.noiseAmplitude  = lighting.shadowNoisePixels / shadowMap.texture()->sizeFloat().x;
         constants.resolution      = rtv.texture()->sizeFloat();
         constants.shadowResolution   = shadowMap.texture()->sizeFloat();
         constants.shadowHistoryBlend = lighting.shadowHistoryBlend;
+        constants.shadowBias         = lighting.shadowBias;
 
         RenderTerrain::LightingConstants lightingConstants;
         lightingConstants.sunDirection = lighting.sunDirection.s_xyz0;
@@ -1408,15 +1413,17 @@ struct HeightmapRenderer
         auto &shadowHistoryRead  = shadowHistory[device.frameNumber() & 1];
         auto &shadowHistoryWrite = shadowHistory[1 - (device.frameNumber() & 1)];
 
-
         {
             auto p = cmd.profilingEvent("Draw shadow prepass");
 
             cmd.clearRTV(shadowHistoryWrite.rtv);
+            cmd.clearRTV(motionVectors.rtv);
 
             cmd.bind(renderTerrain.variant()
                      .renderTargetFormats({ DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16G16_FLOAT })
-                     .pixelShader("TerrainShadowPrepass.ps"));
+                     .pixelShader(
+                         "TerrainShadowPrepass.ps",
+                         { info::ShaderDefine("TSP_NOISE_SAMPLES", lighting.shadowNoiseSamples) }));
 
             cmd.setRenderTargets({ &shadowHistoryWrite.rtv, &motionVectors.rtv }, dsv);
 
@@ -1426,7 +1433,7 @@ struct HeightmapRenderer
             cmd.setShaderView(RenderTerrain::terrainNormal,  normalMap.srv);
             cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
             cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
-            cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(int(device.frameNumber())));
+            cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(noiseIndex()));
             cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
 
             cmd.setConstants(constants);
@@ -1437,10 +1444,13 @@ struct HeightmapRenderer
 
         {
             auto p = cmd.profilingEvent("Shadow filtering");
-            cmd.bind(shadowFiltering);
+            cmd.bind(shadowFiltering.variant()
+                     .computeShader(info::SameShader {},
+                     { info::ShaderDefine("TSF_FILTER_WIDTH", lighting.shadowFilterWidth) }));
 
             TerrainShadowFiltering::Constants tsfConstants;
-            tsfConstants.resolution = int2(rtv.texture()->size);
+            tsfConstants.resolution         = int2(rtv.texture()->size);
+            tsfConstants.shadowHistoryBlend = lighting.shadowHistoryBlend;
 
             cmd.setShaderView(TerrainShadowFiltering::shadowTerm,    shadowHistoryWrite.uav);
             cmd.setShaderView(TerrainShadowFiltering::shadowHistory, shadowHistoryRead.srv);
@@ -1466,7 +1476,7 @@ struct HeightmapRenderer
             cmd.setShaderView(RenderTerrain::terrainNormal,  normalMap.srv);
             cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
             cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
-            cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(int(device.frameNumber())));
+            cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(noiseIndex()));
             cmd.setShaderView(RenderTerrain::shadowTerm,     shadowHistoryWrite.srv);
 
             cmd.setConstants(constants);
@@ -1557,12 +1567,15 @@ class Terrain : public Window
         Angle sunElevation = Angle::degrees(45.f);
         float sunIntensity = 1.f;
         float3 ambient     = float3(.025f, .025f, .05f);
-        int shadowBiasExp  = -20;
+        float shadowBias   = 0.01f;
         float shadowSSBias = -2;
         int shadowDimExp   = 10;
         float shadowNoiseAmplitude = 0;
         float shadowHistoryBlend = 0;
         bool shadowJitter = false;
+        int shadowNoiseSamples = 0;
+        int shadowFilterWidth  = 1;
+        int noisePeriod = 8;
     } lighting;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
@@ -1669,11 +1682,14 @@ public:
         props.sunDirection       = normalize(float3(M.transform(float3(0, 0, -1))));
         props.sunColor           = float3(1) * lighting.sunIntensity;
         props.ambient            = lighting.ambient;
-        props.shadowBiasExp      = lighting.shadowBiasExp;
+        props.shadowBias         = lighting.shadowBias;
         props.shadowSSBias       = lighting.shadowSSBias;
         props.shadowNoisePixels  = lighting.shadowNoiseAmplitude;
         props.shadowHistoryBlend = lighting.shadowHistoryBlend;
         props.shadowJitter       = lighting.shadowJitter;
+        props.shadowNoiseSamples = lighting.shadowNoiseSamples;
+        props.shadowFilterWidth  = lighting.shadowFilterWidth;
+        props.noisePeriod        = lighting.noisePeriod;
 
         heightmapRenderer.setLightingProperties(&props, renderingMode);
 
@@ -1759,7 +1775,7 @@ public:
                 updateLighting();
             if (ImGui::SliderFloat3("Ambient", lighting.ambient.data(), 0, .25f))
                 updateLighting();
-            if (ImGui::SliderInt("Shadow depth bias exponent", &lighting.shadowBiasExp, -64, 64))
+            if (ImGui::SliderFloat("Shadow depth bias", &lighting.shadowBias, 0, 0.03f))
                 updateLighting();
             if (ImGui::SliderFloat("Shadow slope scaled depth bias", &lighting.shadowSSBias, -10, 10))
                 updateLighting();
@@ -1768,6 +1784,12 @@ public:
             if (ImGui::SliderFloat("Shadow noise amplitude", &lighting.shadowNoiseAmplitude, 0, 10))
                 updateLighting();
             if (ImGui::SliderFloat("Shadow history blend", &lighting.shadowHistoryBlend, 0, 1))
+                updateLighting();
+            if (ImGui::SliderInt("Shadow noise samples", &lighting.shadowNoiseSamples, 0, 8))
+                updateLighting();
+            if (ImGui::SliderInt("Shadow filter width", &lighting.shadowFilterWidth, 0, 3))
+                updateLighting();
+            if (ImGui::SliderInt("Noise period", &lighting.noisePeriod, 0, 8))
                 updateLighting();
             if (ImGui::Checkbox("Shadow jittering", &lighting.shadowJitter))
                 updateLighting();

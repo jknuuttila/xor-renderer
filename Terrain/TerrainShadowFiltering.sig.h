@@ -12,11 +12,14 @@ XOR_BEGIN_SIGNATURE(TerrainShadowFiltering)
 XOR_CBUFFER(Constants, 0)
 {
     int2 resolution;
+    float shadowHistoryBlend;
 };
 
 XOR_UAV(RWTexture2D<float>, shadowTerm,    0)
 XOR_SRV(Texture2D<float>,   shadowHistory, 0)
 XOR_SRV(Texture2D<float2>,  motionVectors, 1)
+
+XOR_SAMPLER_BILINEAR(bilinearSampler);
 
 XOR_THREADGROUP_SIZE_2D(TSF_THREADGROUP_SIZE, TSF_THREADGROUP_SIZE)
 
