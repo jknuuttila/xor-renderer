@@ -41,7 +41,75 @@ void main(uint3 tid    : SV_DispatchThreadID,
         texCoords      = clamp(texCoords, 0, resolution - 1);
 
         float shadow   = shadowTerm[texCoords];
+
         ldsShadow[ldsCoords.y][ldsCoords.x] = shadow;
+    }
+
+    float neighborhoodMin = 1000;
+    float neighborhoodMax = 0;
+
+    for (i = 0; i < NumLdsSamples; i += NumThreads)
+    {
+        uint j       = i + gIndex;
+        float myItem = float(j) * RcpRowSize;
+
+        int2 ldsCoords;
+        ldsCoords.y  = int(myItem);
+        ldsCoords.x  = int(round(frac(myItem) * TsfTileSize));
+
+        int2 texCoords = ldsCoords + ldsBaseCoords;
+        texCoords      = clamp(texCoords, 0, resolution - 1);
+
+        [unroll]
+        for (int dy = -1; dy <= 1; ++dy)
+        {
+            for (int dx = -1; dx <= 1; ++dx)
+            {
+                int2 pos = ldsCoords + int2(dx, dy);
+                pos = clamp(pos, 0, TsfTileSize - 1);
+
+                float s = ldsShadow[pos.y][pos.x];
+                neighborhoodMin = min(s, neighborhoodMin);
+                neighborhoodMax = max(s, neighborhoodMax);
+            }
+        }
+    }
+
+    for (i = 0; i < NumLdsSamples; i += NumThreads)
+    {
+        uint j       = i + gIndex;
+        float myItem = float(j) * RcpRowSize;
+
+        int2 ldsCoords;
+        ldsCoords.y  = int(myItem);
+        ldsCoords.x  = int(round(frac(myItem) * TsfTileSize));
+
+        int2 texCoords = ldsCoords + ldsBaseCoords;
+        texCoords      = clamp(texCoords, 0, resolution - 1);
+
+        float2 motionVector  = motionVectors[texCoords];
+        float2 screenUV      = (float2(texCoords) + 0.5) / float2(resolution);
+        float2 reprojectedUV = screenUV + motionVector;
+
+        bool notInPenumbra = false;//centerShadow < .001 || centerShadow > .999;
+        bool previousOutOfScreen = any(reprojectedUV != saturate(reprojectedUV));
+
+        float shadow = ldsShadow[ldsCoords.y][ldsCoords.x];
+
+        float finalShadow;
+
+        if (notInPenumbra || previousOutOfScreen)
+        {
+            finalShadow = shadow;
+        }
+        else
+        {
+            float previousShadow = shadowHistory.SampleLevel(bilinearSampler, reprojectedUV, 0);
+            previousShadow = clamp(previousShadow, neighborhoodMin, neighborhoodMax);
+            finalShadow = lerp(shadow, previousShadow, shadowHistoryBlend);
+        }
+
+        ldsShadow[ldsCoords.y][ldsCoords.x] = finalShadow;
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -84,24 +152,5 @@ void main(uint3 tid    : SV_DispatchThreadID,
     shadowFiltered = centerShadow;
 #endif
 
-    float2 motionVector  = motionVectors[coords];
-    float2 screenUV      = (float2(coords) + 0.5) / float2(resolution);
-    float2 reprojectedUV = screenUV + motionVector;
-
-    bool notInPenumbra       = false;//centerShadow < .001 || centerShadow > .999;
-    bool previousOutOfScreen = any(reprojectedUV != saturate(reprojectedUV));
-    
-    float finalShadow;
-
-    if (notInPenumbra || previousOutOfScreen)
-    {
-        finalShadow = shadowFiltered;
-    }
-    else
-    {
-        float previousShadow = shadowHistory.SampleLevel(bilinearSampler, reprojectedUV, 0);
-        finalShadow = lerp(shadowFiltered, previousShadow, shadowHistoryBlend);
-    }
-
-    shadowTerm[coords] = finalShadow;
+    shadowTerm[coords] = shadowFiltered;
 }
