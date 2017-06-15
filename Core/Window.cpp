@@ -12,7 +12,7 @@ namespace xor
         zero(c);
         c.cbSize        = sizeof(c);
         c.cbWndExtra    = 2 * sizeof(uintptr_t);
-        c.style  		= CS_HREDRAW | CS_VREDRAW;
+        c.style         = CS_HREDRAW | CS_VREDRAW;
         c.lpfnWndProc   = &Window::windowProcFun;
         c.hInstance     = GetModuleHandle(nullptr);
         c.lpszClassName = WindowClassName;

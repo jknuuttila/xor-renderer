@@ -21,11 +21,11 @@ namespace xor
         Device createDevice();
     };
 
-	namespace backend
-	{
-		struct ProfilingEventData;
+    namespace backend
+    {
+        struct ProfilingEventData;
         class GPUTransientChunk;
-	}
+    }
 
     class Device : private backend::SharedState<backend::DeviceState>
     {
@@ -122,7 +122,7 @@ namespace xor
         backend::ProfilingEventData *profilingEventData(const char *name,
                                                         uint64_t uniqueId,
                                                         backend::ProfilingEventData *parent = nullptr);
-		void processProfilingEvents();
+        void processProfilingEvents();
 
         void retireCommandLists();
 

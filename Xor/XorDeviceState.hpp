@@ -364,13 +364,13 @@ namespace xor
         using ReadbackHeap = CPUVisibleHeap<D3D12_HEAP_TYPE_READBACK>;
 
         using ProfilingEventKey = uint64_t;
-		struct ProfilingEventData
-		{
-			const char *name           = nullptr;
+        struct ProfilingEventData
+        {
+            const char *name           = nullptr;
             ProfilingEventData *parent = nullptr;
             std::vector<float> timesMs;
             uint writes                = 0;
-			int indent                 = 0;
+            int indent                 = 0;
 
             void writeTime(double milliseconds);
 
@@ -378,7 +378,7 @@ namespace xor
             float minimumMs() const;
             float averageMs() const;
             float maximumMs() const;
-		};
+        };
 
         struct QueryHeap
         {
@@ -392,14 +392,14 @@ namespace xor
             std::vector<Metadata> metadata;
             OffsetRing ringbuffer;
 
-			QueryHeap(ID3D12Device *device, size_t size);
+            QueryHeap(ID3D12Device *device, size_t size);
 
-			void resolve(ID3D12GraphicsCommandList *cmdList, int64_t first, int64_t last);
+            void resolve(ID3D12GraphicsCommandList *cmdList, int64_t first, int64_t last);
 
-			int64_t beginEvent(ID3D12GraphicsCommandList *cmdList,
+            int64_t beginEvent(ID3D12GraphicsCommandList *cmdList,
                                ProfilingEventData *data,
                                SeqNum cmdListNumber);
-			void endEvent(ID3D12GraphicsCommandList *cmdList, int64_t eventOffset);
+            void endEvent(ID3D12GraphicsCommandList *cmdList, int64_t eventOffset);
 
             template <typename F>
             void process(GPUProgressTracking &progress, double ticksToMs, F &&f)
@@ -433,7 +433,7 @@ namespace xor
                     double milliseconds = static_cast<double>(time) * ticksToMs;
                     m.data->writeTime(milliseconds);
 
-					f(m.data);
+                    f(m.data);
 
                     ringbuffer.release(i);
                     i = ringbuffer.oldest();
@@ -451,9 +451,9 @@ namespace xor
             GPUProgressTracking progress;
             std::shared_ptr<CPUVisibleHeap<D3D12_HEAP_TYPE_UPLOAD>>   uploadHeap;
             std::shared_ptr<CPUVisibleHeap<D3D12_HEAP_TYPE_READBACK>> readbackHeap;
-			std::shared_ptr<QueryHeap> queryHeap;
+            std::shared_ptr<QueryHeap> queryHeap;
 
-			std::unordered_map<ProfilingEventKey, std::unique_ptr<ProfilingEventData>> profilingEventData;
+            std::unordered_map<ProfilingEventKey, std::unique_ptr<ProfilingEventData>> profilingEventData;
             int profilingDataHistoryLength = 10;
             std::vector<ProfilingEventData *> profilingEventStack;
             std::vector<ProfilingEventData *> activeProfilingEvents;

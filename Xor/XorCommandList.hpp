@@ -12,44 +12,44 @@ namespace xor
 
     namespace backend
     {
-		struct QueryHeap;
+        struct QueryHeap;
         struct ProfilingEventData;
         struct CommandListState;
-	}
+    }
 
-	class ProfilingEvent
-	{
-		friend class Device;
-		friend class CommandList;
-		MovingPtr<backend::QueryHeap *>          m_queryHeap;
-		MovingPtr<backend::CommandListState *>   m_cmd;
-		MovingValue<int64_t, -1>                 m_offset;
-		MovingPtr<backend::ProfilingEventData *> m_data;
-	public:
-		ProfilingEvent() = default;
-		~ProfilingEvent() { done(); }
-		ProfilingEvent(ProfilingEvent &&) = default;
+    class ProfilingEvent
+    {
+        friend class Device;
+        friend class CommandList;
+        MovingPtr<backend::QueryHeap *>          m_queryHeap;
+        MovingPtr<backend::CommandListState *>   m_cmd;
+        MovingValue<int64_t, -1>                 m_offset;
+        MovingPtr<backend::ProfilingEventData *> m_data;
+    public:
+        ProfilingEvent() = default;
+        ~ProfilingEvent() { done(); }
+        ProfilingEvent(ProfilingEvent &&) = default;
 
-		ProfilingEvent &operator=(ProfilingEvent &&e)
-		{
-			done();
-			m_queryHeap = std::move(e.m_queryHeap);
-			m_cmd       = std::move(e.m_cmd);
-			m_offset    = std::move(e.m_offset);
-			m_data      = std::move(e.m_data);
-			return *this;
-		}
+        ProfilingEvent &operator=(ProfilingEvent &&e)
+        {
+            done();
+            m_queryHeap = std::move(e.m_queryHeap);
+            m_cmd       = std::move(e.m_cmd);
+            m_offset    = std::move(e.m_offset);
+            m_data      = std::move(e.m_data);
+            return *this;
+        }
 
-		void done();
+        void done();
 
         float minimumMs() const;
         float averageMs() const;
         float maximumMs() const;
-	};
+    };
 
     namespace backend
     {
-		struct QueryHeap;
+        struct QueryHeap;
 
         struct CommandListState : DeviceChild
         {
@@ -76,11 +76,11 @@ namespace xor
             std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> viewDescriptorSrcs;
             std::vector<uint> viewDescriptorAmounts;
 
-			std::shared_ptr<QueryHeap> queryHeap;
-			ProfilingEvent cmdListEvent;
+            std::shared_ptr<QueryHeap> queryHeap;
+            ProfilingEvent cmdListEvent;
             backend::ProfilingEventData *profilingEventStackTop = nullptr;
-			int64_t firstProfilingEvent = -1;
-			int64_t lastProfilingEvent  = -1;
+            int64_t firstProfilingEvent = -1;
+            int64_t lastProfilingEvent  = -1;
 
             CommandListState(Device &dev);
         };

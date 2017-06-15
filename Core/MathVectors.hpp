@@ -880,55 +880,55 @@ namespace xor
 
     String toString(const Matrix &m);
 
-	namespace math_detail
-	{
-		template <typename T>
-		__forceinline void compareAndSwap(T &a, T &b)
-		{
-			if (b < a)
-				std::swap(a, b);
-		}
-	}
+    namespace math_detail
+    {
+        template <typename T>
+        __forceinline void compareAndSwap(T &a, T &b)
+        {
+            if (b < a)
+                std::swap(a, b);
+        }
+    }
 
-	template <typename T, uint N>
-	int indexOf(Vector<T, N> v, T value)
-	{
-		for (int i = 0; i < static_cast<int>(N); ++i)
-		{
-			if (value == v[i])
-				return i;
-		}
+    template <typename T, uint N>
+    int indexOf(Vector<T, N> v, T value)
+    {
+        for (int i = 0; i < static_cast<int>(N); ++i)
+        {
+            if (value == v[i])
+                return i;
+        }
 
-		return -1;
-	}
+        return -1;
+    }
 
-	// Sort vectors using optimal sorting networks
-	template <typename T>
-	Vector<T, 2> sortVector(Vector<T, 2> v)
-	{
-		math_detail::compareAndSwap(v.x, v.y);
-		return v;
-	}
+    // Sort vectors using optimal sorting networks
+    template <typename T>
+    Vector<T, 2> sortVector(Vector<T, 2> v)
+    {
+        math_detail::compareAndSwap(v.x, v.y);
+        return v;
+    }
 
-	template <typename T>
-	Vector<T, 3> sortVector(Vector<T, 3> v)
-	{
-		math_detail::compareAndSwap(v.x, v.y);
-		math_detail::compareAndSwap(v.x, v.z);
-		math_detail::compareAndSwap(v.y, v.z);
-		return v;
-	}
+    template <typename T>
+    Vector<T, 3> sortVector(Vector<T, 3> v)
+    {
+        math_detail::compareAndSwap(v.x, v.y);
+        math_detail::compareAndSwap(v.x, v.z);
+        math_detail::compareAndSwap(v.y, v.z);
+        return v;
+    }
 
-	template <typename T>
-	Vector<T, 4> sortVector(Vector<T, 4> v)
-	{
-		math_detail::compareAndSwap(v.x, v.y);
-		math_detail::compareAndSwap(v.z, v.w);
-		math_detail::compareAndSwap(v.x, v.z);
-		math_detail::compareAndSwap(v.y, v.w);
-		math_detail::compareAndSwap(v.y, v.z);
-		return v;
-	}
+    template <typename T>
+    Vector<T, 4> sortVector(Vector<T, 4> v)
+    {
+        math_detail::compareAndSwap(v.x, v.y);
+        math_detail::compareAndSwap(v.z, v.w);
+        math_detail::compareAndSwap(v.x, v.z);
+        math_detail::compareAndSwap(v.y, v.w);
+        math_detail::compareAndSwap(v.y, v.z);
+        return v;
+    }
 }
 
 using xor::math::int2;

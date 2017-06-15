@@ -246,7 +246,7 @@ namespace xor
             .pixelShader("ImguiRenderer.ps")
             .renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM)
             .winding(false)
-			.cull(D3D12_CULL_MODE_NONE)
+            .cull(D3D12_CULL_MODE_NONE)
             .blend(0, true)
             .inputLayout(info::InputLayoutInfoBuilder()
                          .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT)
@@ -456,26 +456,26 @@ namespace xor
         S().progress.retireCommandLists();
     }
 
-	void Device::processProfilingEvents()
-	{
-		if (ImGui::Begin("Profiling", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-		{
-			ImGui::SetWindowPos(float2(600, 0));
-			ImGui::SliderInt("History length", &S().profilingDataHistoryLength, 1, 30);
+    void Device::processProfilingEvents()
+    {
+        if (ImGui::Begin("Profiling", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::SetWindowPos(float2(600, 0));
+            ImGui::SliderInt("History length", &S().profilingDataHistoryLength, 1, 30);
             ImGui::Text("Min / Avg / Max");
 
-			uint64_t freq = 0;
-			XOR_CHECK_HR(S().graphicsQueue->GetTimestampFrequency(&freq));
+            uint64_t freq = 0;
+            XOR_CHECK_HR(S().graphicsQueue->GetTimestampFrequency(&freq));
 
-			double dFreq = static_cast<double>(freq);
-			double ticksToMs = static_cast<double>(1.0 / dFreq * 1000.0);
+            double dFreq = static_cast<double>(freq);
+            double ticksToMs = static_cast<double>(1.0 / dFreq * 1000.0);
 
             auto &profilingEventStack   = S().profilingEventStack;
             auto &activeProfilingEvents = S().activeProfilingEvents;
             profilingEventStack.resize(1, nullptr);
             activeProfilingEvents.resize(1, nullptr);
 
-			S().queryHeap->process(S().progress, ticksToMs,
+            S().queryHeap->process(S().progress, ticksToMs,
                                    [&](ProfilingEventData *data)
             {
                 data->timesMs.resize(S().profilingDataHistoryLength);
@@ -510,10 +510,10 @@ namespace xor
                 activeProfilingEvents.pop_back();
                 ImGui::TreePop();
             }
-		}
+        }
 
         ImGui::End();
-	}
+    }
 
     backend::ProfilingEventData * Device::profilingEventData(const char * name,
                                                              uint64_t uniqueId,
@@ -1040,8 +1040,8 @@ namespace xor
         ID3D12DescriptorHeap *heaps[] = { S().shaderViews.get() };
         cmd.cmd()->SetDescriptorHeaps(1, heaps);
 
-		if (!StringView(cmdListName).empty())
-			cmd.S().cmdListEvent = cmd.profilingEvent(cmdListName);
+        if (!StringView(cmdListName).empty())
+            cmd.S().cmdListEvent = cmd.profilingEvent(cmdListName);
 
         return cmd;
     }

@@ -45,24 +45,24 @@ namespace xor
         MeshData() = default;
     };
 
-	struct VertexAttribute
-	{
-		const char *semantic = nullptr;
-		int index = 0;
-		Format format;
-		Span<const uint8_t> data;
+    struct VertexAttribute
+    {
+        const char *semantic = nullptr;
+        int index = 0;
+        Format format;
+        Span<const uint8_t> data;
 
-		VertexAttribute(const char *semantic, Format format, Span<const uint8_t> data)
-			: VertexAttribute(semantic, 0, format, data)
-		{}
+        VertexAttribute(const char *semantic, Format format, Span<const uint8_t> data)
+            : VertexAttribute(semantic, 0, format, data)
+        {}
 
-		VertexAttribute(const char *semantic, int index, Format format, Span<const uint8_t> data)
-			: semantic(semantic)
-			, index(index)
-			, format(format)
-			, data(data)
-		{}
-	};
+        VertexAttribute(const char *semantic, int index, Format format, Span<const uint8_t> data)
+            : semantic(semantic)
+            , index(index)
+            , format(format)
+            , data(data)
+        {}
+    };
 
     class Mesh
     {

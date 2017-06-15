@@ -683,8 +683,8 @@ namespace xor
             if (m_f)
                 (*m_f)();
         }
-		ScopeGuard(ScopeGuard &&) = default;
-		ScopeGuard &operator=(ScopeGuard &&) = default;
+        ScopeGuard(ScopeGuard &&) = default;
+        ScopeGuard &operator=(ScopeGuard &&) = default;
 
         void cancel() { m_f = nullptr; }
     };

@@ -429,7 +429,7 @@ namespace xor
     }
 
     Mesh Mesh::generate(Device & device,
-						Span<const VertexAttribute> vertexAttributes,
+                        Span<const VertexAttribute> vertexAttributes,
                         Span<const uint> indices)
     {
         Mesh m;

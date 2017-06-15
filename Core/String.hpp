@@ -17,19 +17,19 @@ namespace xor
 {
     // string.capitalize(word)
     // string.expandtabs(s[, tabsize])
-	// string.find(s, sub[, start[, end]])
-	// string.rfind(s, sub[, start[, end]])
-	// string.count(s, sub[, start[, end]])
-	// string.lower(s)
-	// string.split(s[, sep[, maxsplit]])
-	// string.join(words[, sep])
-	// string.strip(s[, chars])
-	// string.swapcase(s)
-	// string.upper(s)
-	// string.ljust(s, width[, fillchar])
-	// string.rjust(s, width[, fillchar])
-	// string.center(s, width[, fillchar])
-	// string.replace(s, old, new[, maxreplace])
+    // string.find(s, sub[, start[, end]])
+    // string.rfind(s, sub[, start[, end]])
+    // string.count(s, sub[, start[, end]])
+    // string.lower(s)
+    // string.split(s[, sep[, maxsplit]])
+    // string.join(words[, sep])
+    // string.strip(s[, chars])
+    // string.swapcase(s)
+    // string.upper(s)
+    // string.ljust(s, width[, fillchar])
+    // string.rjust(s, width[, fillchar])
+    // string.center(s, width[, fillchar])
+    // string.replace(s, old, new[, maxreplace])
 
     static constexpr char Whitespace[] = " \t\r\n";
 
@@ -92,17 +92,17 @@ namespace xor
 
         StringView(const char *str)
         {
-			if (!str)
-			{
-				m_begin = nullptr;
-				m_end   = nullptr;
-			}
-			else
-			{
-				m_begin = str;
-				m_end   = str + std::strlen(str);
-			}
-		}
+            if (!str)
+            {
+                m_begin = nullptr;
+                m_end   = nullptr;
+            }
+            else
+            {
+                m_begin = str;
+                m_end   = str + std::strlen(str);
+            }
+        }
 
         StringView(const char *start, const char *end)
             : m_begin(start)

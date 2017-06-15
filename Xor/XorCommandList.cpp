@@ -41,7 +41,7 @@ namespace xor
                                             EVENT_ALL_ACCESS);
             XOR_CHECK(!!completedEvent, "Failed to create completion event.");
 
-			queryHeap = dev.S().queryHeap;
+            queryHeap = dev.S().queryHeap;
 
             shaderDebugData = dev.createBufferUAV(info::BufferInfoBuilder().rawBuffer(ShaderDebugPrintDataSize));
         }
@@ -58,10 +58,10 @@ namespace xor
     {
         if (!S().closed)
         {
-			S().cmdListEvent.done();
+            S().cmdListEvent.done();
 
-			if (S().firstProfilingEvent >= 0)
-				S().queryHeap->resolve(cmd(), S().firstProfilingEvent, S().lastProfilingEvent);
+            if (S().firstProfilingEvent >= 0)
+                S().queryHeap->resolve(cmd(), S().firstProfilingEvent, S().lastProfilingEvent);
 
             auto num = number();
 
@@ -857,7 +857,7 @@ namespace xor
 
         ImGui::NewFrame();
 
-		device().processProfilingEvents();
+        device().processProfilingEvents();
     }
 
     void CommandList::imguiEndFrame(SwapChain &swapChain)
@@ -892,21 +892,21 @@ namespace xor
             uint indexOffset  = 0;
             for (auto &d : list->CmdBuffer)
             {
-				if (d.UserCallback)
-				{
-					d.UserCallback(list, &d);
-				}
-				else
-				{
-					int4 clipRect = int4(float4(d.ClipRect));
-					// TODO: swizzle
-					if (any(clipRect != prevClipRect))
-						setScissor({ int2(clipRect.x, clipRect.y), int2(clipRect.z, clipRect.w) });
+                if (d.UserCallback)
+                {
+                    d.UserCallback(list, &d);
+                }
+                else
+                {
+                    int4 clipRect = int4(float4(d.ClipRect));
+                    // TODO: swizzle
+                    if (any(clipRect != prevClipRect))
+                        setScissor({ int2(clipRect.x, clipRect.y), int2(clipRect.z, clipRect.w) });
 
-					setConstants(constants);
-					setShaderView(ImguiRenderer::tex, imgui.fontAtlas);
-					drawIndexed(d.ElemCount, indexOffset);
-				}
+                    setConstants(constants);
+                    setShaderView(ImguiRenderer::tex, imgui.fontAtlas);
+                    drawIndexed(d.ElemCount, indexOffset);
+                }
 
                 indexOffset += d.ElemCount;
             }
@@ -1006,36 +1006,36 @@ namespace xor
     ProfilingEvent CommandList::profilingEvent(const char * name, uint64_t uniqueId)
     {
         ProfilingEvent e;
-		e.m_cmd       = &S();
-		e.m_queryHeap = S().queryHeap.get();
+        e.m_cmd       = &S();
+        e.m_queryHeap = S().queryHeap.get();
 
         PIXBeginEvent(e.m_cmd->cmd.Get(), PIX_COLOR_DEFAULT, "%s", name);
 
         auto data = device().profilingEventData(name, uniqueId, S().profilingEventStackTop);
         e.m_data      = data;
-		e.m_offset    = e.m_queryHeap->beginEvent(cmd(), data, number());
+        e.m_offset    = e.m_queryHeap->beginEvent(cmd(), data, number());
         S().profilingEventStackTop = data;
 
-		if (S().firstProfilingEvent < 0)
-			S().firstProfilingEvent = e.m_offset;
+        if (S().firstProfilingEvent < 0)
+            S().firstProfilingEvent = e.m_offset;
 
-		S().lastProfilingEvent = e.m_offset;
+        S().lastProfilingEvent = e.m_offset;
 
-		return e;
+        return e;
     }
 
-	void ProfilingEvent::done()
-	{
-		if (m_queryHeap)
-		{
-			XOR_ASSERT(static_cast<bool>(m_offset), "No valid event offset");
+    void ProfilingEvent::done()
+    {
+        if (m_queryHeap)
+        {
+            XOR_ASSERT(static_cast<bool>(m_offset), "No valid event offset");
             m_cmd->profilingEventStackTop = m_data->parent;
-			m_queryHeap->endEvent(m_cmd->cmd.Get(), m_offset);
-			m_queryHeap = nullptr;
+            m_queryHeap->endEvent(m_cmd->cmd.Get(), m_offset);
+            m_queryHeap = nullptr;
 
             PIXEndEvent(m_cmd->cmd.Get());
-		}
-	}
+        }
+    }
 
     float ProfilingEvent::minimumMs() const { return m_data->minimumMs(); }
     float ProfilingEvent::averageMs() const { return m_data->averageMs(); }

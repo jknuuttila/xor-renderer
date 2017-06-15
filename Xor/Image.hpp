@@ -136,7 +136,7 @@ namespace xor
         template <typename T>
         const T &pixel(uint2 coords) const
         {
-			coords = min(coords, size - 1);
+            coords = min(coords, size - 1);
 
             // TODO: Block compressed formats
             uint offset =
@@ -149,8 +149,8 @@ namespace xor
         template <typename T>
         const T &pixel(float2 uv) const
         {
-			uint2 coords = uint2(uv * float2(size));
-			return pixel<T>(coords);
+            uint2 coords = uint2(uv * float2(size));
+            return pixel<T>(coords);
         }
 
         template <typename T>
@@ -194,7 +194,7 @@ namespace xor
         template <typename T>
         T &pixel(uint2 coords)
         {
-			coords = min(coords, size - 1);
+            coords = min(coords, size - 1);
 
             // TODO: Block compressed formats
             uint offset =
@@ -207,8 +207,8 @@ namespace xor
         template <typename T>
         T &pixel(float2 uv)
         {
-			uint2 coords = uint2(uv * float2(size));
-			return pixel<T>(coords);
+            uint2 coords = uint2(uv * float2(size));
+            return pixel<T>(coords);
         }
 
         template <typename T>

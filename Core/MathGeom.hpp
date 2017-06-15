@@ -8,16 +8,16 @@
 namespace xor
 {
     template <typename T>
-	inline T orient2D(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
-	{
-		return (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
-	}
+    inline T orient2D(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
+    {
+        return (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+    }
 
     template <typename T>
-	inline bool isTriangleCCW(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
-	{
-		return orient2D(a, b, c) > 0;
-	}
+    inline bool isTriangleCCW(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
+    {
+        return orient2D(a, b, c) > 0;
+    }
 
     template <typename T>
     inline T edgeFunction(Vector<T, 2> v0, Vector<T, 2> v1, Vector<T, 2> p)
@@ -191,23 +191,23 @@ namespace xor
             return inCircleTest < 0;
     }
 
-	inline float3 uniformBarycentric(float2 u)
-	{
-		float r1  = u.x;
-		float r2  = u.y;
-		float sr1 = sqrt(r1);
+    inline float3 uniformBarycentric(float2 u)
+    {
+        float r1  = u.x;
+        float r2  = u.y;
+        float sr1 = sqrt(r1);
 
-		return float3(1 - sr1, sr1 * (1 - r2), r2 * sr1);
-	}
+        return float3(1 - sr1, sr1 * (1 - r2), r2 * sr1);
+    }
 
-	template <typename RandomGen>
-	float3 uniformBarycentricGen(RandomGen &gen)
-	{
-		std::uniform_real_distribution<float> U;
+    template <typename RandomGen>
+    float3 uniformBarycentricGen(RandomGen &gen)
+    {
+        std::uniform_real_distribution<float> U;
         return uniformBarycentric(float2(U(gen), U(gen)));
-	}
+    }
 
-	inline float2 uniformDisk(float2 u)
+    inline float2 uniformDisk(float2 u)
     {
         float r  = u.x;
         float th = u.y * (2 * Pi);
@@ -217,10 +217,10 @@ namespace xor
         return float2(sr * cos(th), sr * sin(th));
     }
 
-	template <typename RandomGen>
-	float2 uniformDiskGen(RandomGen &gen)
+    template <typename RandomGen>
+    float2 uniformDiskGen(RandomGen &gen)
     {
-		std::uniform_real_distribution<float> U;
+        std::uniform_real_distribution<float> U;
         return uniformDisk(float2(U(gen), U(gen)));
     }
 
@@ -242,17 +242,17 @@ namespace xor
         return float3(disk.x, disk.y, sqrt(std::max(0.f, 1.f - u.x)));
     }
 
-	template <typename RandomGen>
-	float3 uniformHemisphereGen(RandomGen &gen)
+    template <typename RandomGen>
+    float3 uniformHemisphereGen(RandomGen &gen)
     {
-		std::uniform_real_distribution<float> U;
+        std::uniform_real_distribution<float> U;
         return uniformHemisphere(float2(U(gen), U(gen)));
     }
 
-	template <typename RandomGen>
-	float3 cosineWeightedHemisphereGen(RandomGen &gen)
+    template <typename RandomGen>
+    float3 cosineWeightedHemisphereGen(RandomGen &gen)
     {
-		std::uniform_real_distribution<float> U;
+        std::uniform_real_distribution<float> U;
         return cosineWeightedHemisphere(float2(U(gen), U(gen)));
     }
 
