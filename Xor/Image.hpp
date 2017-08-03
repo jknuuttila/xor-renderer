@@ -168,6 +168,8 @@ namespace xor
         {
             return static_cast<size_t>(size.y) * pitch;
         }
+
+        uint2 areaOfPitch() const { return format.areaOfPitch(size.x, pitch); }
     };
 
     struct RWImageData : ImageData

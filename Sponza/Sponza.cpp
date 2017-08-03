@@ -97,7 +97,7 @@ public:
     {
         camera.update(*this);
 
-        auto cmd        = device.graphicsCommandList();
+        auto cmd        = device.graphicsCommandList("Sponza");
         auto backbuffer = swapChain.backbuffer();
 
         cmd.imguiBeginFrame(swapChain, deltaTime);
@@ -158,6 +158,7 @@ public:
         }
 
         cmd.setRenderTargets();
+
         cmd.imguiEndFrame(swapChain);
 
         device.execute(cmd);

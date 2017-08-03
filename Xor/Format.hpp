@@ -43,6 +43,7 @@ namespace xor
         uint size() const;
         uint areaSizeBytes(uint2 area) const;
         uint areaSizeBytes(uint width) const { return areaSizeBytes({ width, 1 }); }
+        uint2 areaOfPitch(uint width, uint pitch) const { return { width, blockSize() }; }
         uint blockSize() const;
         uint blockBytes() const;
         uint structureByteStride() const;

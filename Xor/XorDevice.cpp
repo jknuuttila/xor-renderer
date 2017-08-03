@@ -53,12 +53,15 @@ namespace xor
                 __uuidof(ID3D12Debug),
                 &debug));
 
+            debug->EnableDebugLayer();
+
+#if 0
             ComPtr<ID3D12Debug1> debug1;
             XOR_CHECK_HR(debug.As(&debug1));
-            debug->EnableDebugLayer();
             debug1->SetEnableSynchronizedCommandQueueValidation(TRUE);
             if (debugLayer == DebugLayer::GPUBasedValidation)
                 debug1->SetEnableGPUBasedValidation(TRUE);
+#endif
         }
 
         auto factory = dxgiFactory();
@@ -578,7 +581,7 @@ namespace xor
         // If all the subresources fit nicely within the upload heap, 
         // just do it all in one command list, since it's faster and
         // places less pressure on the driver.
-        if (totalSize < UploadHeap::HeapSize)
+        if (totalSize < InitialDataLimit)
         {
             auto cmd = initializerCommandList();
             for (uint s = 0; s < subresources.size(); ++s)
@@ -602,14 +605,18 @@ namespace xor
 
             if (isLarge)
             {
-                uint rows = static_cast<uint>(InitialDataLimit / data.pitch);
+                uint pitchesPerIter = static_cast<uint>(InitialDataLimit / data.pitch);
+                uint2 areaPerIter = data.areaOfPitch();
+                uint rows = areaPerIter.y * pitchesPerIter;
+                uint p = 0;
+
                 for (uint y = 0; y < data.size.y; y += rows)
                 {
                     uint begin = y;
                     uint end   = std::min(y + rows, data.size.y);
 
                     ImageData block;
-                    block.data   = data.data(begin * data.pitch, end * data.pitch);
+                    block.data   = data.data(p * data.pitch, (p + pitchesPerIter) * data.pitch);
                     block.pitch  = data.pitch;
                     block.format = data.format;
                     block.size   = { data.size.x, end - begin };
@@ -620,6 +627,8 @@ namespace xor
 
                     if (WaitForLargeInitialData)
                         waitUntilCompleted(cmd.number());
+
+                    p += pitchesPerIter;
                 }
             }
             else

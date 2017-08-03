@@ -146,8 +146,7 @@ namespace xor
 
     class Handle
     {
-        constexpr static HANDLE InvalidHandleValue = INVALID_HANDLE_VALUE;
-        MovingPtr<HANDLE, InvalidHandleValue> m_handle;
+        MovingPtr<HANDLE, INVALID_HANDLE_VALUE> m_handle;
     public:
         Handle(HANDLE handle = INVALID_HANDLE_VALUE)
             : m_handle(handle)
@@ -175,7 +174,7 @@ namespace xor
             if (m_handle)
             {
                 CloseHandle(m_handle.get());
-                m_handle = InvalidHandleValue;
+                m_handle = INVALID_HANDLE_VALUE;
             }
         }
     };
@@ -263,12 +262,12 @@ namespace xor
         Span<T> operator()(int64_t begin, int64_t end)
         {
             if (end < 0) end += size();
-            return Span<T>(m_begin + begin, std::min(m_begin + end, m_end));
+            return Span<T>(std::min(m_begin + begin, m_end), std::min(m_begin + end, m_end));
         }
         Span<const T> operator()(int64_t begin, int64_t end) const
         {
             if (end < 0) end += size();
-            return Span<const T>(m_begin + begin, std::min(m_begin + end, m_end));
+            return Span<const T>(std::min(m_begin + begin, m_end), std::min(m_begin + end, m_end));
         }
         Span<T> operator()(int64_t begin) { return operator()(begin, size()); }
         Span<const T> operator()(int64_t begin) const { return operator()(begin, size()); }
