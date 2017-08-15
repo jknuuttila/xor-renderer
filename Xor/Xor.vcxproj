@@ -25,6 +25,7 @@
     <ClInclude Include="Xor.hpp" />
     <ClInclude Include="XorBackend.hpp" />
     <ClInclude Include="XorCommandList.hpp" />
+    <ClInclude Include="XorConfig.hpp" />
     <ClInclude Include="XorDevice.hpp" />
     <ClInclude Include="XorDeviceState.hpp" />
     <ClInclude Include="XorPCH.hpp" />
@@ -40,6 +41,7 @@
     <ClCompile Include="Xor.cpp" />
     <ClCompile Include="XorBackend.cpp" />
     <ClCompile Include="XorCommandList.cpp" />
+    <ClCompile Include="XorConfig.cpp" />
     <ClCompile Include="XorDevice.cpp" />
     <ClCompile Include="XorDeviceState.cpp" />
     <ClCompile Include="XorPCH.cpp">

@@ -6,6 +6,7 @@
 #include "Xor/XorResources.hpp"
 #include "Xor/XorDevice.hpp"
 #include "Xor/XorCommandList.hpp"
+#include "Xor/XorConfig.hpp"
 
 // TODO: Unify all Info classes
 // TODO: More convenience subclasses for SharedState to allow easy access to stuff

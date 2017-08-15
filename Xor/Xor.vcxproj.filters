@@ -20,6 +20,7 @@
     <ClInclude Include="DirectedEdge.hpp" />
     <ClInclude Include="Quadric.hpp" />
     <ClInclude Include="ShaderDebugDefs.h" />
+    <ClInclude Include="XorConfig.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Xor.cpp" />
@@ -35,6 +36,7 @@
     <ClCompile Include="XorPCH.cpp" />
     <ClCompile Include="Blit.cpp" />
     <ClCompile Include="Quadric.cpp" />
+    <ClCompile Include="XorConfig.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\external\FreeImage\FreeImage.dll" />

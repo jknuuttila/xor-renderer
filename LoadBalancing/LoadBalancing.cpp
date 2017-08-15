@@ -10,31 +10,30 @@
 
 using namespace xor;
 
-enum class LBShaderVariant
+XOR_CONFIG_WINDOW(ShaderSettings)
 {
-    Naive,
-    NaiveLDSAtomics,
-    PrefixLinear,
-    PrefixLinearSkipZeros,
-    PrefixLinearStore4,
-    PrefixBinary,
-    PrefixBitscan,
-    WorkStealing,
-    OneAtATime,
-};
+    XOR_CONFIG_ENUM_D(LBShaderVariant, shaderVariant, LBShaderVariant::OneAtATime,
+        Naive,
+        NaiveLDSAtomics,
+        PrefixLinear,
+        PrefixLinearSkipZeros,
+        PrefixLinearStore4,
+        PrefixBinary,
+        PrefixBitscan,
+        WorkStealing,
+        OneAtATime);
 
-const char *ShaderSettingNames[] =
-{
-    "Naive",
-    "NaiveLDSAtomics",
-    "PrefixLinear",
-    "PrefixLinearSkipZeros",
-    "PrefixLinearStore4",
-    "PrefixBinary",
-    "PrefixBitscan",
-    "WorkStealing",
-    "OneAtATime",
-};
+#if defined(_DEBUG)
+    XOR_CONFIG_SLIDER(int, threadGroupSizeExp, 5, 4, 8);
+    XOR_CONFIG_SLIDER(int, subgroupSizeExp   , 4, 4, 8);
+#else
+    XOR_CONFIG_SLIDER(int, threadGroupSizeExp, 6, 4, 8);
+    XOR_CONFIG_SLIDER(int, subgroupSizeExp   , 4, 4, 8);
+#endif
+
+    int threadGroupSize() const { return 1 << threadGroupSizeExp; }
+    int subgroupSize() const { return 1 << subgroupSizeExp; }
+} cfg_ShaderSettings;
 
 class LoadBalancing : public Window
 {
@@ -321,9 +320,9 @@ public:
         if (device.frameNumber() % 10 == 0)
         {
             log("runBenchmark", "Variant: %25s, TGS: %3d, SGS: %3d, minimum GPU time: %.4f\n",
-                ShaderSettingNames[static_cast<int>(shaderSettings.shaderVariant)],
-                shaderSettings.threadGroupSize(),
-                shaderSettings.subgroupSize(),
+                cfg_ShaderSettings.shaderVariant.valueName(),
+                cfg_ShaderSettings.threadGroupSize(),
+                cfg_ShaderSettings.subgroupSize(),
                 time);
         }
     }
