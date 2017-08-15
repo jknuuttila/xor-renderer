@@ -80,15 +80,16 @@ namespace xor
             {
                 const void *beginAddr = kv.first;
                 Configurable *cfg = kv.second.cfg;
+                bool foundPlace = false;
 
-                for (;;)
+                while (!foundPlace)
                 {
                     // If the stack is empty, the configurable is top level
                     if (groupStack.empty())
                     {
                         topLevel.emplace(cfg);
                         groupStack.emplace_back(kv.second);
-                        break;
+                        foundPlace = true;
                     }
                     // If the top of the stack contains the configurable, insert
                     // it as a member.
@@ -100,7 +101,7 @@ namespace xor
                         // As this configurable may itself be a subgroup, put it on the stack.
                         groupStack.emplace_back(kv.second);
 
-                        break;
+                        foundPlace = true;
                     }
                     // Otherwise, pop the stack once and try again.
                     else
@@ -112,29 +113,38 @@ namespace xor
 
             sortTopLevelConfigurables();
         }
-    } g_registeredConfigurables;
+    };
+    static RegisteredConfigurables &registeredConfigurables()
+    {
+        static RegisteredConfigurables rc;
+        return rc;
+    }
 
 
     void registerConfigurable(Configurable * cfg, const void * addrBegin, const void * addrEnd)
     {
-        g_registeredConfigurables.newlyRegistered.emplace_back(cfg, addrBegin, addrEnd);
+        RegisteredConfigurables::Registration r;
+        r.cfg   = cfg;
+        r.begin = addrBegin;
+        r.end   = addrEnd;
+        registeredConfigurables().newlyRegistered.emplace_back(r);
     }
 
     void unregisterConfigurable(Configurable * cfg)
     {
-        g_registeredConfigurables.newlyUnregistered.emplace_back(cfg);
+        registeredConfigurables().newlyUnregistered.emplace_back(cfg);
     }
 
     void processConfigurables()
     {
-        g_registeredConfigurables.processRegistrations();
-        for (auto &cfg : g_registeredConfigurables.topLevelSorted)
+        registeredConfigurables().processRegistrations();
+        for (auto &cfg : registeredConfigurables().topLevelSorted)
             cfg->configure();
     }
 
     std::vector<String> determineConfigEnumValueNames(const char *stringizedMacroVarags)
     {
-        return StringView(stringizedMacroVarags).split(" \t\r\n,");
+        return StringView(stringizedMacroVarags).splitNonEmpty(" \t\r\n,");
     }
 
     std::vector<char> determineConfigEnumValueNamesZeroSeparated(const char *stringizedMacroVarags)

@@ -2,6 +2,7 @@
 #include "Xor/XorDevice.hpp"
 #include "Xor/XorDeviceState.hpp"
 #include "Xor/XorCommandList.hpp"
+#include "Xor/XorConfig.hpp"
 
 #include "ImguiRenderer.sig.h"
 
@@ -858,6 +859,7 @@ namespace xor
         ImGui::NewFrame();
 
         device().processProfilingEvents();
+        processConfigurables();
     }
 
     void CommandList::imguiEndFrame(SwapChain &swapChain)

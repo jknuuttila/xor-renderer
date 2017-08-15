@@ -10,18 +10,20 @@
 
 using namespace xor;
 
-XOR_CONFIG_WINDOW(ShaderSettings)
+XOR_DEFINE_CONFIG_ENUM(LBShaderVariant, 
+    Naive,
+    NaiveLDSAtomics,
+    PrefixLinear,
+    PrefixLinearSkipZeros,
+    PrefixLinearStore4,
+    PrefixBinary,
+    PrefixBitscan,
+    WorkStealing,
+    OneAtATime);
+
+XOR_CONFIG_WINDOW(ShaderSettings, 100, 500)
 {
-    XOR_CONFIG_ENUM_D(LBShaderVariant, shaderVariant, LBShaderVariant::OneAtATime,
-        Naive,
-        NaiveLDSAtomics,
-        PrefixLinear,
-        PrefixLinearSkipZeros,
-        PrefixLinearStore4,
-        PrefixBinary,
-        PrefixBitscan,
-        WorkStealing,
-        OneAtATime);
+    XOR_CONFIG_ENUM(LBShaderVariant, shaderVariant, LBShaderVariant::OneAtATime);
 
 #if defined(_DEBUG)
     XOR_CONFIG_SLIDER(int, threadGroupSizeExp, 5, 4, 8);
@@ -30,10 +32,36 @@ XOR_CONFIG_WINDOW(ShaderSettings)
     XOR_CONFIG_SLIDER(int, threadGroupSizeExp, 6, 4, 8);
     XOR_CONFIG_SLIDER(int, subgroupSizeExp   , 4, 4, 8);
 #endif
+    XOR_CONFIG_TEXT("Thread group size", "%d", &ShaderSettings::threadGroupSize);
+    XOR_CONFIG_TEXT("Subgroup size", "%d", &ShaderSettings::subgroupSize);
 
     int threadGroupSize() const { return 1 << threadGroupSizeExp; }
     int subgroupSize() const { return 1 << subgroupSizeExp; }
 } cfg_ShaderSettings;
+
+XOR_CONFIG_WINDOW(WorkloadSettings, 100, 100)
+{
+#if defined(_DEBUG)
+    XOR_CONFIG_SLIDER(int, iterations, 1, 1, 50);
+    XOR_CONFIG_SLIDER(int, sizeExp,    5, 0, 24);
+    XOR_CONFIG_INPUT(int, minItems,   0);
+    XOR_CONFIG_INPUT(int, maxItems,   5);
+    XOR_CONFIG_INPUT(int, multiplier, 1);
+    XOR_CONFIG_SLIDER(float, zeroProb, .5f);
+    XOR_CONFIG_CHECKBOX(verify, true);
+#else
+    XOR_CONFIG_SLIDER(int, iterations, 15, 1, 50);
+    XOR_CONFIG_SLIDER(int, sizeExp,    18, 0, 24);
+    XOR_CONFIG_SLIDER(int, minItems,    0);
+    XOR_CONFIG_SLIDER(int, maxItems,   30);
+    XOR_CONFIG_SLIDER(int, multiplier,  1);
+    XOR_CONFIG_SLIDER(float, zeroProb, .5f);
+    XOR_CONFIG_CHECKBOX(verify, false);
+#endif
+    XOR_CONFIG_CHECKBOX(vsync, true);
+
+    uint size() const { return 1u << uint(sizeExp) ; }
+} cfg_WorkloadSettings;
 
 class LoadBalancing : public Window
 {
@@ -42,45 +70,6 @@ class LoadBalancing : public Window
     SwapChain swapChain;
 
     ComputePipeline loadBalancedShader;
-
-    struct ShaderSettings
-    {
-        LBShaderVariant shaderVariant = LBShaderVariant::OneAtATime;
-#if defined(_DEBUG)
-        int threadGroupSizeExp        = 5;
-        int subgroupSizeExp           = 4;
-#else
-        int threadGroupSizeExp        = 6;
-        int subgroupSizeExp           = 4;
-#endif
-
-        int threadGroupSize() const { return 1 << threadGroupSizeExp; }
-        int subgroupSize() const { return 1 << subgroupSizeExp; }
-    } shaderSettings;
-
-    struct WorkloadSettings
-    {
-#if defined(_DEBUG)
-        int iterations = 1;
-        int sizeExp = 5;
-        int minItems = 0;
-        int maxItems = 5;
-        int multiplier = 1;
-        float zeroProb = .5f;
-        bool verify  = true;
-#else
-        int iterations = 15;
-        int sizeExp = 18;
-        int minItems = 0;
-        int maxItems = 30;
-        int multiplier = 1;
-        float zeroProb = .5f;
-        bool verify = false;
-#endif
-        bool vsync = true;
-
-        uint size() const { return 1u << uint(sizeExp) ; }
-    } workloadSettings;
 
     struct Workload
     {
@@ -133,17 +122,17 @@ public:
         workload.correctOutput.clear();
 
         std::mt19937 gen(2358279);
-        std::uniform_int_distribution<uint> dist(workloadSettings.minItems, workloadSettings.maxItems);
+        std::uniform_int_distribution<uint> dist(cfg_WorkloadSettings.minItems, cfg_WorkloadSettings.maxItems);
         std::uniform_real_distribution<float> zeroDist;
 
-        uint size = workloadSettings.size();
+        uint size = cfg_WorkloadSettings.size();
         workload.input.reserve(size);
         for (uint i = 0; i < size; ++i)
         {
             uint items = dist(gen) & WorkItemCountMask;
-            items *= workloadSettings.multiplier;
+            items *= cfg_WorkloadSettings.multiplier;
 
-            if (zeroDist(gen) < workloadSettings.zeroProb)
+            if (zeroDist(gen) < cfg_WorkloadSettings.zeroProb)
                 items = 0;
 
             uint inputValue = (i << WorkItemCountBits) | items;
@@ -229,7 +218,7 @@ public:
         std::vector<info::ShaderDefine> defines;
         defines.reserve(2);
 
-        switch (shaderSettings.shaderVariant)
+        switch (cfg_ShaderSettings.shaderVariant)
         {
         case LBShaderVariant::Naive:
         default:
@@ -252,22 +241,22 @@ public:
             break;
         case LBShaderVariant::PrefixBitscan:
             defines.emplace_back("PREFIX_BITSCAN");
-            shaderSettings.subgroupSizeExp = std::min(shaderSettings.subgroupSizeExp, 5);
+            cfg_ShaderSettings.subgroupSizeExp = std::min<int>(cfg_ShaderSettings.subgroupSizeExp, 5);
             break;
         case LBShaderVariant::WorkStealing:
             defines.emplace_back("WORK_STEALING");
-            shaderSettings.subgroupSizeExp = std::min(shaderSettings.subgroupSizeExp, 5);
+            cfg_ShaderSettings.subgroupSizeExp = std::min<int>(cfg_ShaderSettings.subgroupSizeExp, 5);
             break;
         case LBShaderVariant::OneAtATime:
             defines.emplace_back("ONE_AT_A_TIME");
             break;
         }
 
-        int sgs     = std::min(shaderSettings.subgroupSize(),  shaderSettings.threadGroupSize());
-        int sgsLog2 = std::min(shaderSettings.subgroupSizeExp, shaderSettings.threadGroupSizeExp);
+        int sgs     = std::min<int>(cfg_ShaderSettings.subgroupSize(),  cfg_ShaderSettings.threadGroupSize());
+        int sgsLog2 = std::min<int>(cfg_ShaderSettings.subgroupSizeExp, cfg_ShaderSettings.threadGroupSizeExp);
 
-        defines.emplace_back("LB_THREADGROUP_SIZE",      shaderSettings.threadGroupSize());
-        defines.emplace_back("LB_THREADGROUP_SIZE_LOG2", shaderSettings.threadGroupSizeExp);
+        defines.emplace_back("LB_THREADGROUP_SIZE",      cfg_ShaderSettings.threadGroupSize());
+        defines.emplace_back("LB_THREADGROUP_SIZE_LOG2", cfg_ShaderSettings.threadGroupSizeExp);
         defines.emplace_back("LB_SUBGROUP_SIZE",      sgs);
         defines.emplace_back("LB_SUBGROUP_SIZE_LOG2", sgsLog2);
 
@@ -276,19 +265,19 @@ public:
 
         bool verified = false;
 
-        if (!workloadSettings.verify)
+        if (!cfg_WorkloadSettings.verify)
             verified = true;
 
         float time = 1e12f;
 
         auto cmd = device.graphicsCommandList("Benchmark");
 
-        for (int i = 0; i < workloadSettings.iterations; ++i)
+        for (int i = 0; i < cfg_WorkloadSettings.iterations; ++i)
         {
             cmd.clearUAV(workload.outputCounter);
 
             LoadBalancedShader::Constants constants;
-            constants.size = workloadSettings.size();
+            constants.size = cfg_WorkloadSettings.size();
 
             cmd.bind(variant);
             cmd.setConstants(constants);
@@ -297,12 +286,12 @@ public:
             cmd.setShaderView(LoadBalancedShader::outputCounter, workload.outputCounter);
 
             auto e = cmd.profilingEvent("Iteration", i);
-            cmd.dispatchThreads(uint3(shaderSettings.threadGroupSize(), 1, 1),
-                                uint3(workloadSettings.size(), 0, 0));
+            cmd.dispatchThreads(uint3(cfg_ShaderSettings.threadGroupSize(), 1, 1),
+                                uint3(cfg_WorkloadSettings.size(), 0, 0));
             time = std::min(time, e.minimumMs());
         }
 
-        if (workloadSettings.verify)
+        if (cfg_WorkloadSettings.verify)
         {
             cmd.readbackBuffer(workload.outputUAV.buffer(), [&](auto results)
             {
@@ -336,43 +325,8 @@ public:
 
         cmd.clearRTV(backbuffer, float4(.1f, .1f, .25f, 1.f));
 
-        ImGui::SetNextWindowPos(float2(100, 100));
-        if (ImGui::Begin("Workload", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            ImGui::SliderInt("Shader iterations", &workloadSettings.iterations, 1, 50);
-            ImGui::SliderInt("Size exponent", &workloadSettings.sizeExp, 0, 24);
-            ImGui::Text("Size: %u", workloadSettings.size());
-            ImGui::InputInt("Minimum items", &workloadSettings.minItems);
-            ImGui::InputInt("Maximum items", &workloadSettings.maxItems);
-            ImGui::InputInt("Item count multiplier", &workloadSettings.multiplier);
-            ImGui::SliderFloat("Probability of zero items", &workloadSettings.zeroProb, 0, 1);
-            ImGui::Checkbox("VSync", &workloadSettings.vsync);
-            ImGui::Checkbox("Verify output", &workloadSettings.verify);
-            if (ImGui::Button("Update workload"))
-                generateWorkload();
-        }
-        ImGui::End();
-
-        ImGui::SetNextWindowPos(float2(100, 500));
-        if (ImGui::Begin("Shader variant", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            ImGui::Combo("Variant", reinterpret_cast<int *>(&shaderSettings.shaderVariant),
-                         "Naive\0"
-                         "NaiveLDSAtomics\0"
-                         "PrefixLinear\0"
-                         "PrefixLinearSkipZeros\0"
-                         "PrefixLinearStore4\0"
-                         "PrefixBinary\0"
-                         "PrefixBitscan\0"
-                         "WorkStealing\0"
-                         "OneAtATime\0"
-            );
-            ImGui::SliderInt("Thread group size", &shaderSettings.threadGroupSizeExp, 4, 8); 
-            ImGui::Text("Thread group size: %d", shaderSettings.threadGroupSize());
-            ImGui::SliderInt("Subgroup size",     &shaderSettings.subgroupSizeExp,    4, 8); 
-            ImGui::Text("Subgroup size: %d", shaderSettings.subgroupSize());
-        }
-        ImGui::End();
+        if (cfg_WorkloadSettings.changed())
+            generateWorkload();
 
         cmd.imguiEndFrame(swapChain);
 
@@ -380,7 +334,7 @@ public:
 
         runBenchmark();
 
-        device.present(swapChain, workloadSettings.vsync);
+        device.present(swapChain, cfg_WorkloadSettings.vsync);
     }
 };
 

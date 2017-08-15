@@ -700,3 +700,6 @@ namespace xor
     }
 }
 
+#define XOR_CONCAT2(a, b) a ## b
+#define XOR_CONCAT(a, b) XOR_CONCAT2(a, b)
+
