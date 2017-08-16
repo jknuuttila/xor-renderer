@@ -1605,7 +1605,7 @@ public:
 
         Timer loadingTime;
 
-#if defined(_DEBUG) || 0
+#if defined(_DEBUG) || 1
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/grand-canyon/floatn36w114_13.flt");
 #else
         heightmap = Heightmap(device, XOR_DATA "/heightmaps/test/height.png",

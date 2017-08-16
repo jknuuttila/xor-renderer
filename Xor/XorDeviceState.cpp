@@ -67,7 +67,7 @@ namespace xor
                 device->CreateShaderResourceView(
                     nullptr,
                     &desc,
-                    nullTextureSRV.cpu);
+                    nullTextureSRV.staging);
             }
 
             {
@@ -79,7 +79,7 @@ namespace xor
                 device->CreateUnorderedAccessView(
                     nullptr, nullptr,
                     &desc,
-                    nullTextureUAV.cpu);
+                    nullTextureUAV.staging);
             }
 
             {
@@ -94,7 +94,7 @@ namespace xor
                 device->CreateShaderResourceView(
                     nullptr,
                     &desc,
-                    nullBufferSRV.cpu);
+                    nullBufferSRV.staging);
             }
 
             {
@@ -108,7 +108,7 @@ namespace xor
                 device->CreateUnorderedAccessView(
                     nullptr, nullptr,
                     &desc,
-                    nullBufferUAV.cpu);
+                    nullBufferUAV.staging);
             }
         }
 
