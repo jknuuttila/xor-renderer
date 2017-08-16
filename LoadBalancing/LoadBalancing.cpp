@@ -23,14 +23,14 @@ XOR_DEFINE_CONFIG_ENUM(LBShaderVariant,
 
 XOR_CONFIG_WINDOW(ShaderSettings, 100, 500)
 {
-    XOR_CONFIG_ENUM(LBShaderVariant, shaderVariant, LBShaderVariant::OneAtATime);
+    XOR_CONFIG_ENUM(LBShaderVariant, shaderVariant, "Shader variant", LBShaderVariant::OneAtATime);
 
 #if defined(_DEBUG)
-    XOR_CONFIG_SLIDER(int, threadGroupSizeExp, 5, 4, 8);
-    XOR_CONFIG_SLIDER(int, subgroupSizeExp   , 4, 4, 8);
+    XOR_CONFIG_SLIDER(int, threadGroupSizeExp, "Thread group size exponent", 5, 4, 8);
+    XOR_CONFIG_SLIDER(int, subgroupSizeExp   , "Subgroup size exponent", 4, 4, 8);
 #else
-    XOR_CONFIG_SLIDER(int, threadGroupSizeExp, 6, 4, 8);
-    XOR_CONFIG_SLIDER(int, subgroupSizeExp   , 4, 4, 8);
+    XOR_CONFIG_SLIDER(int, threadGroupSizeExp, "Thread group size exponent", 6, 4, 8);
+    XOR_CONFIG_SLIDER(int, subgroupSizeExp   , "Subgroup size exponent", 4, 4, 8);
 #endif
     XOR_CONFIG_TEXT("Thread group size", "%d", &ShaderSettings::threadGroupSize);
     XOR_CONFIG_TEXT("Subgroup size", "%d", &ShaderSettings::subgroupSize);
@@ -42,23 +42,23 @@ XOR_CONFIG_WINDOW(ShaderSettings, 100, 500)
 XOR_CONFIG_WINDOW(WorkloadSettings, 100, 100)
 {
 #if defined(_DEBUG)
-    XOR_CONFIG_SLIDER(int, iterations, 1, 1, 50);
-    XOR_CONFIG_SLIDER(int, sizeExp,    5, 0, 24);
-    XOR_CONFIG_INPUT(int, minItems,   0);
-    XOR_CONFIG_INPUT(int, maxItems,   5);
-    XOR_CONFIG_INPUT(int, multiplier, 1);
-    XOR_CONFIG_SLIDER(float, zeroProb, .5f);
-    XOR_CONFIG_CHECKBOX(verify, true);
+    XOR_CONFIG_SLIDER(  int, iterations, "Iterations",       1, 1, 50);
+    XOR_CONFIG_SLIDER(  int, sizeExp,    "Size exponent",    5, 0, 24);
+    XOR_CONFIG_TEXT("Size", "%u", &WorkloadSettings::size);
+    XOR_CONFIG_INPUT(   int, minItems,   "Minimum items",    0);
+    XOR_CONFIG_INPUT(   int, maxItems,   "Maximum items",    5);
+    XOR_CONFIG_INPUT(   int, multiplier, "Multiplier",       1);
+    XOR_CONFIG_SLIDER(float, zeroProb,   "Zero probability", .5f);
+    XOR_CONFIG_CHECKBOX(verify, "Verify output", true);
 #else
-    XOR_CONFIG_SLIDER(int, iterations, 15, 1, 50);
-    XOR_CONFIG_SLIDER(int, sizeExp,    18, 0, 24);
-    XOR_CONFIG_SLIDER(int, minItems,    0);
-    XOR_CONFIG_SLIDER(int, maxItems,   30);
-    XOR_CONFIG_SLIDER(int, multiplier,  1);
-    XOR_CONFIG_SLIDER(float, zeroProb, .5f);
-    XOR_CONFIG_CHECKBOX(verify, false);
+    XOR_CONFIG_SLIDER(  int, iterations, "Iterations",       15, 1, 50);
+    XOR_CONFIG_SLIDER(  int, sizeExp,    "Size exponent",    18, 0, 24);
+    XOR_CONFIG_INPUT(   int, minItems,   "Minimum items",     0);
+    XOR_CONFIG_INPUT(   int, maxItems,   "Maximum items",    30);
+    XOR_CONFIG_INPUT(   int, multiplier, "Multiplier",       1);
+    XOR_CONFIG_SLIDER(float, zeroProb,   "Zero probability", .5f);
 #endif
-    XOR_CONFIG_CHECKBOX(vsync, true);
+    XOR_CONFIG_CHECKBOX(vsync, "VSync", true);
 
     uint size() const { return 1u << uint(sizeExp) ; }
 } cfg_WorkloadSettings;

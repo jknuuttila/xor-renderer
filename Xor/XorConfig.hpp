@@ -261,14 +261,14 @@ namespace xor
 #define XOR_CONFIG_WINDOW(TypeName, ...) XOR_CONFIG_STRUCT(TypeName, ::xor::ConfigWindow, inline, ## __VA_ARGS__)
 #define XOR_CONFIG_GROUP(TypeName) XOR_CONFIG_STRUCT(TypeName, ::xor::ConfigGroup, static)
 
-#define XOR_CONFIG_ENUM(EnumType, ValueName, DefaultValue) \
-    ::xor::ConfigEnum<EnumType> ValueName { #ValueName, DefaultValue };
-#define XOR_CONFIG_CHECKBOX(ValueName, DefaultValue) \
-    ::xor::ConfigValue<bool> ValueName { #ValueName, DefaultValue };
-#define XOR_CONFIG_SLIDER(Type, ValueName, DefaultValue, ...) \
-    ::xor::ConfigValue<Type, ::xor::ConfigSlider> ValueName { #ValueName, DefaultValue, ## __VA_ARGS__ };
-#define XOR_CONFIG_INPUT(Type, ValueName, DefaultValue, ...) \
-    ::xor::ConfigValue<Type, ::xor::ConfigInput> ValueName { #ValueName, DefaultValue, ## __VA_ARGS__ };
+#define XOR_CONFIG_ENUM(EnumType, ValueName, Label, DefaultValue) \
+    ::xor::ConfigEnum<EnumType> ValueName { Label, DefaultValue };
+#define XOR_CONFIG_CHECKBOX(ValueName, Label, DefaultValue) \
+    ::xor::ConfigValue<bool> ValueName { Label, DefaultValue };
+#define XOR_CONFIG_SLIDER(Type, ValueName, Label, DefaultValue, ...) \
+    ::xor::ConfigValue<Type, ::xor::ConfigSlider> ValueName { Label, DefaultValue, ## __VA_ARGS__ };
+#define XOR_CONFIG_INPUT(Type, ValueName, Label, DefaultValue, ...) \
+    ::xor::ConfigValue<Type, ::xor::ConfigInput> ValueName { Label, DefaultValue, ## __VA_ARGS__ };
 #define XOR_CONFIG_TEXT(Label, FmtString, ValueMemberFunction) \
     ::xor::ConfigText XOR_CONCAT(xorConfigText, __COUNTER__) { Label, FmtString, this, ValueMemberFunction };
 #define XOR_CONFIG_SEPARATOR ::xor::ConfigSeparator XOR_CONCAT(xorConfigSeparator, __COUNTER__);
