@@ -119,14 +119,6 @@ enum class TriangulationMode
     Quadric,
 };
 
-enum class RenderingMode
-{
-    Height,
-    Lighting,
-    AmbientOcclusion,
-    ShadowTerm,
-};
-
 enum class VisualizationMode
 {
     Disabled,
@@ -136,6 +128,147 @@ enum class VisualizationMode
     OnlyError,
     CPUError,
 };
+
+XOR_DEFINE_CONFIG_ENUM(RenderingMode,
+    Height,
+    Lighting,
+    AmbientOcclusion,
+    ShadowTerm);
+
+XOR_DEFINE_CONFIG_ENUM(FilterKind,
+                       Temporal,
+                       TemporalFeedback,
+                       Gaussian,
+                       Median);
+
+struct FilterPass
+{
+    FilterKind kind = FilterKind::Gaussian;
+    bool bilateral = false;
+    int size = 1;
+};
+
+XOR_CONFIG_WINDOW(Settings, 500, 100)
+{
+    XOR_CONFIG_ENUM(RenderingMode, renderingMode, "Rendering mode", RenderingMode::Lighting);
+
+    XOR_CONFIG_GROUP(LightingProperties)
+    {
+        XOR_CONFIG_SLIDER(float, sunAzimuth, "Sun azimuth", Angle::degrees(45.f).radians, 0, 2 * Pi);
+        XOR_CONFIG_SLIDER(float, sunElevation, "Sun elevation", Angle::degrees(45.f).radians, 0, Pi / 2);
+        XOR_CONFIG_SLIDER(float, sunIntensity, "Sun intensity", 1);
+        XOR_CONFIG_SLIDER(float3, ambient, "Ambient intensity", float3(.025f));
+
+        float3 sunDirection() const
+        {
+            auto M = Matrix::azimuthElevation(Angle(sunAzimuth), Angle(sunElevation));
+            return normalize(float3(M.transform(float3(0, 0, -1))));
+        }
+        float3 sunColor() const { return float3(sunIntensity); }
+    } lighting;
+
+    XOR_CONFIG_GROUP(ShadowFiltering)
+    {
+        XOR_CONFIG_SLIDER(float, shadowBias, "Shadow depth bias", 0.01f, 0, .03f);
+        XOR_CONFIG_SLIDER(float, shadowSSBias, "Shadow slope scaled depth bias", -2, -10, 10);
+        XOR_CONFIG_SLIDER(int, shadowDimExp, "Shadow map size exponent", 10, 8, 12);
+        XOR_CONFIG_SLIDER(float, shadowNoiseAmplitude, "Shadow noise amplitude", 0, 0, 10);
+        XOR_CONFIG_SLIDER(float, shadowHistoryBlend, "Shadow history blend", 0);
+        XOR_CONFIG_SLIDER(int, shadowNoiseSamples, "Shadow noise samples", 0, 0, 8);
+        XOR_CONFIG_SLIDER(int, shadowFilterWidth, "Shadow filter width", 1, 0, 3);
+        XOR_CONFIG_SLIDER(int, noisePeriod, "Noise period", 8, 0, 8);
+        XOR_CONFIG_CHECKBOX(shadowJitter, "Shadow jittering", false);
+
+        std::vector<FilterPass> shadowFilters;
+
+        virtual bool customUpdate() override
+        {
+            bool changed = false;
+            ImGui::NewLine();
+            changed |= updateFilterPasses();
+            return changed;
+        }
+
+    private:
+        bool updateFilterPasses()
+        {
+            bool changed = false;
+
+            ImGui::Text("Shadow filter chain");
+            ImGui::Indent();
+
+            if (ImGui::Button("Add"))
+                shadowFilters.emplace_back(FilterPass {});
+
+            int itemToChange = -1;
+            int newIndex  = 0;
+
+            for (int i = 0; i < shadowFilters.size(); ++i)
+            {
+                ImGui::Separator();
+                ImGui::PushID(i);
+
+                int index = i;
+                changed |= filterPass(shadowFilters[i], index);
+                if (index != i && itemToChange < 0)
+                {
+                    itemToChange = i;
+                    newIndex = index;
+                }
+
+                ImGui::PopID();
+            }
+
+            if (itemToChange >= 0)
+            {
+                if (newIndex < -1)
+                {
+                    shadowFilters.erase(shadowFilters.begin() + itemToChange);
+                }
+                else
+                {
+                    // Being moved
+                    newIndex = std::min(newIndex, int(shadowFilters.size() - 1));
+                    newIndex = std::max(newIndex, 0);
+
+                    std::swap(shadowFilters[itemToChange], shadowFilters[newIndex]);
+                }
+            }
+
+            ImGui::Separator();
+
+            ImGui::Unindent();
+
+            return true;
+        }
+
+        bool filterPass(FilterPass &p, int &index)
+        {
+            ImGui::Indent();
+            configEnumImguiCombo("Kind", p.kind);
+            ImGui::SameLine();
+            ImGui::Checkbox("Bilateral", &p.bilateral);
+            ImGui::SameLine();
+            ImGui::SliderInt("Size", &p.size, 1, 3);
+
+            if (ImGui::Button("Up"))
+                --index;
+
+            ImGui::SameLine();
+
+            if (ImGui::Button("Down"))
+                ++index;
+
+            ImGui::SameLine();
+
+            if (ImGui::Button("Delete"))
+                index = -1000;
+
+            ImGui::Unindent();
+            return false;
+        }
+    } shadow;
+} cfg_Settings;
 
 struct BlueNoise
 {
@@ -203,21 +336,6 @@ struct HeightmapRenderer
     BlueNoise blueNoise;
     Matrix prevViewProj = Matrix::identity();
 
-    struct LightingProperties
-    {
-        float3 sunDirection = normalize(float3(1, 1, 1));
-        float3 sunColor;
-        float3 ambient;
-        float shadowBias = 0.01f;
-        float shadowSSBias = 0;
-        float shadowNoisePixels = 0;
-        float shadowHistoryBlend = 0;
-        int shadowNoiseSamples = 0;
-        int shadowFilterWidth  = 1;
-        bool shadowJitter = false;
-        int noisePeriod = 8;
-    };
-    LightingProperties lighting;
     std::vector<info::ShaderDefine> lightingDefines;
 
     HeightmapRenderer() = default;
@@ -484,41 +602,31 @@ struct HeightmapRenderer
 #endif
     }
 
-    void setLightingProperties(LightingProperties *props = nullptr,
-                               RenderingMode renderingMode = RenderingMode::Lighting)
+    void updateLighting()
     {
         lightingDefines.clear();
-
-        if (props)
-            lighting = *props;
 
         if (heightmap->colorSRV)
             lightingDefines.emplace_back("TEXTURED");
 
+        auto renderingMode = cfg_Settings.renderingMode;
+
         if (renderingMode == RenderingMode::Lighting)
-        {
             lightingDefines.emplace_back("LIGHTING");
-        }
         else if (renderingMode == RenderingMode::AmbientOcclusion)
-        {
             lightingDefines.emplace_back("SHOW_AO");
-        }
         else if (renderingMode == RenderingMode::ShadowTerm)
-        {
             lightingDefines.emplace_back("SHADOW_TERM");
-        }
-        else
-        {
-            memset(&lighting, 0, sizeof(lighting));
-        }
+
+        setShadowMapDim(1 << cfg_Settings.shadow.shadowDimExp);
     }
 
     int noiseIndex()
     {
-        if (lighting.noisePeriod <= 0)
+        if (cfg_Settings.shadow.noisePeriod <= 0)
             return int(device.frameNumber());
         else
-            return int(device.frameNumber()) % lighting.noisePeriod;
+            return int(device.frameNumber()) % cfg_Settings.shadow.noisePeriod;
     }
 
     void setShadowMapDim(int shadowDim)
@@ -1300,7 +1408,7 @@ struct HeightmapRenderer
                  .pixelShader()
                  .renderTargetFormat()
                  .cull(D3D12_CULL_MODE_NONE)
-                 .depthBias(0, lighting.shadowSSBias));
+                 .depthBias(0, cfg_Settings.shadow.shadowSSBias));
 
         auto c = constants;
         c.viewProj = c.shadowViewProj;
@@ -1328,6 +1436,8 @@ struct HeightmapRenderer
                 const Matrix &viewProj,
                 bool wireframe = false)
     {
+        updateLighting();
+
         float2 resolution = rtv.texture()->sizeFloat();
 
         float3 terrainMin = float3(minWorld.x, minWorld.y, heightmap->minHeight);
@@ -1350,11 +1460,11 @@ struct HeightmapRenderer
 
         float4 noise = blueNoise.sequentialNoise(noiseIndex());
 
-        Angle shadowRotation = lighting.shadowJitter ? Angle::degrees(noise.z * 360) : Angle(0);
-        float2 shadowJitter  = lighting.shadowJitter ? lerp(float2(-.5f), float2(.5f), noise.s_xy) : 0;
+        Angle shadowRotation = cfg_Settings.shadow.shadowJitter ? Angle::degrees(noise.z * 360) : Angle(0);
+        float2 shadowJitter  = cfg_Settings.shadow.shadowJitter ? lerp(float2(-.5f), float2(.5f), noise.s_xy) : 0;
 
         Matrix R = Matrix::axisAngle(float3(0, 0, -1), shadowRotation);
-        Matrix shadowView = R * Matrix::lookAt(lighting.sunDirection * worldDiameter, float3(0));
+        Matrix shadowView = R * Matrix::lookAt(cfg_Settings.lighting.sunDirection() * worldDiameter, float3(0));
 
         for (auto c : terrainCorners)
         {
@@ -1397,16 +1507,16 @@ struct HeightmapRenderer
         constants.heightMin       = heightmap->minHeight;
         constants.heightMax       = heightmap->maxHeight;
         constants.noiseResolution = float2(blueNoise.srv().texture()->size);
-        constants.noiseAmplitude  = lighting.shadowNoisePixels / shadowMap.texture()->sizeFloat().x;
+        constants.noiseAmplitude  = cfg_Settings.shadow.shadowNoiseAmplitude / shadowMap.texture()->sizeFloat().x;
         constants.resolution      = rtv.texture()->sizeFloat();
         constants.shadowResolution   = shadowMap.texture()->sizeFloat();
-        constants.shadowHistoryBlend = lighting.shadowHistoryBlend;
-        constants.shadowBias         = lighting.shadowBias;
+        constants.shadowHistoryBlend = cfg_Settings.shadow.shadowHistoryBlend;
+        constants.shadowBias         = cfg_Settings.shadow.shadowBias;
 
         RenderTerrain::LightingConstants lightingConstants;
-        lightingConstants.sunDirection = lighting.sunDirection.s_xyz0;
-        lightingConstants.sunColor     = lighting.sunColor.s_xyz0;
-        lightingConstants.ambient      = lighting.ambient.s_xyz0;
+        lightingConstants.sunDirection = cfg_Settings.lighting.sunDirection().s_xyz0;
+        lightingConstants.sunColor     = cfg_Settings.lighting.sunColor().s_xyz0;
+        lightingConstants.ambient      = float3(cfg_Settings.lighting.ambient).s_xyz0;
 
         renderShadowMap(cmd, constants);
 
@@ -1423,7 +1533,7 @@ struct HeightmapRenderer
                      .renderTargetFormats({ DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16G16_FLOAT })
                      .pixelShader(
                          "TerrainShadowPrepass.ps",
-                         { info::ShaderDefine("TSP_NOISE_SAMPLES", lighting.shadowNoiseSamples) }));
+                         { info::ShaderDefine("TSP_NOISE_SAMPLES", cfg_Settings.shadow.shadowNoiseSamples) }));
 
             cmd.setRenderTargets({ &shadowHistoryWrite.rtv, &motionVectors.rtv }, dsv);
 
@@ -1446,11 +1556,11 @@ struct HeightmapRenderer
             auto p = cmd.profilingEvent("Shadow filtering");
             cmd.bind(shadowFiltering.variant()
                      .computeShader(info::SameShader {},
-                     { info::ShaderDefine("TSF_FILTER_WIDTH", lighting.shadowFilterWidth) }));
+                     { info::ShaderDefine("TSF_FILTER_WIDTH", cfg_Settings.shadow.shadowFilterWidth) }));
 
             TerrainShadowFiltering::Constants tsfConstants;
             tsfConstants.resolution         = int2(rtv.texture()->size);
-            tsfConstants.shadowHistoryBlend = lighting.shadowHistoryBlend;
+            tsfConstants.shadowHistoryBlend = cfg_Settings.shadow.shadowHistoryBlend;
 
             cmd.setShaderView(TerrainShadowFiltering::shadowTerm,    shadowHistoryWrite.uav);
             cmd.setShaderView(TerrainShadowFiltering::shadowHistory, shadowHistoryRead.srv);
@@ -1560,23 +1670,6 @@ class Terrain : public Window
     int areaSize  = 2048;
 #endif
     int triangulationDensity = 6;
-    RenderingMode renderingMode = RenderingMode::ShadowTerm;
-    struct Lighting
-    {
-        Angle sunAzimuth   = Angle::degrees(45.f);
-        Angle sunElevation = Angle::degrees(45.f);
-        float sunIntensity = 1.f;
-        float3 ambient     = float3(.025f, .025f, .05f);
-        float shadowBias   = 0.01f;
-        float shadowSSBias = -2;
-        int shadowDimExp   = 10;
-        float shadowNoiseAmplitude = 0;
-        float shadowHistoryBlend = 0;
-        bool shadowJitter = false;
-        int shadowNoiseSamples = 0;
-        int shadowFilterWidth  = 1;
-        int noisePeriod = 8;
-    } lighting;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
     bool blitArea    = true;
@@ -1621,8 +1714,6 @@ public:
 
         camera.speed /= 10;
         camera.fastMultiplier *= 5;
-
-        updateLighting();
     }
 
     void handleInput(const Input &input) override
@@ -1673,27 +1764,6 @@ public:
             log("Heightmap", "Generated ambient occlusion map in %.2f ms\n",
                 aoTimer.milliseconds());
         }
-    }
-
-    void updateLighting()
-    {
-        HeightmapRenderer::LightingProperties props = {};
-        auto M = Matrix::azimuthElevation(lighting.sunAzimuth, lighting.sunElevation);
-        props.sunDirection       = normalize(float3(M.transform(float3(0, 0, -1))));
-        props.sunColor           = float3(1) * lighting.sunIntensity;
-        props.ambient            = lighting.ambient;
-        props.shadowBias         = lighting.shadowBias;
-        props.shadowSSBias       = lighting.shadowSSBias;
-        props.shadowNoisePixels  = lighting.shadowNoiseAmplitude;
-        props.shadowHistoryBlend = lighting.shadowHistoryBlend;
-        props.shadowJitter       = lighting.shadowJitter;
-        props.shadowNoiseSamples = lighting.shadowNoiseSamples;
-        props.shadowFilterWidth  = lighting.shadowFilterWidth;
-        props.noisePeriod        = lighting.noisePeriod;
-
-        heightmapRenderer.setLightingProperties(&props, renderingMode);
-
-        heightmapRenderer.setShadowMapDim(1 << lighting.shadowDimExp);
     }
 
     void measureTerrain()
@@ -1755,44 +1825,6 @@ public:
             ImGui::SliderInt2("Start", areaStart.data(), 0, heightmap.size.x - areaSize);
             ImGui::SliderInt("Density", &triangulationDensity, 5, 18);
             ImGui::Text("Vertex count: %d", vertexCount());
-
-            ImGui::Separator();
-
-            if (ImGui::Combo("Rendering mode",
-                         reinterpret_cast<int *>(&renderingMode),
-                         "Height\0"
-                         "Lighting\0"
-                         "Ambient occlusion\0"
-                         "Shadow term\0"
-                         "Shadow history\0"
-                ))
-                updateLighting();
-            if (ImGui::SliderFloat("Sun azimuth",   &lighting.sunAzimuth.radians, 0, 2 * Pi))
-                updateLighting();
-            if (ImGui::SliderFloat("Sun elevation", &lighting.sunElevation.radians, 0, Pi / 2.f))
-                updateLighting();
-            if (ImGui::SliderFloat("Sun intensity", &lighting.sunIntensity, 0, 3))
-                updateLighting();
-            if (ImGui::SliderFloat3("Ambient", lighting.ambient.data(), 0, .25f))
-                updateLighting();
-            if (ImGui::SliderFloat("Shadow depth bias", &lighting.shadowBias, 0, 0.03f))
-                updateLighting();
-            if (ImGui::SliderFloat("Shadow slope scaled depth bias", &lighting.shadowSSBias, -10, 10))
-                updateLighting();
-            if (ImGui::SliderInt("Shadow map size exponent", &lighting.shadowDimExp, 8, 12))
-                updateLighting();
-            if (ImGui::SliderFloat("Shadow noise amplitude", &lighting.shadowNoiseAmplitude, 0, 10))
-                updateLighting();
-            if (ImGui::SliderFloat("Shadow history blend", &lighting.shadowHistoryBlend, 0, 1))
-                updateLighting();
-            if (ImGui::SliderInt("Shadow noise samples", &lighting.shadowNoiseSamples, 0, 8))
-                updateLighting();
-            if (ImGui::SliderInt("Shadow filter width", &lighting.shadowFilterWidth, 0, 3))
-                updateLighting();
-            if (ImGui::SliderInt("Noise period", &lighting.noisePeriod, 0, 8))
-                updateLighting();
-            if (ImGui::Checkbox("Shadow jittering", &lighting.shadowJitter))
-                updateLighting();
 
             ImGui::Separator();
 

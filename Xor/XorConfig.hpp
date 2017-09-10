@@ -120,11 +120,7 @@ namespace xor
             if (minValue == 0 && maxValue == 0)
             {
                 m_min = 0;
-
-                if (std::is_floating_point<T>::value)
-                    m_max = 1;
-                else
-                    m_max = std::numeric_limits<T>::max();
+                m_max = defaultMax(T {});
             }
         }
 
@@ -137,40 +133,62 @@ namespace xor
             return *this;
         }
 
-        T min() const { return static_cast<T>(m_min); }
-        T max() const { return static_cast<T>(m_max); }
+        int minInt() const { return static_cast<int>(m_min); }
+        int maxInt() const { return static_cast<int>(m_max); }
+        float minFloat() const { return static_cast<float>(m_min); }
+        float maxFloat() const { return static_cast<float>(m_max); }
 
         bool update() override
         {
             return update(m_value, ControlType {});
         }
     private:
+        static double defaultMax(bool) { return 1; }
+        static double defaultMax(float) { return 1; }
+        static double defaultMax(float2) { return 1; }
+        static double defaultMax(float3) { return 1; }
+        static double defaultMax(float4) { return 1; }
+        static double defaultMax(int)  { return std::numeric_limits<int>::max(); }
+        static double defaultMax(int2) { return std::numeric_limits<int>::max(); }
+        static double defaultMax(int3) { return std::numeric_limits<int>::max(); }
+        static double defaultMax(int4) { return std::numeric_limits<int>::max(); }
+
         bool update(bool &v, ConfigSlider) { return ImGui::Checkbox(name(), &v); }
         bool update(bool &v, ConfigInput) { return ImGui::Checkbox(name(), &v); }
 
-        bool update(int  &v, ConfigSlider) { return ImGui::SliderInt(name(), &v, min(), max()); }
-        bool update(int2 &v, ConfigSlider) { return ImGui::SliderInt2(name(), v.data(), min(), max()); }
-        bool update(int3 &v, ConfigSlider) { return ImGui::SliderInt3(name(), v.data(), min(), max()); }
-        bool update(int4 &v, ConfigSlider) { return ImGui::SliderInt4(name(), v.data(), min(), max()); }
+        bool update(int  &v, ConfigSlider) { return ImGui::SliderInt (name(),       &v, minInt(), maxInt()); }
+        bool update(int2 &v, ConfigSlider) { return ImGui::SliderInt2(name(), v.data(), minInt(), maxInt()); }
+        bool update(int3 &v, ConfigSlider) { return ImGui::SliderInt3(name(), v.data(), minInt(), maxInt()); }
+        bool update(int4 &v, ConfigSlider) { return ImGui::SliderInt4(name(), v.data(), minInt(), maxInt()); }
 
-        bool update(float  &v, ConfigSlider) { return ImGui::SliderFloat(name(), &v, min(), max()); }
-        bool update(float2 &v, ConfigSlider) { return ImGui::SliderFloat2(name(), v.data(), min(), max()); }
-        bool update(float3 &v, ConfigSlider) { return ImGui::SliderFloat3(name(), v.data(), min(), max()); }
-        bool update(float4 &v, ConfigSlider) { return ImGui::SliderFloat4(name(), v.data(), min(), max()); }
+        bool update(float  &v, ConfigSlider) { return ImGui::SliderFloat (name(),       &v, minFloat(), maxFloat()); }
+        bool update(float2 &v, ConfigSlider) { return ImGui::SliderFloat2(name(), v.data(), minFloat(), maxFloat()); }
+        bool update(float3 &v, ConfigSlider) { return ImGui::SliderFloat3(name(), v.data(), minFloat(), maxFloat()); }
+        bool update(float4 &v, ConfigSlider) { return ImGui::SliderFloat4(name(), v.data(), minFloat(), maxFloat()); }
 
-        bool update(int  &v, ConfigInput) { return ImGui::InputInt(name(), &v, min(), max()); }
-        bool update(int2 &v, ConfigInput) { return ImGui::InputInt2(name(), v.data(), min(), max()); }
-        bool update(int3 &v, ConfigInput) { return ImGui::InputInt3(name(), v.data(), min(), max()); }
-        bool update(int4 &v, ConfigInput) { return ImGui::InputInt4(name(), v.data(), min(), max()); }
+        bool update(int  &v, ConfigInput) { return ImGui::InputInt (name(),       &v, minInt(), maxInt()); }
+        bool update(int2 &v, ConfigInput) { return ImGui::InputInt2(name(), v.data(), minInt(), maxInt()); }
+        bool update(int3 &v, ConfigInput) { return ImGui::InputInt3(name(), v.data(), minInt(), maxInt()); }
+        bool update(int4 &v, ConfigInput) { return ImGui::InputInt4(name(), v.data(), minInt(), maxInt()); }
 
-        bool update(float  &v, ConfigInput) { return ImGui::InputFloat(name(), &v, min(), max()); }
-        bool update(float2 &v, ConfigInput) { return ImGui::InputFloat2(name(), v.data(), min(), max()); }
-        bool update(float3 &v, ConfigInput) { return ImGui::InputFloat3(name(), v.data(), min(), max()); }
-        bool update(float4 &v, ConfigInput) { return ImGui::InputFloat4(name(), v.data(), min(), max()); }
+        bool update(float  &v, ConfigInput) { return ImGui::InputFloat (name(),       &v, minFloat(), maxFloat()); }
+        bool update(float2 &v, ConfigInput) { return ImGui::InputFloat2(name(), v.data(), minFloat(), maxFloat()); }
+        bool update(float3 &v, ConfigInput) { return ImGui::InputFloat3(name(), v.data(), minFloat(), maxFloat()); }
+        bool update(float4 &v, ConfigInput) { return ImGui::InputFloat4(name(), v.data(), minFloat(), maxFloat()); }
     };
 
     std::vector<char>   determineConfigEnumValueNamesZeroSeparated(const char *stringizedMacroVarags);
     std::vector<String> determineConfigEnumValueNames(const char *stringizedMacroVarags);
+
+    template <typename T>
+    bool configEnumImguiCombo(const char *name, T &value)
+    {
+        static_assert(std::is_same_v<std::underlying_type_t<T>, int>,
+                      "Enum type must be an int type");
+        return ImGui::Combo(name,
+                            reinterpret_cast<int *>(&value),
+                            xorConfigEnumValueNamesZeroSeparated(value));
+    }
 
     template <typename T>
     class ConfigEnum final : public Configurable
@@ -198,9 +216,7 @@ namespace xor
 
         bool update() override
         {
-            return ImGui::Combo(name(),
-                                reinterpret_cast<int *>(&m_value),
-                                xorConfigEnumValueNamesZeroSeparated(m_value));
+            return configEnumImguiCombo(name(), m_value);
         }
     };
 
