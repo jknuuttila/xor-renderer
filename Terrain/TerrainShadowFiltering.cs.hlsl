@@ -1,16 +1,84 @@
 #include "TerrainShadowFiltering.sig.h"
 
+#ifndef TSF_BILATERAL
+#define TSF_BILATERAL 0
+#endif
+
 #ifndef TSF_FILTER_WIDTH
 #define TSF_FILTER_WIDTH 1
 #endif
 
-static const float GaussianFilterWeights[3][4] =
+static const float GaussianFilterWeights[5][6] =
 {
-    2,  1, 0, 0,
-    6,  4, 1, 0,
-    20, 15, 6, 1,
+      2,   1,   0,   0,   0,   0,
+      6,   4,   1,   0,   0,   0,
+     20,  15,   6,   1,   0,   0,
+     70,  56,  28,   8,   1,   0,
+    252, 210, 120,  45,  10,   1,
 };
 
+float gaussianFilter(int2 coords)
+{
+    static const uint Weights = TSF_FILTER_WIDTH - 1;
+
+    float shadowFiltered = 0;
+    float totalWeight    = 0;
+
+    for (int dy = -TSF_FILTER_WIDTH; dy <= TSF_FILTER_WIDTH; ++dy)
+    {
+        int ay = abs(dy);
+        float wy = GaussianFilterWeights[Weights][ay];
+
+        for (int dx = -TSF_FILTER_WIDTH; dx <= TSF_FILTER_WIDTH; ++dx)
+        {
+            int ax = abs(dx);
+            float wx = GaussianFilterWeights[Weights][ax];
+
+            float w = wx * wy;
+            float s = shadowIn[coords + int2(dx, dy)];
+
+            shadowFiltered += w * s;
+            totalWeight    += w;
+        }
+    }
+
+    shadowFiltered /= totalWeight;
+
+    return shadowFiltered;
+}
+
+float medianFilter(int2 coords)
+{
+    return 1;
+}
+
+float temporalFilter(int2 coords)
+{
+    return 1;
+}
+
+[RootSignature(TERRAINSHADOWFILTERING_ROOT_SIGNATURE)]
+[numthreads(XOR_NUMTHREADS)]
+void main(uint3 tid    : SV_DispatchThreadID,
+          uint  gIndex : SV_GroupIndex,
+          uint3 gtid   : SV_GroupThreadID,
+          uint3 gid    : SV_GroupID)
+{
+    float shadow;
+#if defined(TSF_FILTER_GAUSSIAN)
+    shadow = gaussianFilter(tid.xy);
+#elif defined(TSF_FILTER_MEDIAN)
+    shadow = medianFilter(tid.xy);
+#elif defined(TSF_FILTER_TEMPORAL)
+    shadow = temporalFilter(tid.xy);
+#else
+    shadow = 1;
+#endif
+
+    shadowOut[tid.xy] = shadow;
+}
+
+#if 0
 static const uint TsfTileSize   = TSF_THREADGROUP_SIZE + (2 * TSF_FILTER_WIDTH);
 static const uint NumThreads    = TSF_THREADGROUP_SIZE * TSF_THREADGROUP_SIZE;
 static const uint NumLdsSamples = TsfTileSize * TsfTileSize;
@@ -154,3 +222,4 @@ void main(uint3 tid    : SV_DispatchThreadID,
 
     shadowTerm[coords] = shadowFiltered;
 }
+#endif

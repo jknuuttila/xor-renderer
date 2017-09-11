@@ -194,6 +194,7 @@ namespace xor
 
         void copyTexture(Texture &dst,       ImageRect dstPos,
                          const Texture &src, ImageRect srcArea = {});
+        void copyTexture(Texture &dst, const Texture &src);
 
         void imguiBeginFrame(SwapChain &swapChain, double deltaTime);
         void imguiEndFrame(SwapChain &swapChain);

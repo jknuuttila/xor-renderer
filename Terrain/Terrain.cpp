@@ -175,9 +175,9 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
         XOR_CONFIG_SLIDER(float, shadowNoiseAmplitude, "Shadow noise amplitude", 0, 0, 10);
         XOR_CONFIG_SLIDER(float, shadowHistoryBlend, "Shadow history blend", 0);
         XOR_CONFIG_SLIDER(int, shadowNoiseSamples, "Shadow noise samples", 0, 0, 8);
-        XOR_CONFIG_SLIDER(int, shadowFilterWidth, "Shadow filter width", 1, 0, 3);
         XOR_CONFIG_SLIDER(int, noisePeriod, "Noise period", 8, 0, 8);
         XOR_CONFIG_CHECKBOX(shadowJitter, "Shadow jittering", false);
+        XOR_CONFIG_CHECKBOX(pcfGaussian, "Gaussian PCF", false);
 
         std::vector<FilterPass> shadowFilters;
 
@@ -244,28 +244,39 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
 
         bool filterPass(FilterPass &p, int &index)
         {
+            bool changed = false;
+
             ImGui::Indent();
-            configEnumImguiCombo("Kind", p.kind);
+            changed |= configEnumImguiCombo("Kind", p.kind);
             ImGui::SameLine();
-            ImGui::Checkbox("Bilateral", &p.bilateral);
+            changed |= ImGui::Checkbox("Bilateral", &p.bilateral);
             ImGui::SameLine();
-            ImGui::SliderInt("Size", &p.size, 1, 3);
+            changed |= ImGui::SliderInt("Size", &p.size, 1, 5);
 
             if (ImGui::Button("Up"))
+            {
                 --index;
+                changed = true;
+            }
 
             ImGui::SameLine();
 
             if (ImGui::Button("Down"))
+            {
                 ++index;
+                changed = true;
+            }
 
             ImGui::SameLine();
 
             if (ImGui::Button("Delete"))
+            {
                 index = -1000;
+                changed = true;
+            }
 
             ImGui::Unindent();
-            return false;
+            return true;
         }
     } shadow;
 } cfg_Settings;
@@ -331,7 +342,8 @@ struct HeightmapRenderer
     RWTexture normalMap;
     RWTexture aoMap;
     RWTexture shadowMap;
-    RWTexture shadowHistory[2];
+    RWTexture shadowTerm[2];
+    RWTexture shadowHistory;
     RWTexture motionVectors;
     BlueNoise blueNoise;
     Matrix prevViewProj = Matrix::identity();
@@ -381,16 +393,18 @@ struct HeightmapRenderer
         blueNoise = BlueNoise(device);
 
         {
-            auto shadowHistoryInfo = info::TextureInfoBuilder()
+            auto shadowTermInfo = info::TextureInfoBuilder()
                 .size(resolution)
                 .format(DXGI_FORMAT_R16_FLOAT)
                 .allowRenderTarget()
                 .allowUAV();
-            shadowHistory[0] = RWTexture(device, shadowHistoryInfo);
-            shadowHistory[1] = RWTexture(device, shadowHistoryInfo);
+            shadowTerm[0]  = RWTexture(device, shadowTermInfo);
+            shadowTerm[1]  = RWTexture(device, shadowTermInfo);
+            shadowHistory = RWTexture(device, shadowTermInfo);
             auto cmd = device.graphicsCommandList();
-            cmd.clearRTV(shadowHistory[0].rtv);
-            cmd.clearRTV(shadowHistory[1].rtv);
+            cmd.clearRTV(shadowTerm[0].rtv);
+            cmd.clearRTV(shadowTerm[1].rtv);
+            cmd.clearRTV(shadowHistory.rtv);
             device.execute(cmd);
         }
 
@@ -1520,14 +1534,15 @@ struct HeightmapRenderer
 
         renderShadowMap(cmd, constants);
 
-        auto &shadowHistoryRead  = shadowHistory[device.frameNumber() & 1];
-        auto &shadowHistoryWrite = shadowHistory[1 - (device.frameNumber() & 1)];
+        {
+            auto p = cmd.profilingEvent("Clear shadow targets");
+            cmd.clearRTV(shadowTerm[0].rtv);
+            cmd.clearRTV(shadowTerm[1].rtv);
+            cmd.clearRTV(motionVectors.rtv);
+        }
 
         {
             auto p = cmd.profilingEvent("Draw shadow prepass");
-
-            cmd.clearRTV(shadowHistoryWrite.rtv);
-            cmd.clearRTV(motionVectors.rtv);
 
             cmd.bind(renderTerrain.variant()
                      .renderTargetFormats({ DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_R16G16_FLOAT })
@@ -1535,7 +1550,7 @@ struct HeightmapRenderer
                          "TerrainShadowPrepass.ps",
                          { info::ShaderDefine("TSP_NOISE_SAMPLES", cfg_Settings.shadow.shadowNoiseSamples) }));
 
-            cmd.setRenderTargets({ &shadowHistoryWrite.rtv, &motionVectors.rtv }, dsv);
+            cmd.setRenderTargets({ &shadowTerm[0].rtv, &motionVectors.rtv }, dsv);
 
             mesh.setForRendering(cmd);
 
@@ -1552,22 +1567,61 @@ struct HeightmapRenderer
             cmd.drawIndexed(mesh.numIndices());
         }
 
+        RWTexture *shadowIn  = &shadowTerm[0];
+        RWTexture *shadowOut = &shadowTerm[1];
+
         {
             auto p = cmd.profilingEvent("Shadow filtering");
-            cmd.bind(shadowFiltering.variant()
-                     .computeShader(info::SameShader {},
-                     { info::ShaderDefine("TSF_FILTER_WIDTH", cfg_Settings.shadow.shadowFilterWidth) }));
 
-            TerrainShadowFiltering::Constants tsfConstants;
-            tsfConstants.resolution         = int2(rtv.texture()->size);
-            tsfConstants.shadowHistoryBlend = cfg_Settings.shadow.shadowHistoryBlend;
+            for (auto &f : cfg_Settings.shadow.shadowFilters)
+            {
+                auto p = cmd.profilingEvent(xorConfigEnumValueName(f.kind),
+                                            reinterpret_cast<uint64_t>(&f));
 
-            cmd.setShaderView(TerrainShadowFiltering::shadowTerm,    shadowHistoryWrite.uav);
-            cmd.setShaderView(TerrainShadowFiltering::shadowHistory, shadowHistoryRead.srv);
-            cmd.setShaderView(TerrainShadowFiltering::motionVectors, motionVectors.srv);
-            cmd.setConstants(tsfConstants);
+                if (f.kind == FilterKind::TemporalFeedback)
+                {
+                    cmd.copyTexture(shadowHistory.texture(), shadowIn->texture());
+                }
+                else
+                {
+                    const char *kindDefine = nullptr;
+                    switch (f.kind)
+                    {
+                    case FilterKind::Temporal:
+                        kindDefine = "TSF_FILTER_TEMPORAL";
+                        break;
+                    case FilterKind::Median:
+                        kindDefine = "TSF_FILTER_MEDIAN";
+                        break;
+                    default:
+                    case FilterKind::Gaussian:
+                        kindDefine = "TSF_FILTER_GAUSSIAN";
+                        break;
+                    }
 
-            cmd.dispatchThreads(TerrainShadowFiltering::threadGroupSize, uint3(tsfConstants.resolution));
+                    cmd.bind(shadowFiltering.variant()
+                             .computeShader(info::SameShader{},
+                             {
+                                 { kindDefine },
+                                 { "TSF_FILTER_WIDTH", f.size },
+                                 { "TSF_BILATERAL",    f.bilateral },
+                             }));
+
+                    TerrainShadowFiltering::Constants tsfConstants;
+                    tsfConstants.resolution = int2(rtv.texture()->size);
+                    tsfConstants.shadowHistoryBlend = cfg_Settings.shadow.shadowHistoryBlend;
+
+                    cmd.setShaderView(TerrainShadowFiltering::shadowOut,     shadowOut->uav);
+                    cmd.setShaderView(TerrainShadowFiltering::shadowIn,      shadowIn->srv);
+                    cmd.setShaderView(TerrainShadowFiltering::shadowHistory, shadowHistory.srv);
+                    cmd.setShaderView(TerrainShadowFiltering::motionVectors, motionVectors.srv);
+                    cmd.setConstants(tsfConstants);
+
+                    cmd.dispatchThreads(TerrainShadowFiltering::threadGroupSize, uint3(tsfConstants.resolution));
+
+                    std::swap(shadowIn, shadowOut);
+                }
+            }
         }
 
         {
@@ -1587,7 +1641,7 @@ struct HeightmapRenderer
             cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
             cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
             cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(noiseIndex()));
-            cmd.setShaderView(RenderTerrain::shadowTerm,     shadowHistoryWrite.srv);
+            cmd.setShaderView(RenderTerrain::shadowTerm,     shadowIn->srv);
 
             cmd.setConstants(constants);
             cmd.setConstants(lightingConstants);

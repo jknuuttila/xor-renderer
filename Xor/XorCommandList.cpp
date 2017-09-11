@@ -843,6 +843,11 @@ namespace xor
             &srcLocation, srcRect.empty() ? nullptr : &srcBox);
     }
 
+    void CommandList::copyTexture(Texture & dst, const Texture & src)
+    {
+        copyTexture(dst, {0, 0}, src);
+    }
+
     void CommandList::imguiBeginFrame(SwapChain &swapChain, double deltaTime)
     {
         ImGuiIO &io = ImGui::GetIO();

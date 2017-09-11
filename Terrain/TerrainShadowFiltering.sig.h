@@ -15,9 +15,10 @@ XOR_CBUFFER(Constants, 0)
     float shadowHistoryBlend;
 };
 
-XOR_UAV(RWTexture2D<float>, shadowTerm,    0)
-XOR_SRV(Texture2D<float>,   shadowHistory, 0)
-XOR_SRV(Texture2D<float2>,  motionVectors, 1)
+XOR_UAV(RWTexture2D<float>, shadowOut,     0)
+XOR_SRV(Texture2D<float>,   shadowIn,      0)
+XOR_SRV(Texture2D<float>,   shadowHistory, 1)
+XOR_SRV(Texture2D<float2>,  motionVectors, 2)
 
 XOR_SAMPLER_BILINEAR(bilinearSampler);
 
@@ -25,7 +26,7 @@ XOR_THREADGROUP_SIZE_2D(TSF_THREADGROUP_SIZE, TSF_THREADGROUP_SIZE)
 
 XOR_END_SIGNATURE
 
-#define TERRAINSHADOWFILTERING_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CSU(1, 2, 1)
+#define TERRAINSHADOWFILTERING_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CSU(1, 3, 1)
 
 #endif
 

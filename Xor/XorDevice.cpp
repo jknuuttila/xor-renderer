@@ -484,7 +484,7 @@ namespace xor
                 data->timesMs.resize(S().profilingDataHistoryLength);
 
                 bool childOfTop = profilingEventStack.back() == data->parent;
-                if (!childOfTop)
+                if (!childOfTop && profilingEventStack.size() > 1)
                 {
                     if (activeProfilingEvents.back() == profilingEventStack.back())
                     {
