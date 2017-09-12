@@ -335,6 +335,7 @@ namespace xor
     void CommandList::bind(GraphicsPipeline &pipeline)
     {
         cmd()->SetGraphicsRootSignature(pipeline.S().rootSignature.rs.Get());
+        cmd()->SetComputeRootSignature(nullptr);
         cmd()->SetPipelineState(pipeline.S().pso.Get());
 
         auto &rs = pipeline.S().rootSignature;
@@ -371,6 +372,7 @@ namespace xor
     void CommandList::bind(ComputePipeline & pipeline)
     {
         cmd()->SetComputeRootSignature(pipeline.S().rootSignature.rs.Get());
+        cmd()->SetGraphicsRootSignature(nullptr);
         cmd()->SetPipelineState(pipeline.S().pso.Get());
 
         auto &rs = pipeline.S().rootSignature;

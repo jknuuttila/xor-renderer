@@ -1,4 +1,5 @@
 #include "TerrainShadowFiltering.sig.h"
+#include "Core/SortingNetworks.h"
 
 #ifndef TSF_BILATERAL
 #define TSF_BILATERAL 0
@@ -6,6 +7,10 @@
 
 #ifndef TSF_FILTER_WIDTH
 #define TSF_FILTER_WIDTH 1
+#endif
+
+#ifndef TSF_NEIGHBORHOOD_CLAMP
+#define TSF_NEIGHBORHOOD_CLAMP 0
 #endif
 
 static const float GaussianFilterWeights[5][6] =
@@ -47,14 +52,73 @@ float gaussianFilter(int2 coords)
     return shadowFiltered;
 }
 
+
 float medianFilter(int2 coords)
 {
-    return 1;
+    float tmp;
+    // TODO: support other sizes
+    float s0 = shadowIn[coords + int2(-1, -1)];
+    float s1 = shadowIn[coords + int2( 0, -1)];
+    float s2 = shadowIn[coords + int2(+1, -1)];
+    float s3 = shadowIn[coords + int2(-1,  0)];
+    float s4 = shadowIn[coords + int2( 0,  0)];
+    float s5 = shadowIn[coords + int2(+1,  0)];
+    float s6 = shadowIn[coords + int2(-1, +1)];
+    float s7 = shadowIn[coords + int2( 0, +1)];
+    float s8 = shadowIn[coords + int2(+1, +1)];
+
+#define SWAP(a, b) if ((s ## b) < (s ## a)) { tmp = s ## a; s ## a = s ## b; s ## b = tmp; }
+    XOR_SORTING_NETWORK_9;
+#undef SWAP
+
+    return s4;
 }
 
 float temporalFilter(int2 coords)
 {
-    return 1;
+    float s0 = shadowIn[coords + int2(-1, -1)];
+    float s1 = shadowIn[coords + int2( 0, -1)];
+    float s2 = shadowIn[coords + int2(+1, -1)];
+    float s3 = shadowIn[coords + int2(-1,  0)];
+    float s4 = shadowIn[coords + int2( 0,  0)];
+    float s5 = shadowIn[coords + int2(+1,  0)];
+    float s6 = shadowIn[coords + int2(-1, +1)];
+    float s7 = shadowIn[coords + int2( 0, +1)];
+    float s8 = shadowIn[coords + int2(+1, +1)];
+
+    float2 motion = motionVectors[coords];
+
+    float2 currentUV  = (float2(coords) + 0.5) / resolution;
+    float2 previousUV = currentUV - motion;
+
+    float currentShadow  = s4;
+    float previousShadow = shadowHistory.SampleLevel(bilinearSampler, previousUV, 0);
+
+#if TSF_NEIGHBORHOOD_CLAMP
+    float sMin = min(s0, s1);
+    sMin       = min(sMin, s2);
+    sMin       = min(sMin, s3);
+    sMin       = min(sMin, s4);
+    sMin       = min(sMin, s5);
+    sMin       = min(sMin, s6);
+    sMin       = min(sMin, s7);
+    sMin       = min(sMin, s8);
+
+    float sMax = max(s0, s1);
+    sMax       = max(sMax, s2);
+    sMax       = max(sMax, s3);
+    sMax       = max(sMax, s4);
+    sMax       = max(sMax, s5);
+    sMax       = max(sMax, s6);
+    sMax       = max(sMax, s7);
+    sMax       = max(sMax, s8);
+
+    previousShadow = clamp(previousShadow, sMin, sMax);
+#endif
+
+    float shadow = lerp(currentShadow, previousShadow, shadowHistoryBlend);
+
+    return shadow;
 }
 
 [RootSignature(TERRAINSHADOWFILTERING_ROOT_SIGNATURE)]

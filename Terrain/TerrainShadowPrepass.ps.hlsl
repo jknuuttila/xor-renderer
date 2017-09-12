@@ -78,7 +78,7 @@ PSOutput main(PSInput i)
     // shadow /= 5;
 
     o.shadowTerm   = shadow;
-    o.motionVector = reprojectedUV - screenUV; 
+    o.motionVector = screenUV - reprojectedUV;
 
     return o;
 }

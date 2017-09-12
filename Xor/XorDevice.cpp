@@ -685,6 +685,9 @@ namespace xor
             __uuidof(ID3D12Resource),
             &buffer.S().resource));
 
+        if (info.debugName)
+            setName(buffer.S().resource, info.debugName.str());
+
         if (info.m_initializer.m_withDevice)
         {
             info.m_initializer.m_withDevice(*this, buffer);
@@ -888,6 +891,9 @@ namespace xor
             hasClearValue ? &clearValue : nullptr,
             __uuidof(ID3D12Resource),
             &texture.S().resource));
+
+        if (info.debugName)
+            setName(texture.S().resource, info.debugName.str());
 
         if (info.m_initializer.m_withDevice)
         {

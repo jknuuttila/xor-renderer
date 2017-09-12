@@ -176,6 +176,7 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
         XOR_CONFIG_SLIDER(float, shadowHistoryBlend, "Shadow history blend", 0);
         XOR_CONFIG_SLIDER(int, shadowNoiseSamples, "Shadow noise samples", 0, 0, 8);
         XOR_CONFIG_SLIDER(int, noisePeriod, "Noise period", 8, 0, 8);
+        XOR_CONFIG_SLIDER(int, frozenNoise, "Frozen noise", -1, -1, 7);
         XOR_CONFIG_CHECKBOX(shadowJitter, "Shadow jittering", false);
         XOR_CONFIG_CHECKBOX(pcfGaussian, "Gaussian PCF", false);
 
@@ -398,9 +399,9 @@ struct HeightmapRenderer
                 .format(DXGI_FORMAT_R16_FLOAT)
                 .allowRenderTarget()
                 .allowUAV();
-            shadowTerm[0]  = RWTexture(device, shadowTermInfo);
-            shadowTerm[1]  = RWTexture(device, shadowTermInfo);
-            shadowHistory = RWTexture(device, shadowTermInfo);
+            shadowTerm[0]  = RWTexture(device, shadowTermInfo.debugName("shadowTerm0"));
+            shadowTerm[1]  = RWTexture(device, shadowTermInfo.debugName("shadowTerm1"));
+            shadowHistory = RWTexture(device, shadowTermInfo.debugName("shadowHistory"));
             auto cmd = device.graphicsCommandList();
             cmd.clearRTV(shadowTerm[0].rtv);
             cmd.clearRTV(shadowTerm[1].rtv);
@@ -639,6 +640,8 @@ struct HeightmapRenderer
     {
         if (cfg_Settings.shadow.noisePeriod <= 0)
             return int(device.frameNumber());
+        else if (cfg_Settings.shadow.frozenNoise >= 0)
+            return cfg_Settings.shadow.frozenNoise;
         else
             return int(device.frameNumber()) % cfg_Settings.shadow.noisePeriod;
     }

@@ -52,6 +52,7 @@
     <ClInclude Include="OS.hpp" />
     <ClInclude Include="Serialization.hpp" />
     <ClInclude Include="Sorting.hpp" />
+    <ClInclude Include="SortingNetworks.h" />
     <ClInclude Include="String.hpp" />
     <ClInclude Include="TLog.hpp" />
     <ClInclude Include="Utils.hpp" />

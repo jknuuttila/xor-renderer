@@ -57,6 +57,7 @@ namespace xor
             size_t size = 0;
             Format format;
             bool allowUAV = false;
+            StringView debugName;
 
             BufferInfo() = default;
             BufferInfo(size_t size, Format format)
@@ -87,6 +88,7 @@ namespace xor
             BufferInfoBuilder &rawBuffer(size_t sizeInBytes) { size(sizeInBytes / sizeof(uint32_t)); return format(DXGI_FORMAT_R32_TYPELESS); }
             BufferInfoBuilder &initialData(Span<const uint8_t> data) { BufferInfo::initializeWith(data); return *this; }
             BufferInfoBuilder &allowUAV(bool allowUAV = true) { BufferInfo::allowUAV = allowUAV; return *this; }
+            BufferInfoBuilder &debugName(StringView name) { BufferInfo::debugName = name; return *this; }
         };
 
         class BufferViewInfo
@@ -127,6 +129,7 @@ namespace xor
             bool allowRenderTarget = false;
             bool allowDepthStencil = false;
             bool allowUAV          = false;
+            StringView debugName;
 
             TextureInfo() = default;
             TextureInfo(uint2 size, Format format)
@@ -156,6 +159,7 @@ namespace xor
             TextureInfoBuilder &allowRenderTarget(bool allowRTV = true) { TextureInfo::allowRenderTarget = allowRTV; return *this; }
             TextureInfoBuilder &allowDepthStencil(bool allowDSV = true) { TextureInfo::allowDepthStencil = allowDSV; return *this; }
             TextureInfoBuilder &allowUAV(bool allowUAV = true) { TextureInfo::allowUAV = allowUAV; return *this; }
+            TextureInfoBuilder &debugName(StringView name) { TextureInfo::debugName = name; return *this; }
         };
 
         class TextureViewInfo
