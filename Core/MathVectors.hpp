@@ -90,6 +90,7 @@ namespace xor
         template <typename T, uint N>
         struct Vector : public VectorBase<T, N>
         {
+            using Elem = T;
             static constexpr uint Dim = N;
 
             using VectorBase<T, N>::VectorBase;
@@ -200,27 +201,6 @@ namespace xor
             {
                 Vector<bool, N> c;
                 for (uint i = 0; i < N; ++i) c[i] = a[i] >= b[i];
-                return c;
-            }
-
-            friend Vector abs(Vector a)
-            {
-                Vector c;
-                for (uint i = 0; i < N; ++i) c[i] = std::abs(a[i]);
-                return c;
-            }
-
-            friend Vector min(Vector a, Vector b)
-            {
-                Vector c;
-                for (uint i = 0; i < N; ++i) c[i] = std::min(a[i], b[i]);
-                return c;
-            }
-
-            friend Vector max(Vector a, Vector b)
-            {
-                Vector c;
-                for (uint i = 0; i < N; ++i) c[i] = std::max(a[i], b[i]);
                 return c;
             }
 
@@ -419,6 +399,30 @@ namespace xor
                 return defaultForZeroLength;
             else
                 return a / L;
+        }
+
+        template <typename T, uint N>
+        Vector<T, N> abs(Vector<T, N> a)
+        {
+            Vector<T, N> c;
+            for (uint i = 0; i < N; ++i) c[i] = std::abs(a[i]);
+            return c;
+        }
+
+        template <typename T, uint N>
+        Vector<T, N> min(Vector<T, N> a, Vector<T, N> b)
+        {
+            Vector<T, N> c;
+            for (uint i = 0; i < N; ++i) c[i] = std::min(a[i], b[i]);
+            return c;
+        }
+
+        template <typename T, uint N>
+        Vector<T, N> max(Vector<T, N> a, Vector<T, N> b)
+        {
+            Vector<T, N> c;
+            for (uint i = 0; i < N; ++i) c[i] = std::max(a[i], b[i]);
+            return c;
         }
 
         inline float3 cross(float3 a, float3 b)

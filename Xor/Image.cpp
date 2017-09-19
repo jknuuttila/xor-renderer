@@ -591,7 +591,7 @@ namespace xor
             auto &cur  = m_state->subresources[m];
 
             int2 size = int2(prev.size) / 2;
-            size      = max(1, size);
+            size      = max(int2(1), size);
 
             cur.importFrom(FreeImage_Rescale(prev.fiBmp, size.x, size.y));
         }

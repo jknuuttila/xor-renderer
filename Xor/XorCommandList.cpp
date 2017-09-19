@@ -491,10 +491,10 @@ namespace xor
     {
         D3D12_RECT scissorRect = {};
 
-        scissorRect.left   = static_cast<LONG>(scissor.leftTop.x);
-        scissorRect.top    = static_cast<LONG>(scissor.leftTop.y);
-        scissorRect.right  = static_cast<LONG>(scissor.rightBottom.x);
-        scissorRect.bottom = static_cast<LONG>(scissor.rightBottom.y);
+        scissorRect.left   = static_cast<LONG>(scissor.min.x);
+        scissorRect.top    = static_cast<LONG>(scissor.min.y);
+        scissorRect.right  = static_cast<LONG>(scissor.max.x);
+        scissorRect.bottom = static_cast<LONG>(scissor.max.y);
 
         cmd()->RSSetScissorRects(1, &scissorRect);
     }
@@ -783,7 +783,7 @@ namespace xor
         transition(texture, D3D12_RESOURCE_STATE_COPY_DEST);
         cmd()->CopyTextureRegion(
             &dst,
-            dstPos.leftTop.x, dstPos.leftTop.y, 0,
+            dstPos.min.x, dstPos.min.y, 0,
             &src,
             nullptr);
     }
@@ -833,15 +833,15 @@ namespace xor
         srcLocation.SubresourceIndex            = 0;
 
         D3D12_BOX srcBox = {};
-        srcBox.left      = srcRect.leftTop.x;
-        srcBox.right     = srcRect.rightBottom.x;
-        srcBox.top       = srcRect.leftTop.y;
-        srcBox.bottom    = srcRect.rightBottom.y;
+        srcBox.left      = srcRect.min.x;
+        srcBox.right     = srcRect.max.x;
+        srcBox.top       = srcRect.min.y;
+        srcBox.bottom    = srcRect.max.y;
         srcBox.front     = 0;
         srcBox.back      = 1;
 
         cmd()->CopyTextureRegion(
-            &dstLocation, dstPos.leftTop.x, dstPos.leftTop.y, 0,
+            &dstLocation, dstPos.min.x, dstPos.min.y, 0,
             &srcLocation, srcRect.empty() ? nullptr : &srcBox);
     }
 

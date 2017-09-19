@@ -31,27 +31,28 @@ namespace xor
         }
     };
 
-    struct Rect
+    template <typename T>
+    struct Rectangle
     {
-        int2 leftTop           = 0;
-        int2 rightBottom       = 0;
+        T min = 0;
+        T max = 0;
 
-        Rect() = default;
-        Rect(int x, int y) : leftTop(x, y) {}
-        Rect(int2 leftTop, int2 rightBottom = 0)
-            : leftTop(leftTop)
-            , rightBottom(rightBottom)
+        Rectangle() = default;
+        Rectangle(typename T::Elem x, typename T::Elem y) : min(x, y) {}
+        Rectangle(T min, T max = 0)
+            : min(min)
+            , max(max)
         {}
 
-        static Rect withSize(int2 leftTop, int2 size)
+        static Rectangle withSize(T min, T size)
         {
-            Rect rect;
-            rect.leftTop     = leftTop;
-            rect.rightBottom = leftTop + size;
+            Rectangle rect;
+            rect.min = min;
+            rect.max = min + size;
             return rect;
         }
 
-        static Rect withSize(int2 size)
+        static Rectangle withSize(T size)
         {
             return withSize(0, size);
         }
@@ -62,11 +63,14 @@ namespace xor
             return s.x == 0 || s.y == 0;
         }
 
-        uint2 size() const
+        T size() const
         {
-            return uint2(max(leftTop, rightBottom) - leftTop);
+            return math::max(min, max) - math::min(min, max);
         }
     };
+
+    using Rect  = Rectangle<int2>;
+    using RectF = Rectangle<float2>;
 
     struct ImageRect : public Rect
     {
@@ -76,18 +80,18 @@ namespace xor
         ImageRect(Rect rect)
             : Rect(rect)
         {}
-        ImageRect(int2 leftTop)
-            : Rect(leftTop)
+        ImageRect(int2 min)
+            : Rect(min)
         {}
         ImageRect(int x, int y)
             : Rect(x, y)
         {}
-        ImageRect(int2 leftTop, int2 rightBottom, Subresource subresource = 0)
-            : Rect(leftTop, rightBottom)
+        ImageRect(int2 min, int2 max, Subresource subresource = 0)
+            : Rect(min, max)
             , subresource(subresource)
         {}
-        ImageRect(int2 leftTop, Subresource subresource)
-            : Rect(leftTop)
+        ImageRect(int2 min, Subresource subresource)
+            : Rect(min)
             , subresource(subresource)
         {}
         ImageRect(Subresource subresource)

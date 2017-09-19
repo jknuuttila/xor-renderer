@@ -320,6 +320,13 @@ struct BlueNoise
     }
 };
 
+struct TiledTerrain
+{
+    using DE = DirectedEdge<Empty, int3>;
+    ImageData heightData;
+    Rect bounds;
+};
+
 struct HeightmapRenderer
 {
     using DE = DirectedEdge<Empty, int3>;
@@ -924,7 +931,7 @@ struct HeightmapRenderer
         return ErrorMetrics {};
         Timer timer;
 
-        RWImageData error(area.size(), DXGI_FORMAT_R32_FLOAT);
+        RWImageData error(uint2(area.size()), DXGI_FORMAT_R32_FLOAT);
         error.ownedData.fill(0);
 
         auto &uvAttr = mesh.vertexAttribute(2);
@@ -967,7 +974,7 @@ struct HeightmapRenderer
                 float z_p             = heightData.pixel<float>(p);
                 float z_interpolated  = interpolateBarycentric(z_a, z_b, z_c, bary);
                 double dz             = z_p - z_interpolated;
-                error.pixel<float>(p - area.leftTop) = float(dz);
+                error.pixel<float>(p - area.min) = float(dz);
             });
         }
 
@@ -1021,7 +1028,7 @@ struct HeightmapRenderer
 
     Vert vertex(Rect area, float2 uv)
     {
-        float2 unnormalized = lerp(float2(area.leftTop), float2(area.rightBottom), uv);
+        float2 unnormalized = lerp(float2(area.min), float2(area.max), uv);
         return vertex(int2(unnormalized));
     }
 
@@ -1043,9 +1050,9 @@ struct HeightmapRenderer
     {
         Timer t;
 
-        area.rightBottom = min(area.rightBottom, heightmap->size);
-        if (all(area.size() < uint2(128)))
-            area.leftTop = area.rightBottom - 128;
+        area.max = min(area.max, heightmap->size);
+        if (all(area.size() < int2(128)))
+            area.min = area.max - 128;
 
         int2 sz        = int2(area.size());
         float2 szWorld = float2(sz) * heightmap->texelSize;
@@ -1079,7 +1086,7 @@ struct HeightmapRenderer
             for (int x = 0; x <= verts.x; ++x)
             {
                 int2 vertexGridCoords = int2(x, y);
-                int2 texCoords = min(vertexGridCoords * vertexDistance + area.leftTop, heightmap->size - 1);
+                int2 texCoords = min(vertexGridCoords * vertexDistance + area.min, heightmap->size - 1);
                 float2 uv = float2(vertexGridCoords * vertexDistance) / fRes;
 
                 float height = heightData.pixel<float>(uint2(texCoords));
@@ -1292,14 +1299,14 @@ struct HeightmapRenderer
         if (tipsify)
         {
             tipsifyMesh(mesh,
-                        float2(area.leftTop) / float2(heightmap->size),
-                        float2(area.rightBottom) / float2(heightmap->size));
+                        float2(area.min) / float2(heightmap->size),
+                        float2(area.max) / float2(heightmap->size));
         }
         else
         {
             gpuMesh(mesh,
-                    float2(area.leftTop) / float2(heightmap->size),
-                    float2(area.rightBottom) / float2(heightmap->size));
+                    float2(area.min) / float2(heightmap->size),
+                    float2(area.max) / float2(heightmap->size));
         }
     }
 
@@ -1318,13 +1325,13 @@ struct HeightmapRenderer
         int2 size = int2(area.size());
         float2 sizeF = float2(size);
 
-        for (int y = area.leftTop.y; y <= area.rightBottom.y; ++y)
+        for (int y = area.min.y; y <= area.max.y; ++y)
         {
-            for (int x = area.leftTop.x; x <= area.rightBottom.x; ++x)
+            for (int x = area.min.x; x <= area.max.x; ++x)
             {
                 float z = heightData.pixel<float>(int2(x, y));
-                float xNorm = static_cast<float>(x - area.leftTop.x) / sizeF.x;
-                float yNorm = static_cast<float>(y - area.leftTop.y) / sizeF.y;
+                float xNorm = static_cast<float>(x - area.min.x) / sizeF.x;
+                float yNorm = static_cast<float>(y - area.min.y) / sizeF.y;
                 float zNorm = z * heightNormalization;
 
                 groundTruth.vertices.emplace_back(xNorm, yNorm, zNorm);
@@ -1369,8 +1376,8 @@ struct HeightmapRenderer
         std::vector<float2> uvs;
         std::vector<uint>   indices;
 
-        float2 minUV = float2(area.leftTop) / float2(heightmap->size);
-        float2 maxUV = float2(area.rightBottom) / float2(heightmap->size);
+        float2 minUV = float2(area.min) / float2(heightmap->size);
+        float2 maxUV = float2(area.max) / float2(heightmap->size);
 
         heightNormalization = 1.f / heightNormalization;
 
@@ -1944,16 +1951,16 @@ public:
         cmd.setRenderTargets(backbuffer, depthBuffer);
 
         {
-            float2 rightBottom = float2(1590, 890);
-            float2 leftTop;
+            float2 max = float2(1590, 890);
+            float2 min;
             if (largeVisualization)
-                leftTop = rightBottom - 800;
+                min = max - 800;
             else
-                leftTop = rightBottom - 300;
+                min = max - 300;
 
             heightmapRenderer.visualize(cmd,
-                                        remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), leftTop),
-                                        remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), rightBottom));
+                                        remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), min),
+                                        remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), max));
         }
 
         cmd.setRenderTargets();

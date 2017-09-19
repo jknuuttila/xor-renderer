@@ -21,7 +21,7 @@ namespace xor
         cmd.bind(m_blit);
         cmd.setRenderTargets(dst);
 
-        float2 pos     = float2(dstRect.leftTop);
+        float2 pos     = float2(dstRect.min);
         float2 dstSize = float2(dstRect.empty()
                                 ? srcRect.size()
                                 : dstRect.size());
@@ -30,8 +30,8 @@ namespace xor
 
         if (srcRect.empty())
         {
-            srcRect.leftTop     = 0;
-            srcRect.rightBottom = int2(src.texture()->size);
+            srcRect.min = 0;
+            srcRect.max = int2(src.texture()->size);
         }
 
         float2 topLeft = float2(-1, 1);
@@ -40,8 +40,8 @@ namespace xor
         BlitShader::Constants constants;
         constants.posBegin   = topLeft            +     pos * pixel;
         constants.posEnd     = constants.posBegin + dstSize * pixel;
-        constants.uvBegin    = float2(srcRect.leftTop)     / srcTexSize;
-        constants.uvEnd      = float2(srcRect.rightBottom) / srcTexSize;
+        constants.uvBegin    = float2(srcRect.min) / srcTexSize;
+        constants.uvEnd      = float2(srcRect.max) / srcTexSize;
         constants.mip        = static_cast<float>(srcRect.subresource.mip);
         constants.multiplier = multiplier;
         constants.bias       = bias;

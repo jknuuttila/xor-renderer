@@ -118,7 +118,7 @@ namespace xor
                 for (uint m = 0; m < mipLevels; ++m)
                 {
                     total += format.areaSizeBytes(mipSize);
-                    mipSize = max(1, mipSize / 2);
+                    mipSize = max(uint2(1), mipSize / 2);
                 }
             }
 
