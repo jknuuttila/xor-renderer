@@ -320,11 +320,30 @@ struct BlueNoise
     }
 };
 
-struct TiledTerrain
+class TiledTerrain
 {
     using DE = DirectedEdge<Empty, int3>;
-    ImageData heightData;
-    Rect bounds;
+    ImageData m_heightData;
+    Rect      m_bounds;
+    int2      m_tileSize;
+
+    struct Tile
+    {
+        int2                 coords;
+        Rect                 bounds;
+        std::vector<int2>    vertices;
+        std::vector<int>     indices;
+        std::vector<Block32> lods;
+    };
+    struct Edge
+    {
+        std::vector<int2>    vertices;
+        std::vector<Block32> lods;
+    };
+    std::vector<Tile> m_tiles;
+    std::vector<Edge> m_edges;
+public:
+    TiledTerrain() = default;
 };
 
 struct HeightmapRenderer

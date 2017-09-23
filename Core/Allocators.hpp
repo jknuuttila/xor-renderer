@@ -120,6 +120,31 @@ namespace xor
         }
     };
 
+    struct Block32
+    {
+        int32_t begin = -1;
+        int32_t end   = -1;
+
+        Block32() = default;
+        Block32(int32_t begin, int32_t end)
+            : begin(begin)
+            , end(end)
+        {}
+
+        bool valid() const { return begin >= 0; }
+        explicit operator bool() const { return valid(); }
+
+        bool empty() const { return size() == 0; }
+        uint32_t size() const { return static_cast<uint32_t>(end - begin); }
+
+        Block32 fitAtBegin(size_t size, size_t alignment = 1) const;
+
+        bool canFit(size_t size, size_t alignment = 1) const
+        {
+            return !!fitAtBegin(size, alignment);
+        }
+    };
+
     // Allocating and releasing in a ring buffer fashion (i.e. FIFO),
     // with support for contiguous longer allocations and alignments.
     class OffsetRing

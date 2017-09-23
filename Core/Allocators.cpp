@@ -493,4 +493,14 @@ namespace xor
         else
             return Block(alignedBegin, alignedBegin + iSize);
     }
+
+    Block32 Block32::fitAtBegin(size_t size, size_t alignment) const
+    {
+        int32_t iSize = static_cast<int32_t>(size);
+        int32_t alignedBegin = roundUpToMultiple(begin, static_cast<int32_t>(alignment));
+        if (alignedBegin + iSize > end)
+            return Block32();
+        else
+            return Block32(alignedBegin, alignedBegin + iSize);
+    }
 }
