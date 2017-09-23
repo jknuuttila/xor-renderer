@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio 15
+VisualStudioVersion = 15.0.26430.16
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HelloD3D12", "HelloD3D12\HelloD3D12.vcxproj", "{B58848C6-CC27-4592-9533-613D119F6990}"
 EndProject
@@ -28,6 +28,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Templates", "Templates", "{C46FA92A-FD9F-4B85-A08E-E3E4A8457432}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LoadBalancing", "LoadBalancing\LoadBalancing.vcxproj", "{B29F7783-A9A5-46DA-91D3-2D8778DE008B}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Incircle", "external\incircle\Incircle\Incircle.vcxproj", "{851F04A2-CB38-41B5-AA07-43CAFDEF5919}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -103,6 +105,14 @@ Global
 		{B29F7783-A9A5-46DA-91D3-2D8778DE008B}.Release|x64.ActiveCfg = Release|x64
 		{B29F7783-A9A5-46DA-91D3-2D8778DE008B}.Release|x64.Build.0 = Release|x64
 		{B29F7783-A9A5-46DA-91D3-2D8778DE008B}.Release|x86.ActiveCfg = Release|x64
+		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Debug|x64.ActiveCfg = Debug|x64
+		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Debug|x64.Build.0 = Debug|x64
+		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Debug|x86.ActiveCfg = Debug|Win32
+		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Debug|x86.Build.0 = Debug|Win32
+		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Release|x64.ActiveCfg = Release|x64
+		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Release|x64.Build.0 = Release|x64
+		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Release|x86.ActiveCfg = Release|Win32
+		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -111,5 +121,6 @@ Global
 		{6CAF7F93-4204-4CE4-B9E1-B6D750467D2D} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
 		{C02D4E4A-A8A6-4763-A485-9541F4FADE76} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
 		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
+		{851F04A2-CB38-41B5-AA07-43CAFDEF5919} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
 	EndGlobalSection
 EndGlobal

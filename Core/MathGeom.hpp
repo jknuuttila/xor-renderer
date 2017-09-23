@@ -3,6 +3,8 @@
 #include "MathVectors.hpp"
 #include "MathFloat.hpp"
 
+#include "external/incircle/Incircle.hpp"
+
 #include <random>
 
 namespace xor
@@ -11,6 +13,11 @@ namespace xor
     inline T orient2D(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
     {
         return (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+    }
+
+    inline float orient2DRobust(float2 a, float2 b, float2 c)
+    {
+        return ::orient2d(a.data(), b.data(), c.data());
     }
 
     template <typename T>
@@ -168,6 +175,11 @@ namespace xor
                             p2.x, p2.y, N2, 1,
                             p3.x, p3.y, N3, 1,
                             p4.x, p4.y, N4, 1).determinant() > 0;
+    }
+
+    inline float inCircleRobust(float2 p1, float2 p2, float2 p3, float2 p4)
+    {
+        return ::incircle(p1.data(), p2.data(), p3.data(), p4.data());
     }
 
     template <typename T>

@@ -116,7 +116,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <sys/time.h>
+
+
+//  warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+#pragma warning (disable: 4244)
+int random() { return rand(); }
 
 /* On some machines, the exact arithmetic routines might be defeated by the  */
 /*   use of internal extended precision floating-point registers.  Sometimes */
@@ -130,11 +134,11 @@
 #define INEXACT                          /* Nothing */
 /* #define INEXACT volatile */
 
-#define REAL double                      /* float or double */
-#define REALPRINT doubleprint
-#define REALRAND doublerand
-#define NARROWRAND narrowdoublerand
-#define UNIFORMRAND uniformdoublerand
+#define REAL float                      /* float or double */
+#define REALPRINT floatprint
+#define REALRAND floatrand
+#define NARROWRAND narrowfloatrand
+#define UNIFORMRAND uniformfloatrand
 
 /* Which of the following two methods of finding the absolute values is      */
 /*   fastest is compiler-dependent.  A few compilers can inline and optimize */
