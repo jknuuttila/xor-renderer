@@ -346,7 +346,682 @@ public:
     TiledTerrain() = default;
 };
 
-struct HeightmapRenderer
+struct Terrain
+{
+    Device device;
+    Heightmap *heightmap = nullptr;
+    ImageData heightData;
+    Rect area;
+    Mesh mesh;
+
+    Terrain() = default;
+    Terrain(Device device, Heightmap &heightmap)
+    {
+        this->device = device;
+        this->heightmap = &heightmap;
+        heightData = heightmap.height.imageData();
+
+        uniformGrid(Rect::withSize(heightmap.size), 100);
+    }
+
+    template <typename DEMesh>
+    void gpuMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
+    {
+        auto verts    = mesh.vertices();
+        auto numVerts = verts.size();
+        std::vector<float2> normalizedPos(numVerts);
+        std::vector<float>  height(numVerts);
+        std::vector<float2> uv(numVerts);
+
+        float2 dims = float2(heightmap->size);
+
+        for (uint i = 0; i < numVerts; ++i)
+        {
+            auto &v          = verts[i];
+            uv[i]            = float2(v.pos) / dims;
+            normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), uv[i]);
+            height[i]        = heightData.pixel<float>(uint2(v.pos));
+        }
+
+        std::vector<uint> indices;
+        auto deIndices = mesh.triangleIndices();
+        indices.reserve(deIndices.size());
+        XOR_ASSERT(deIndices.size() % 3 == 0, "Unexpected amount of indices");
+        for (size_t i = 0; i < deIndices.size(); i += 3)
+        {
+            uint a = deIndices[i];
+            uint b = deIndices[i + 1];
+            uint c = deIndices[i + 2];
+
+            // Negate CCW test because the positions are in UV coordinates,
+            // which is left handed because +Y goes down
+            bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
+
+            if (ccw)
+            {
+                indices.emplace_back(a);
+                indices.emplace_back(b);
+                indices.emplace_back(c);
+            }
+            else
+            {
+                indices.emplace_back(a);
+                indices.emplace_back(c);
+                indices.emplace_back(b);
+            }
+        }
+
+        VertexAttribute attrs[] =
+        {
+            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
+            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(height) },
+            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
+        };
+
+        this->mesh = Mesh::generate(device, attrs, indices);
+    }
+
+    template <typename DEMesh>
+    void tipsifyMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
+    {
+        Timer timer;
+
+        auto numVerts = mesh.numVertices();
+
+        int seenVertexCounter = 0;
+        std::vector<int> newVertexIndices;
+        std::vector<int> vertexForNewIndex(numVerts);
+        auto newVertexIdx = [&] (int v)
+        {
+            if (newVertexIndices[v] < 0)
+            {
+                int v_ = seenVertexCounter;
+                ++seenVertexCounter;
+                newVertexIndices[v] = v_;
+                vertexForNewIndex[v_] = v;
+                return v_;
+            }
+            else
+            {
+                return newVertexIndices[v];
+            }
+        };
+
+        std::vector<int> recentVertices;
+        std::vector<int> liveTriangles;
+        std::vector<uint8_t> triangleEmitted;
+        std::vector<uint> indices;
+
+        constexpr int VertexCacheSize = 16;
+        int vertexCacheTime = 0;
+        std::vector<int> vertexCacheTimestamps;
+
+        auto processVertex = [&] (int v)
+        {
+            int &age = vertexCacheTimestamps[v];
+            if (vertexCacheTime - age >= VertexCacheSize)
+            {
+                // Not in cache
+                age = vertexCacheTime;
+                ++vertexCacheTime;
+                recentVertices.emplace_back(v);
+            }
+        };
+
+        {
+            int arbitraryVertex = 0;
+
+            int numVerts = mesh.numVertices();
+
+            newVertexIndices.resize(numVerts, -1);
+            liveTriangles.resize(numVerts);
+            vertexCacheTimestamps.resize(numVerts, -2 * VertexCacheSize);
+            triangleEmitted.resize(mesh.numTriangles());
+            indices.reserve(mesh.numTriangles() * 3);
+
+            for (int v = 0; v < numVerts; ++v)
+            {
+                mesh.vertexForEachTriangle(v, [&](int t)
+                {
+                    ++liveTriangles[v];
+                });
+            }
+
+            int fanningVertex = -1;
+            for (;;)
+            {
+                // If there is no valid vertex, pick the next vertex with some
+                // triangles left.
+                if (fanningVertex < 0)
+                {
+                    while (arbitraryVertex < numVerts)
+                    {
+                        if (liveTriangles[arbitraryVertex] > 0)
+                        {
+                            fanningVertex = arbitraryVertex;
+                            break;
+                        }
+
+                        ++arbitraryVertex;
+                    }
+
+                    if (arbitraryVertex >= numVerts)
+                        break;
+                }
+
+                XOR_ASSERT(fanningVertex >= 0, "No valid vertex");
+
+                // Emit all triangles of the vertex
+                mesh.vertexForEachTriangle(fanningVertex, [&] (int t)
+                {
+                    if (triangleEmitted[t])
+                        return;
+
+                    int3 vs = mesh.triangleVertices(t);
+
+                    for (int v : vs.span())
+                    {
+                        XOR_ASSERT(liveTriangles[v] > 0, "Trying to reduce triangles from a fully processed vertex");
+                        --liveTriangles[v];
+                    }
+
+                    processVertex(vs.x);
+                    processVertex(vs.y);
+                    processVertex(vs.z);
+
+                    indices.emplace_back(newVertexIdx(vs.x));
+                    indices.emplace_back(newVertexIdx(vs.y));
+                    indices.emplace_back(newVertexIdx(vs.z));
+
+                    triangleEmitted[t] = 1;
+                });
+
+                int oldestAge = -1;
+                int nextVertex = -1;
+                mesh.vertexForEachAdjacentVertex(fanningVertex, [&] (int v)
+                {
+                    int live = liveTriangles[v];
+                    if (live == 0)
+                        return;
+
+                    int worstCaseVerts = live * 2;
+                    int age = vertexCacheTime - vertexCacheTimestamps[v];
+
+                    if (age + worstCaseVerts < VertexCacheSize)
+                    {
+                        // Vertex would still be in cache after emitting its triangles,
+                        // and is thus valid.
+                        if (oldestAge < age)
+                        {
+                            oldestAge = age;
+                            nextVertex = v;
+                        }
+                    }
+                });
+
+                // If we don't have a valid vertex from the adjacent vertices,
+                // try the recently processed vertices
+                if (nextVertex < 0)
+                {
+                    while (!recentVertices.empty())
+                    {
+                        int v = recentVertices.back();
+                        recentVertices.pop_back();
+
+                        if (liveTriangles[v] > 0)
+                        {
+                            nextVertex = v;
+                            break;
+                        }
+                    }
+                }
+
+                fanningVertex = nextVertex;
+            }
+        }
+
+        std::vector<float2> normalizedPos(numVerts);
+        std::vector<float>  height(numVerts);
+        std::vector<float2> uv(numVerts);
+
+        float2 dims = float2(heightmap->size);
+
+        auto verts = mesh.vertices();
+
+        for (int i = 0; i < numVerts; ++i)
+        {
+            auto &v          = verts[vertexForNewIndex[i]];
+            uv[i]            = float2(v.pos) / dims;
+            normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), uv[i]);
+            height[i]        = heightData.pixel<float>(uint2(v.pos));
+        }
+
+        XOR_ASSERT(indices.size() % 3 == 0, "Unexpected amount of indices");
+        for (size_t i = 0; i < indices.size(); i += 3)
+        {
+            uint a = indices[i];
+            uint b = indices[i + 1];
+            uint c = indices[i + 2];
+
+            // Negate CCW test because the positions are in UV coordinates,
+            // which is left handed because +Y goes down
+            bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
+
+            if (!ccw)
+                std::swap(indices[i + 1], indices[i + 2]);
+        }
+
+        VertexAttribute attrs[] =
+        {
+            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
+            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(height) },
+            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
+        };
+
+        this->mesh = Mesh::generate(device, attrs, indices);
+
+        log("Heightmap", "Generated tipsified mesh with %d vertices and %d triangles in %.2f ms\n",
+            mesh.numVertices(),
+            mesh.numTriangles(),
+            timer.milliseconds());
+    }
+
+    using Vert = Vector<int64_t, 3>;
+
+    Vert vertex(int2 coords) const
+    {
+        float height = heightData.pixel<float>(uint2(coords));
+        return Vert(coords.x, coords.y, int(height * float(0x1000)));
+    }
+
+    Vert vertex(float2 uv) const
+    {
+        return vertex(int2(heightData.unnormalized(uv)));
+    }
+
+    Vert vertex(Rect area, float2 uv)
+    {
+        float2 unnormalized = lerp(float2(area.min), float2(area.max), uv);
+        return vertex(int2(unnormalized));
+    }
+
+    void uniformGrid(Rect area, uint quadsPerDim)
+    {
+        Timer t;
+
+        area.max = min(area.max, heightmap->size);
+        if (all(area.size() < int2(128)))
+            area.min = area.max - 128;
+
+        int2 sz        = int2(area.size());
+        float2 szWorld = float2(sz) * heightmap->texelSize;
+
+        int minDim = std::min(sz.x, sz.y);
+        int vertexDistance = minDim / static_cast<int>(quadsPerDim);
+        vertexDistance = std::max(1, vertexDistance);
+
+        int2 verts = sz / vertexDistance;
+        float2 fVerts = float2(verts);
+        float2 fRes   = float2(sz);
+        float2 minWorld = -szWorld / 2.f;
+        float2 maxWorld = minWorld + szWorld;
+
+        auto numVerts   = (verts.x + 1) * (verts.y + 1);
+
+        std::vector<float2> normalizedPos;
+        std::vector<float>  heights;
+        std::vector<float2> uvs;
+        std::vector<uint>   indices;
+
+        normalizedPos.reserve(numVerts);
+        uvs.reserve(numVerts);
+        heights.reserve(numVerts);
+        indices.reserve(verts.x * verts.y * (3 * 2));
+
+        float2 invSize = 1.f / float2(heightmap->size);
+
+        for (int y = 0; y <= verts.y; ++y)
+        {
+            for (int x = 0; x <= verts.x; ++x)
+            {
+                int2 vertexGridCoords = int2(x, y);
+                int2 texCoords = min(vertexGridCoords * vertexDistance + area.min, heightmap->size - 1);
+                float2 uv = float2(vertexGridCoords * vertexDistance) / fRes;
+
+                float height = heightData.pixel<float>(uint2(texCoords));
+
+                normalizedPos.emplace_back(uv);
+                heights.emplace_back(height);
+                uvs.emplace_back((float2(texCoords) + 0.5f) * invSize);
+            }
+        }
+
+        int vertsPerRow = verts.y + 1;
+        for (int y = 0; y < verts.y; ++y)
+        {
+            for (int x = 0; x < verts.x; ++x)
+            {
+                uint ul = y * vertsPerRow + x;
+                uint ur = ul + 1;
+                uint dl = ul + vertsPerRow;
+                uint dr = dl + 1;
+
+                indices.emplace_back(ul);
+                indices.emplace_back(dl);
+                indices.emplace_back(ur);
+                indices.emplace_back(dl);
+                indices.emplace_back(dr);
+                indices.emplace_back(ur);
+            }
+        }
+
+        log("HeightmapRenderer", "Generated uniform grid mesh with %zu vertices and %zu indices in %.2f ms\n",
+            normalizedPos.size(),
+            indices.size(),
+            t.milliseconds());
+
+        VertexAttribute attrs[] =
+        {
+            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
+            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
+            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uvs) },
+        };
+
+        this->mesh = Mesh::generate(device, attrs, indices);
+    }
+
+    void incrementalMaxError(Rect area, uint vertices, bool tipsify = true)
+    {
+        Timer timer;
+
+        struct TriangleError
+        {
+            int2 coords;
+            float error = -1;
+        };
+        struct LargestError
+        {
+            int triangle = -1;
+            float error  = std::numeric_limits<float>::max();
+
+            LargestError(int tri = -1)
+                : triangle(tri)
+            {}
+            LargestError(int tri, float error)
+                : triangle(tri)
+                , error(error)
+            {}
+
+            explicit operator bool() const { return error != std::numeric_limits<float>::max(); }
+
+            bool operator<(const LargestError &e) const { return error < e.error; }
+        };
+
+        using DErr = DirectedEdge<TriangleError, Vert>;
+        DErr mesh;
+
+        Vert minBound = vertex(area, {0, 0});
+        Vert maxBound = vertex(area, {1, 1});
+
+        std::mt19937 gen(95832);
+
+        std::priority_queue<LargestError> largestError;
+        std::vector<int> newTriangles;
+
+#if 0
+        BowyerWatson<DErr> delaunay(mesh);
+#else
+        DelaunayFlip<DErr> delaunay(mesh);
+#endif
+        delaunay.superTriangle(minBound, maxBound);
+
+        {
+            int v0 = delaunay.insertVertex(vertex(area, { 1, 0 }));
+            int v1 = delaunay.insertVertex(vertex(area, { 0, 1 }));
+            int v2 = delaunay.insertVertex(vertex(area, { 0, 0 }));
+            int v3 = delaunay.insertVertex(vertex(area, { 1, 1 }));
+
+            for (int v : { v0, v1, v2, v3 })
+            {
+                mesh.vertexForEachTriangle(v, [&](int t)
+                {
+                    largestError.emplace(t);
+                });
+            }
+        }
+
+        XOR_ASSERT(!largestError.empty(), "No valid triangles to subdivide");
+
+        std::unordered_set<int2, PodHash, PodEqual> usedVertices;
+
+        // Subtract 3 from the vertex count to account for the supertriangle
+        while (mesh.numVertices() - 3 < static_cast<int>(vertices))
+        {
+            auto largest = largestError.top();
+            largestError.pop();
+            int t = largest.triangle;
+
+            if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t))
+            {
+                continue;
+            }
+
+            auto &triData = mesh.T(t);
+            int3 verts  = mesh.triangleVertices(t);
+            Vert v0     = mesh.V(verts.x).pos;
+            Vert v1     = mesh.V(verts.y).pos;
+            Vert v2     = mesh.V(verts.z).pos;
+
+            // If the error isn't known, estimate it
+            if (!largest.error || largest.error != triData.error)
+            {
+                int2 largestErrorCoords;
+                float largestErrorFound = -1;
+
+                // InteriorSamples == 1
+                // [Heightmap]: L2: 4.532414e+05, L1: 6.876323e+08, L_inf: 7.701329e+02, Calculated for 152 triangles in 544.34 ms
+                // [Heightmap]: L2: 1.928656e+05, L1: 2.663657e+08, L_inf: 7.379893e+02, Calculated for 1129 triangles in 556.19 ms
+                // [Heightmap]: L2: 8.425315e+04, L1: 1.159352e+08, L_inf: 6.299168e+02, Calculated for 8413 triangles in 568.50 ms
+
+                // InteriorSamples == 10
+                // [Heightmap]: L2: 3.808483e+05, L1: 6.012014e+08, L_inf: 8.759630e+02, Calculated for 151 triangles in 544.98 ms
+                // [Heightmap]: L2: 1.611922e+05, L1: 2.331848e+08, L_inf: 6.007446e+02, Calculated for 1123 triangles in 529.35 ms
+                // [Heightmap]: L2: 6.603029e+04, L1: 1.004696e+08, L_inf: 3.462271e+02, Calculated for 8391 triangles in 560.90 ms
+
+                // InteriorSamples == 100
+                // [Heightmap]: L2: 4.335434e+05, L1: 6.780714e+08, L_inf: 7.855012e+02, Calculated for 151 triangles in 549.67 ms
+                // [Heightmap]: L2: 1.692659e+05, L1: 2.508276e+08, L_inf: 3.902838e+02, Calculated for 1114 triangles in 557.31 ms
+                // [Heightmap]: L2: 6.706991e+04, L1: 1.014288e+08, L_inf: 1.513256e+02, Calculated for 8383 triangles in 570.01 ms
+                constexpr int InteriorSamples = 30;
+                constexpr int EdgeSamples     = 0;
+
+                auto errorAt = [&] (float3 bary)
+                {
+                    float3 interpolated = interpolateBarycentric(float3(v0), float3(v1), float3(v2), bary);
+                    Vert point          = vertex(int2(interpolated));
+
+                    float error = abs(float(point.z) - interpolated.z);
+                    if (isPointInsideTriangleUnknownWinding(v0.vec2(), v1.vec2(), v2.vec2(), point.vec2())
+                        && !usedVertices.count(int2(point))
+                        && error > largestErrorFound)
+                    {
+                        largestErrorCoords = int2(point);
+                        largestErrorFound  = error;
+                    }
+                };
+
+                for (int i = 0; i < InteriorSamples; ++i)
+                {
+                    float3 bary = uniformBarycentricGen(gen);
+                    errorAt(bary);
+                }
+
+                for (int i = 0; i < EdgeSamples; ++i)
+                {
+                    float x = std::uniform_real_distribution<float>()(gen);
+                    int e = std::uniform_int_distribution<int>(0, 2)(gen);
+                    float3 bary(0, x, 1 - x);
+                    std::swap(bary[0], bary[e]);
+                    errorAt(bary);
+                }
+
+                triData.coords = largestErrorCoords;
+                triData.error  = largestErrorFound;
+
+                largestError.emplace(t, largestErrorFound);
+            }
+            // The error is known, and it was the largest, so insert a new vertex
+            // in that position.
+            else
+            {
+                Vert newVertex = vertex(triData.coords);
+                newTriangles.clear();
+                delaunay.insertVertex(t, newVertex, &newTriangles);
+                usedVertices.emplace(int2(newVertex));
+
+                for (int nt : newTriangles)
+                    largestError.emplace(nt);
+            }
+        }
+
+        delaunay.removeSuperTriangle();
+
+        mesh.vertexRemoveUnconnected();
+
+        log("Heightmap", "Generated incremental max error triangulation with %d vertices and %d triangles in %.2f ms\n",
+            mesh.numValidVertices(),
+            mesh.numValidTriangles(),
+            timer.milliseconds());
+
+        if (tipsify)
+        {
+            tipsifyMesh(mesh,
+                        float2(area.min) / float2(heightmap->size),
+                        float2(area.max) / float2(heightmap->size));
+        }
+        else
+        {
+            gpuMesh(mesh,
+                    float2(area.min) / float2(heightmap->size),
+                    float2(area.max) / float2(heightmap->size));
+        }
+    }
+
+#if 0
+    void quadricSimplification(Rect area, uint vertices, bool tipsify = true)
+    {
+        Timer timer;
+
+        float2 areaSize = maxWorld - minWorld;
+
+        float heightNormalization = 1.f / std::max(areaSize.x, areaSize.y);
+
+        SimpleMesh groundTruth;
+
+        int2 size = int2(area.size());
+        float2 sizeF = float2(size);
+
+        for (int y = area.min.y; y <= area.max.y; ++y)
+        {
+            for (int x = area.min.x; x <= area.max.x; ++x)
+            {
+                float z = heightData.pixel<float>(int2(x, y));
+                float xNorm = static_cast<float>(x - area.min.x) / sizeF.x;
+                float yNorm = static_cast<float>(y - area.min.y) / sizeF.y;
+                float zNorm = z * heightNormalization;
+
+                groundTruth.vertices.emplace_back(xNorm, yNorm, zNorm);
+            }
+        }
+
+        int vertsPerRow = size.x + 1;
+        for (int y = 0; y < size.y; ++y)
+        {
+            for (int x = 0; x < size.x; ++x)
+            {
+                int2 a = int2(x,     y);
+                int2 b = int2(x,     y + 1);
+                int2 c = int2(x + 1, y);
+                int2 d = int2(x + 1, y + 1);
+
+                int ia = a.y * vertsPerRow + a.x;
+                int ib = b.y * vertsPerRow + b.x;
+                int ic = c.y * vertsPerRow + c.x;
+                int id = d.y * vertsPerRow + d.x;
+
+                groundTruth.indices.emplace_back(ia);
+                groundTruth.indices.emplace_back(ib);
+                groundTruth.indices.emplace_back(ic);
+
+                groundTruth.indices.emplace_back(ib);
+                groundTruth.indices.emplace_back(id);
+                groundTruth.indices.emplace_back(ic);
+            }
+        }
+
+        log("Heightmap", "Ground truth mesh generated with %zu vertices and %zu triangles in %.2f ms\n",
+            groundTruth.vertices.size(),
+            groundTruth.indices.size() / 3,
+            timer.milliseconds());
+
+        SimpleMesh simplifiedMesh = quadricMeshSimplification(groundTruth,
+                                                              vertices * 2);
+
+        std::vector<float2> normalizedPos;
+        std::vector<float>  heights;
+        std::vector<float2> uvs;
+        std::vector<uint>   indices;
+
+        float2 minUV = float2(area.min) / float2(heightmap->size);
+        float2 maxUV = float2(area.max) / float2(heightmap->size);
+
+        heightNormalization = 1.f / heightNormalization;
+
+        for (auto &v : simplifiedMesh.vertices)
+        {
+            normalizedPos.emplace_back();
+            auto &pos = normalizedPos.back();
+            pos = float2(v);
+            heights.emplace_back(v.z * heightNormalization);
+            uvs.emplace_back(lerp(minUV, maxUV, pos));
+        }
+
+        indices = std::move(simplifiedMesh.indices);
+
+        for (uint i = 0; i < indices.size(); i += 3)
+        {
+            uint a = indices[i];
+            uint b = indices[i + 1];
+            uint c = indices[i + 2];
+
+            float2 pa = normalizedPos[a];
+            float2 pb = normalizedPos[b];
+            float2 pc = normalizedPos[c];
+
+            bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
+
+            if (!ccw)
+                std::swap(indices[i + 1], indices[i + 2]);
+        }
+
+        log("Heightmap", "Generated quadric simplified triangulation with %zu vertices and %zu triangles in %.2f ms\n",
+            normalizedPos.size(),
+            indices.size() / 3,
+            timer.milliseconds());
+
+        VertexAttribute attrs[] =
+        {
+            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
+            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
+            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uvs) },
+        };
+
+        this->mesh = Mesh::generate(device, attrs, indices);
+    }
+#endif
+};
+
+struct TerrainRenderer
 {
     using DE = DirectedEdge<Empty, int3>;
 
@@ -356,13 +1031,13 @@ struct HeightmapRenderer
     ComputePipeline computeNormalMapCS;
     ComputePipeline shadowFiltering;
     Mesh mesh;
+    Terrain *terrain = nullptr;
     Heightmap *heightmap = nullptr;
-    ImageData heightData;
+    Rect area;
     float2 minWorld;
     float2 maxWorld;
     float worldHeight   = 0;
     float worldDiameter = 0;
-    Rect area;
     float  maxErrorCoeff = .05f;
     VisualizationMode mode = VisualizationMode::WireframeHeight;
     TextureSRV cpuError;
@@ -377,14 +1052,13 @@ struct HeightmapRenderer
 
     std::vector<info::ShaderDefine> lightingDefines;
 
-    HeightmapRenderer() = default;
-    HeightmapRenderer(Device device, Heightmap &hmap, uint2 resolution)
+    TerrainRenderer() = default;
+    TerrainRenderer(Device device, Terrain &terrain, uint2 resolution)
     {
         this->device = device;
-        heightmap = &hmap;
-        heightData = heightmap->height.imageData();
-
-        uniformGrid(Rect::withSize(heightmap->size), 100);
+        this->terrain = &terrain;
+        this->heightmap = terrain.heightmap;
+        this->mesh = terrain.mesh;
 
         renderTerrain  = device.createGraphicsPipeline(
             GraphicsPipeline::Info()
@@ -683,272 +1357,12 @@ struct HeightmapRenderer
         }
     }
 
-    template <typename DEMesh>
-    void gpuMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
-    {
-        auto verts    = mesh.vertices();
-        auto numVerts = verts.size();
-        std::vector<float2> normalizedPos(numVerts);
-        std::vector<float>  height(numVerts);
-        std::vector<float2> uv(numVerts);
-
-        float2 dims = float2(heightmap->size);
-
-        for (uint i = 0; i < numVerts; ++i)
-        {
-            auto &v          = verts[i];
-            uv[i]            = float2(v.pos) / dims;
-            normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), uv[i]);
-            height[i]        = heightData.pixel<float>(uint2(v.pos));
-        }
-
-        std::vector<uint> indices;
-        auto deIndices = mesh.triangleIndices();
-        indices.reserve(deIndices.size());
-        XOR_ASSERT(deIndices.size() % 3 == 0, "Unexpected amount of indices");
-        for (size_t i = 0; i < deIndices.size(); i += 3)
-        {
-            uint a = deIndices[i];
-            uint b = deIndices[i + 1];
-            uint c = deIndices[i + 2];
-
-            // Negate CCW test because the positions are in UV coordinates,
-            // which is left handed because +Y goes down
-            bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
-
-            if (ccw)
-            {
-                indices.emplace_back(a);
-                indices.emplace_back(b);
-                indices.emplace_back(c);
-            }
-            else
-            {
-                indices.emplace_back(a);
-                indices.emplace_back(c);
-                indices.emplace_back(b);
-            }
-        }
-
-        VertexAttribute attrs[] =
-        {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
-            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(height) },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
-        };
-
-        this->mesh = Mesh::generate(device, attrs, indices);
-    }
-
-    template <typename DEMesh>
-    void tipsifyMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
-    {
-        Timer timer;
-
-        auto numVerts = mesh.numVertices();
-
-        int seenVertexCounter = 0;
-        std::vector<int> newVertexIndices;
-        std::vector<int> vertexForNewIndex(numVerts);
-        auto newVertexIdx = [&] (int v)
-        {
-            if (newVertexIndices[v] < 0)
-            {
-                int v_ = seenVertexCounter;
-                ++seenVertexCounter;
-                newVertexIndices[v] = v_;
-                vertexForNewIndex[v_] = v;
-                return v_;
-            }
-            else
-            {
-                return newVertexIndices[v];
-            }
-        };
-
-        std::vector<int> recentVertices;
-        std::vector<int> liveTriangles;
-        std::vector<uint8_t> triangleEmitted;
-        std::vector<uint> indices;
-
-        constexpr int VertexCacheSize = 16;
-        int vertexCacheTime = 0;
-        std::vector<int> vertexCacheTimestamps;
-
-        auto processVertex = [&] (int v)
-        {
-            int &age = vertexCacheTimestamps[v];
-            if (vertexCacheTime - age >= VertexCacheSize)
-            {
-                // Not in cache
-                age = vertexCacheTime;
-                ++vertexCacheTime;
-                recentVertices.emplace_back(v);
-            }
-        };
-
-        {
-            int arbitraryVertex = 0;
-
-            int numVerts = mesh.numVertices();
-
-            newVertexIndices.resize(numVerts, -1);
-            liveTriangles.resize(numVerts);
-            vertexCacheTimestamps.resize(numVerts, -2 * VertexCacheSize);
-            triangleEmitted.resize(mesh.numTriangles());
-            indices.reserve(mesh.numTriangles() * 3);
-
-            for (int v = 0; v < numVerts; ++v)
-            {
-                mesh.vertexForEachTriangle(v, [&](int t)
-                {
-                    ++liveTriangles[v];
-                });
-            }
-
-            int fanningVertex = -1;
-            for (;;)
-            {
-                // If there is no valid vertex, pick the next vertex with some
-                // triangles left.
-                if (fanningVertex < 0)
-                {
-                    while (arbitraryVertex < numVerts)
-                    {
-                        if (liveTriangles[arbitraryVertex] > 0)
-                        {
-                            fanningVertex = arbitraryVertex;
-                            break;
-                        }
-
-                        ++arbitraryVertex;
-                    }
-
-                    if (arbitraryVertex >= numVerts)
-                        break;
-                }
-
-                XOR_ASSERT(fanningVertex >= 0, "No valid vertex");
-
-                // Emit all triangles of the vertex
-                mesh.vertexForEachTriangle(fanningVertex, [&] (int t)
-                {
-                    if (triangleEmitted[t])
-                        return;
-
-                    int3 vs = mesh.triangleVertices(t);
-
-                    for (int v : vs.span())
-                    {
-                        XOR_ASSERT(liveTriangles[v] > 0, "Trying to reduce triangles from a fully processed vertex");
-                        --liveTriangles[v];
-                    }
-
-                    processVertex(vs.x);
-                    processVertex(vs.y);
-                    processVertex(vs.z);
-
-                    indices.emplace_back(newVertexIdx(vs.x));
-                    indices.emplace_back(newVertexIdx(vs.y));
-                    indices.emplace_back(newVertexIdx(vs.z));
-
-                    triangleEmitted[t] = 1;
-                });
-
-                int oldestAge = -1;
-                int nextVertex = -1;
-                mesh.vertexForEachAdjacentVertex(fanningVertex, [&] (int v)
-                {
-                    int live = liveTriangles[v];
-                    if (live == 0)
-                        return;
-
-                    int worstCaseVerts = live * 2;
-                    int age = vertexCacheTime - vertexCacheTimestamps[v];
-
-                    if (age + worstCaseVerts < VertexCacheSize)
-                    {
-                        // Vertex would still be in cache after emitting its triangles,
-                        // and is thus valid.
-                        if (oldestAge < age)
-                        {
-                            oldestAge = age;
-                            nextVertex = v;
-                        }
-                    }
-                });
-
-                // If we don't have a valid vertex from the adjacent vertices,
-                // try the recently processed vertices
-                if (nextVertex < 0)
-                {
-                    while (!recentVertices.empty())
-                    {
-                        int v = recentVertices.back();
-                        recentVertices.pop_back();
-
-                        if (liveTriangles[v] > 0)
-                        {
-                            nextVertex = v;
-                            break;
-                        }
-                    }
-                }
-
-                fanningVertex = nextVertex;
-            }
-        }
-
-        std::vector<float2> normalizedPos(numVerts);
-        std::vector<float>  height(numVerts);
-        std::vector<float2> uv(numVerts);
-
-        float2 dims = float2(heightmap->size);
-
-        auto verts = mesh.vertices();
-
-        for (int i = 0; i < numVerts; ++i)
-        {
-            auto &v          = verts[vertexForNewIndex[i]];
-            uv[i]            = float2(v.pos) / dims;
-            normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), uv[i]);
-            height[i]        = heightData.pixel<float>(uint2(v.pos));
-        }
-
-        XOR_ASSERT(indices.size() % 3 == 0, "Unexpected amount of indices");
-        for (size_t i = 0; i < indices.size(); i += 3)
-        {
-            uint a = indices[i];
-            uint b = indices[i + 1];
-            uint c = indices[i + 2];
-
-            // Negate CCW test because the positions are in UV coordinates,
-            // which is left handed because +Y goes down
-            bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
-
-            if (!ccw)
-                std::swap(indices[i + 1], indices[i + 2]);
-        }
-
-        VertexAttribute attrs[] =
-        {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
-            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(height) },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
-        };
-
-        this->mesh = Mesh::generate(device, attrs, indices);
-
-        log("Heightmap", "Generated tipsified mesh with %d vertices and %d triangles in %.2f ms\n",
-            mesh.numVertices(),
-            mesh.numTriangles(),
-            timer.milliseconds());
-    }
-
     ErrorMetrics calculateMeshError()
     {
         return ErrorMetrics {};
         Timer timer;
+
+        auto heightData = terrain->heightData;
 
         RWImageData error(uint2(area.size()), DXGI_FORMAT_R32_FLOAT);
         error.ownedData.fill(0);
@@ -1032,25 +1446,6 @@ struct HeightmapRenderer
         return metrics;
     }
 
-    using Vert = Vector<int64_t, 3>;
-
-    Vert vertex(int2 coords) const
-    {
-        float height = heightData.pixel<float>(uint2(coords));
-        return Vert(coords.x, coords.y, int(height * float(0x1000)));
-    }
-
-    Vert vertex(float2 uv) const
-    {
-        return vertex(int2(heightData.unnormalized(uv)));
-    }
-
-    Vert vertex(Rect area, float2 uv)
-    {
-        float2 unnormalized = lerp(float2(area.min), float2(area.max), uv);
-        return vertex(int2(unnormalized));
-    }
-
     void setBounds(Rect area)
     {
         this->area = area;
@@ -1063,383 +1458,6 @@ struct HeightmapRenderer
         float2 worldSize = maxWorld - minWorld;
         worldHeight   = heightmap->maxHeight - heightmap->minHeight;
         worldDiameter = sqrt(worldSize.lengthSqr() + worldHeight * worldHeight);
-    }
-
-    void uniformGrid(Rect area, uint quadsPerDim)
-    {
-        Timer t;
-
-        area.max = min(area.max, heightmap->size);
-        if (all(area.size() < int2(128)))
-            area.min = area.max - 128;
-
-        int2 sz        = int2(area.size());
-        float2 szWorld = float2(sz) * heightmap->texelSize;
-
-        int minDim = std::min(sz.x, sz.y);
-        int vertexDistance = minDim / static_cast<int>(quadsPerDim);
-        vertexDistance = std::max(1, vertexDistance);
-
-        int2 verts = sz / vertexDistance;
-        float2 fVerts = float2(verts);
-        float2 fRes   = float2(sz);
-        minWorld = -szWorld / 2.f;
-        maxWorld = minWorld + szWorld;
-
-        auto numVerts   = (verts.x + 1) * (verts.y + 1);
-
-        std::vector<float2> normalizedPos;
-        std::vector<float>  heights;
-        std::vector<float2> uvs;
-        std::vector<uint>   indices;
-
-        normalizedPos.reserve(numVerts);
-        uvs.reserve(numVerts);
-        heights.reserve(numVerts);
-        indices.reserve(verts.x * verts.y * (3 * 2));
-
-        float2 invSize = 1.f / float2(heightmap->size);
-
-        for (int y = 0; y <= verts.y; ++y)
-        {
-            for (int x = 0; x <= verts.x; ++x)
-            {
-                int2 vertexGridCoords = int2(x, y);
-                int2 texCoords = min(vertexGridCoords * vertexDistance + area.min, heightmap->size - 1);
-                float2 uv = float2(vertexGridCoords * vertexDistance) / fRes;
-
-                float height = heightData.pixel<float>(uint2(texCoords));
-
-                normalizedPos.emplace_back(uv);
-                heights.emplace_back(height);
-                uvs.emplace_back((float2(texCoords) + 0.5f) * invSize);
-            }
-        }
-
-        int vertsPerRow = verts.y + 1;
-        for (int y = 0; y < verts.y; ++y)
-        {
-            for (int x = 0; x < verts.x; ++x)
-            {
-                uint ul = y * vertsPerRow + x;
-                uint ur = ul + 1;
-                uint dl = ul + vertsPerRow;
-                uint dr = dl + 1;
-
-                indices.emplace_back(ul);
-                indices.emplace_back(dl);
-                indices.emplace_back(ur);
-                indices.emplace_back(dl);
-                indices.emplace_back(dr);
-                indices.emplace_back(ur);
-            }
-        }
-
-        log("HeightmapRenderer", "Generated uniform grid mesh with %zu vertices and %zu indices in %.2f ms\n",
-            normalizedPos.size(),
-            indices.size(),
-            t.milliseconds());
-
-        VertexAttribute attrs[] =
-        {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
-            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uvs) },
-        };
-
-        this->mesh = Mesh::generate(device, attrs, indices);
-    }
-
-    void incrementalMaxError(Rect area, uint vertices, bool tipsify = true)
-    {
-        Timer timer;
-
-        struct TriangleError
-        {
-            int2 coords;
-            float error = -1;
-        };
-        struct LargestError
-        {
-            int triangle = -1;
-            float error  = std::numeric_limits<float>::max();
-
-            LargestError(int tri = -1)
-                : triangle(tri)
-            {}
-            LargestError(int tri, float error)
-                : triangle(tri)
-                , error(error)
-            {}
-
-            explicit operator bool() const { return error != std::numeric_limits<float>::max(); }
-
-            bool operator<(const LargestError &e) const { return error < e.error; }
-        };
-
-        using DErr = DirectedEdge<TriangleError, Vert>;
-        DErr mesh;
-
-        Vert minBound = vertex(area, {0, 0});
-        Vert maxBound = vertex(area, {1, 1});
-
-        std::mt19937 gen(95832);
-
-        std::priority_queue<LargestError> largestError;
-        std::vector<int> newTriangles;
-
-#if 0
-        BowyerWatson<DErr> delaunay(mesh);
-#else
-        DelaunayFlip<DErr> delaunay(mesh);
-#endif
-        delaunay.superTriangle(minBound, maxBound);
-
-        {
-            int v0 = delaunay.insertVertex(vertex(area, { 1, 0 }));
-            int v1 = delaunay.insertVertex(vertex(area, { 0, 1 }));
-            int v2 = delaunay.insertVertex(vertex(area, { 0, 0 }));
-            int v3 = delaunay.insertVertex(vertex(area, { 1, 1 }));
-
-            for (int v : { v0, v1, v2, v3 })
-            {
-                mesh.vertexForEachTriangle(v, [&](int t)
-                {
-                    largestError.emplace(t);
-                });
-            }
-        }
-
-        XOR_ASSERT(!largestError.empty(), "No valid triangles to subdivide");
-
-        std::unordered_set<int2, PodHash, PodEqual> usedVertices;
-
-        // Subtract 3 from the vertex count to account for the supertriangle
-        while (mesh.numVertices() - 3 < static_cast<int>(vertices))
-        {
-            auto largest = largestError.top();
-            largestError.pop();
-            int t = largest.triangle;
-
-            if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t))
-            {
-                continue;
-            }
-
-            auto &triData = mesh.T(t);
-            int3 verts  = mesh.triangleVertices(t);
-            Vert v0     = mesh.V(verts.x).pos;
-            Vert v1     = mesh.V(verts.y).pos;
-            Vert v2     = mesh.V(verts.z).pos;
-
-            // If the error isn't known, estimate it
-            if (!largest.error || largest.error != triData.error)
-            {
-                int2 largestErrorCoords;
-                float largestErrorFound = -1;
-
-                // InteriorSamples == 1
-                // [Heightmap]: L2: 4.532414e+05, L1: 6.876323e+08, L_inf: 7.701329e+02, Calculated for 152 triangles in 544.34 ms
-                // [Heightmap]: L2: 1.928656e+05, L1: 2.663657e+08, L_inf: 7.379893e+02, Calculated for 1129 triangles in 556.19 ms
-                // [Heightmap]: L2: 8.425315e+04, L1: 1.159352e+08, L_inf: 6.299168e+02, Calculated for 8413 triangles in 568.50 ms
-
-                // InteriorSamples == 10
-                // [Heightmap]: L2: 3.808483e+05, L1: 6.012014e+08, L_inf: 8.759630e+02, Calculated for 151 triangles in 544.98 ms
-                // [Heightmap]: L2: 1.611922e+05, L1: 2.331848e+08, L_inf: 6.007446e+02, Calculated for 1123 triangles in 529.35 ms
-                // [Heightmap]: L2: 6.603029e+04, L1: 1.004696e+08, L_inf: 3.462271e+02, Calculated for 8391 triangles in 560.90 ms
-
-                // InteriorSamples == 100
-                // [Heightmap]: L2: 4.335434e+05, L1: 6.780714e+08, L_inf: 7.855012e+02, Calculated for 151 triangles in 549.67 ms
-                // [Heightmap]: L2: 1.692659e+05, L1: 2.508276e+08, L_inf: 3.902838e+02, Calculated for 1114 triangles in 557.31 ms
-                // [Heightmap]: L2: 6.706991e+04, L1: 1.014288e+08, L_inf: 1.513256e+02, Calculated for 8383 triangles in 570.01 ms
-                constexpr int InteriorSamples = 30;
-                constexpr int EdgeSamples     = 0;
-
-                auto errorAt = [&] (float3 bary)
-                {
-                    float3 interpolated = interpolateBarycentric(float3(v0), float3(v1), float3(v2), bary);
-                    Vert point          = vertex(int2(interpolated));
-
-                    float error = abs(float(point.z) - interpolated.z);
-                    if (isPointInsideTriangleUnknownWinding(v0.vec2(), v1.vec2(), v2.vec2(), point.vec2())
-                        && !usedVertices.count(int2(point))
-                        && error > largestErrorFound)
-                    {
-                        largestErrorCoords = int2(point);
-                        largestErrorFound  = error;
-                    }
-                };
-
-                for (int i = 0; i < InteriorSamples; ++i)
-                {
-                    float3 bary = uniformBarycentricGen(gen);
-                    errorAt(bary);
-                }
-
-                for (int i = 0; i < EdgeSamples; ++i)
-                {
-                    float x = std::uniform_real_distribution<float>()(gen);
-                    int e = std::uniform_int_distribution<int>(0, 2)(gen);
-                    float3 bary(0, x, 1 - x);
-                    std::swap(bary[0], bary[e]);
-                    errorAt(bary);
-                }
-
-                triData.coords = largestErrorCoords;
-                triData.error  = largestErrorFound;
-
-                largestError.emplace(t, largestErrorFound);
-            }
-            // The error is known, and it was the largest, so insert a new vertex
-            // in that position.
-            else
-            {
-                Vert newVertex = vertex(triData.coords);
-                newTriangles.clear();
-                delaunay.insertVertex(t, newVertex, &newTriangles);
-                usedVertices.emplace(int2(newVertex));
-
-                for (int nt : newTriangles)
-                    largestError.emplace(nt);
-            }
-        }
-
-        delaunay.removeSuperTriangle();
-
-        mesh.vertexRemoveUnconnected();
-
-        log("Heightmap", "Generated incremental max error triangulation with %d vertices and %d triangles in %.2f ms\n",
-            mesh.numValidVertices(),
-            mesh.numValidTriangles(),
-            timer.milliseconds());
-
-        setBounds(area);
-
-        if (tipsify)
-        {
-            tipsifyMesh(mesh,
-                        float2(area.min) / float2(heightmap->size),
-                        float2(area.max) / float2(heightmap->size));
-        }
-        else
-        {
-            gpuMesh(mesh,
-                    float2(area.min) / float2(heightmap->size),
-                    float2(area.max) / float2(heightmap->size));
-        }
-    }
-
-    void quadricSimplification(Rect area, uint vertices, bool tipsify = true)
-    {
-        Timer timer;
-
-        setBounds(area);
-
-        float2 areaSize = maxWorld - minWorld;
-
-        float heightNormalization = 1.f / std::max(areaSize.x, areaSize.y);
-
-        SimpleMesh groundTruth;
-
-        int2 size = int2(area.size());
-        float2 sizeF = float2(size);
-
-        for (int y = area.min.y; y <= area.max.y; ++y)
-        {
-            for (int x = area.min.x; x <= area.max.x; ++x)
-            {
-                float z = heightData.pixel<float>(int2(x, y));
-                float xNorm = static_cast<float>(x - area.min.x) / sizeF.x;
-                float yNorm = static_cast<float>(y - area.min.y) / sizeF.y;
-                float zNorm = z * heightNormalization;
-
-                groundTruth.vertices.emplace_back(xNorm, yNorm, zNorm);
-            }
-        }
-
-        int vertsPerRow = size.x + 1;
-        for (int y = 0; y < size.y; ++y)
-        {
-            for (int x = 0; x < size.x; ++x)
-            {
-                int2 a = int2(x,     y);
-                int2 b = int2(x,     y + 1);
-                int2 c = int2(x + 1, y);
-                int2 d = int2(x + 1, y + 1);
-
-                int ia = a.y * vertsPerRow + a.x;
-                int ib = b.y * vertsPerRow + b.x;
-                int ic = c.y * vertsPerRow + c.x;
-                int id = d.y * vertsPerRow + d.x;
-
-                groundTruth.indices.emplace_back(ia);
-                groundTruth.indices.emplace_back(ib);
-                groundTruth.indices.emplace_back(ic);
-
-                groundTruth.indices.emplace_back(ib);
-                groundTruth.indices.emplace_back(id);
-                groundTruth.indices.emplace_back(ic);
-            }
-        }
-
-        log("Heightmap", "Ground truth mesh generated with %zu vertices and %zu triangles in %.2f ms\n",
-            groundTruth.vertices.size(),
-            groundTruth.indices.size() / 3,
-            timer.milliseconds());
-
-        SimpleMesh simplifiedMesh = quadricMeshSimplification(groundTruth,
-                                                              vertices * 2);
-
-        std::vector<float2> normalizedPos;
-        std::vector<float>  heights;
-        std::vector<float2> uvs;
-        std::vector<uint>   indices;
-
-        float2 minUV = float2(area.min) / float2(heightmap->size);
-        float2 maxUV = float2(area.max) / float2(heightmap->size);
-
-        heightNormalization = 1.f / heightNormalization;
-
-        for (auto &v : simplifiedMesh.vertices)
-        {
-            normalizedPos.emplace_back();
-            auto &pos = normalizedPos.back();
-            pos = float2(v);
-            heights.emplace_back(v.z * heightNormalization);
-            uvs.emplace_back(lerp(minUV, maxUV, pos));
-        }
-
-        indices = std::move(simplifiedMesh.indices);
-
-        for (uint i = 0; i < indices.size(); i += 3)
-        {
-            uint a = indices[i];
-            uint b = indices[i + 1];
-            uint c = indices[i + 2];
-
-            float2 pa = normalizedPos[a];
-            float2 pb = normalizedPos[b];
-            float2 pc = normalizedPos[c];
-
-            bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
-
-            if (!ccw)
-                std::swap(indices[i + 1], indices[i + 2]);
-        }
-
-        log("Heightmap", "Generated quadric simplified triangulation with %zu vertices and %zu triangles in %.2f ms\n",
-            normalizedPos.size(),
-            indices.size() / 3,
-            timer.milliseconds());
-
-        VertexAttribute attrs[] =
-        {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
-            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uvs) },
-        };
-
-        this->mesh = Mesh::generate(device, attrs, indices);
     }
 
     void renderShadowMap(CommandList &cmd, const RenderTerrain::Constants &constants)
@@ -1734,7 +1752,7 @@ struct HeightmapRenderer
     }
 };
 
-class Terrain : public Window
+class TerrainRendering : public Window
 {
     Xor xor;
     Device device;
@@ -1761,9 +1779,10 @@ class Terrain : public Window
     bool wireframe = false;
     bool largeVisualization = false;
 
-    HeightmapRenderer heightmapRenderer;
+    Terrain terrain;
+    TerrainRenderer terrainRenderer;
 public:
-    Terrain()
+    TerrainRendering()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
 #if 0
         , xor(Xor::DebugLayer::GPUBasedValidation)
@@ -1791,7 +1810,8 @@ public:
         areaSize  = 4096;
 #endif
 
-        heightmapRenderer = HeightmapRenderer(device, heightmap, swapChain.backbuffer().texture()->size);
+        terrain = Terrain(device, heightmap);
+        terrainRenderer = TerrainRenderer(device, terrain, swapChain.backbuffer().texture()->size);
 
         updateTerrain();
 
@@ -1818,17 +1838,19 @@ public:
         {
         case TriangulationMode::UniformGrid:
         default:
-            heightmapRenderer.uniformGrid(area, quadsPerDim());
+            terrain.uniformGrid(area, quadsPerDim());
             break;
         case TriangulationMode::IncMaxError:
-            heightmapRenderer.incrementalMaxError(area, vertexCount(), tipsifyMesh);
+            terrain.incrementalMaxError(area, vertexCount(), tipsifyMesh);
             break;
         case TriangulationMode::Quadric:
-            heightmapRenderer.quadricSimplification(area, vertexCount(), tipsifyMesh);
+            // terrainRenderer.quadricSimplification(area, vertexCount(), tipsifyMesh);
             break;
         }
 
-        heightmapRenderer.calculateMeshError();
+        terrainRenderer.mesh = terrain.mesh;
+        terrainRenderer.setBounds(area);
+        terrainRenderer.calculateMeshError();
 
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
 
@@ -1840,7 +1862,7 @@ public:
 
             Timer aoTimer;
             auto cmd = device.graphicsCommandList();
-            heightmapRenderer.computeAmbientOcclusion(cmd, swapChain, waitForKey);
+            terrainRenderer.computeAmbientOcclusion(cmd, swapChain, waitForKey);
             device.execute(cmd);
             device.waitUntilCompleted(cmd.number());
 
@@ -1857,12 +1879,16 @@ public:
         std::vector<ErrorMetrics> uni(N);
         std::vector<ErrorMetrics> inc(N);
 
+        terrainRenderer.setBounds(area);
         for (int d = 2; d < N; ++d)
         {
-            heightmapRenderer.uniformGrid(area, quadsPerDim(d));
-            uni[d] = heightmapRenderer.calculateMeshError();
-            heightmapRenderer.incrementalMaxError(area, vertexCount(d), true);
-            inc[d] = heightmapRenderer.calculateMeshError();
+            terrain.uniformGrid(area, quadsPerDim(d));
+            terrainRenderer.mesh = terrain.mesh;
+            uni[d] = terrainRenderer.calculateMeshError();
+
+            terrain.incrementalMaxError(area, vertexCount(d), true);
+            terrainRenderer.mesh = terrain.mesh;
+            inc[d] = terrainRenderer.calculateMeshError();
         }
 
         print("%20s;%20s;%20s;%20s\n", "Vertices", "Uniform", "IncrementalMaxError", "Ratio");
@@ -1928,7 +1954,7 @@ public:
             ImGui::Separator();
 
             ImGui::Combo("Visualize triangulation",
-                         reinterpret_cast<int *>(&heightmapRenderer.mode),
+                         reinterpret_cast<int *>(&terrainRenderer.mode),
                          "Disabled\0"
                          "WireframeHeight\0"
                          "OnlyHeight\0"
@@ -1936,7 +1962,7 @@ public:
                          "OnlyError\0"
                          "CPUError\0");
             ImGui::Checkbox("Large visualization", &largeVisualization);
-            ImGui::SliderFloat("Error magnitude", &heightmapRenderer.maxErrorCoeff, 0, .25f);
+            ImGui::SliderFloat("Error magnitude", &terrainRenderer.maxErrorCoeff, 0, .25f);
 
             ImGui::Separator();
 
@@ -1948,24 +1974,18 @@ public:
         }
         ImGui::End();
 
-        if (0) {
-            auto area = Rect::withSize(areaStart, areaSize);
-            static int V = 4;
-            heightmapRenderer.incrementalMaxError(area, V++);
-        }
-
         {
             auto p = cmd.profilingEvent("Clear");
             cmd.clearRTV(backbuffer, float4(0, 0, 0, 1));
             cmd.clearDSV(depthBuffer, 0);
         }
 
-        heightmapRenderer.render(cmd, 
-                                 backbuffer, depthBuffer,
-                                 Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov,
-                                                               1.f, heightmap.worldSize.x * 1.5f)
-                                 * camera.viewMatrix(),
-                                 wireframe);
+        terrainRenderer.render(cmd,
+                               backbuffer, depthBuffer,
+                               Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov,
+                                                             1.f, heightmap.worldSize.x * 1.5f)
+                               * camera.viewMatrix(),
+                               wireframe);
 
         cmd.setRenderTargets(backbuffer, depthBuffer);
 
@@ -1977,9 +1997,9 @@ public:
             else
                 min = max - 300;
 
-            heightmapRenderer.visualize(cmd,
-                                        remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), min),
-                                        remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), max));
+            terrainRenderer.visualize(cmd,
+                                      remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), min),
+                                      remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), max));
         }
 
         cmd.setRenderTargets();
@@ -2001,7 +2021,7 @@ public:
 
             blit.blit(cmd,
                       backbuffer, Rect::withSize(int2(backbuffer.texture()->size - 300).s_x0, 300),
-                      heightmapRenderer.normalMap.srv, Rect::withSize(areaStart, areaSize),
+                      terrainRenderer.normalMap.srv, Rect::withSize(areaStart, areaSize),
                       float4(0.5f, 0.5f, 1, 1), float4(0.5f, 0.5f, 0, 1));
         }
 
@@ -2011,7 +2031,7 @@ public:
 
             blit.blit(cmd,
                       backbuffer, Rect(int2(200), int2(800)),
-                      heightmapRenderer.shadowMap.srv);
+                      terrainRenderer.shadowMap.srv);
         }
 
 #if 0
@@ -2035,5 +2055,5 @@ public:
 
 int main(int argc, const char *argv[])
 {
-    return Terrain().run();
+    return TerrainRendering().run();
 }
