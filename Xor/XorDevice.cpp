@@ -1206,7 +1206,7 @@ namespace xor
 
     void Device::waitUntilDrained()
     {
-        S().progress.waitUntilDrained();
+        S().waitUntilDrained();
     }
 
     backend::ShaderLoader & Device::shaderLoader()

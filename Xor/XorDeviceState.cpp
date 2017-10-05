@@ -110,11 +110,31 @@ namespace xor
                     &desc,
                     nullBufferUAV.staging);
             }
+
+            XOR_CHECK_HR(device->CreateFence(0, D3D12_FENCE_FLAG_NONE,
+                                             __uuidof(ID3D12Fence),
+                                             &drainFence));
+        }
+
+        void DeviceState::waitUntilDrained()
+        {
+            // Signal a fence, and then, without executing anything in between,
+            // wait until the fence is done. This guarantees that the GPU has
+            // completed everything that was previously executed on the queue.
+            auto currentValue = drainFence->GetCompletedValue();
+            auto newValue = currentValue + 1;
+
+            graphicsQueue->Signal(drainFence.Get(), newValue);
+
+            do
+            {
+                progress.retireCommandLists();
+            } while (drainFence->GetCompletedValue() < newValue);
         }
 
         DeviceState::~DeviceState()
         {
-            progress.waitUntilDrained();
+            waitUntilDrained();
 #if 0
             ComPtr<ID3D12DebugDevice> debug;
             XOR_CHECK_HR(device.As(&debug));

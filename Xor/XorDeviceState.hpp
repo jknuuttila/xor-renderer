@@ -480,6 +480,8 @@ namespace xor
             bool debugPrintEnabled = true;
             uint4 debugFeedbackValue;
 
+            ComPtr<ID3D12Fence> drainFence;
+
             DeviceState(Adapter adapter_,
                         ComPtr<ID3D12Device> pDevice,
                         std::shared_ptr<backend::ShaderLoader> pShaderLoader);
@@ -503,6 +505,8 @@ namespace xor
             }
 
             ID3D12Device *operator->() { return device.Get(); }
+
+            void waitUntilDrained();
         };
     }
 }
