@@ -15,10 +15,10 @@ XOR_CBUFFER(Constants, 0)
     float shadowHistoryBlend;
 };
 
-XOR_UAV(RWTexture2D<float>, shadowOut,     0)
-XOR_SRV(Texture2D<float>,   shadowIn,      0)
-XOR_SRV(Texture2D<float>,   shadowHistory, 1)
-XOR_SRV(Texture2D<float2>,  motionVectors, 2)
+XOR_TEXTURE_UAV(RWTexture2D<float>, shadowOut,     0)
+XOR_TEXTURE_SRV(Texture2D<float>,   shadowIn,      0)
+XOR_TEXTURE_SRV(Texture2D<float>,   shadowHistory, 1)
+XOR_TEXTURE_SRV(Texture2D<float2>,  motionVectors, 2)
 
 XOR_SAMPLER_BILINEAR(bilinearSampler);
 

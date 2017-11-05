@@ -9,7 +9,7 @@ XOR_CBUFFER(Constants, 0)
     float4x4 model;
 };
 
-XOR_SRV(Texture2D<float4>, tex, 0)
+XOR_TEXTURE_SRV(Texture2D<float4>, tex, 0)
 
 XOR_SAMPLER_BILINEAR(bilinear)
 

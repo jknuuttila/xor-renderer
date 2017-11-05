@@ -16,9 +16,9 @@ XOR_CBUFFER(Constants, 0)
     uint size;
 };
 
-XOR_SRV(ByteAddressBuffer,   input,         0)
-XOR_UAV(RWByteAddressBuffer, output,        0)
-XOR_UAV(RWByteAddressBuffer, outputCounter, 1)
+XOR_BUFFER_SRV(ByteAddressBuffer,   input,         0)
+XOR_BUFFER_UAV(RWByteAddressBuffer, output,        0)
+XOR_BUFFER_UAV(RWByteAddressBuffer, outputCounter, 1)
 
 XOR_THREADGROUP_SIZE_2D(LB_THREADGROUP_SIZE, 1)
 

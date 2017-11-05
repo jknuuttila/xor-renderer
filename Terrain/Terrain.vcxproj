@@ -149,6 +149,7 @@
     <ClInclude Include="RenderTerrain.sig.h" />
     <ClInclude Include="RenderTerrainAO.sig.h" />
     <ClInclude Include="ResolveTerrainAO.sig.h" />
+    <ClInclude Include="TerrainPatchConstants.h" />
     <ClInclude Include="TerrainShadowFiltering.sig.h">
       <SubType>
       </SubType>

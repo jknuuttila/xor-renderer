@@ -17,7 +17,7 @@ XOR_CBUFFER(Constants, 0)
     float mip;
 };
 
-XOR_SRV(Texture2D<float4>, src, 0)
+XOR_TEXTURE_SRV(Texture2D<float4>, src, 0)
 
 XOR_SAMPLER_POINT(pointSampler)
 

@@ -14,8 +14,8 @@ XOR_CBUFFER(Constants, 0)
 	float maxError;
 };
 
-XOR_SRV(Texture2D<float>, heightMap, 0)
-XOR_SRV(Texture2D<float>, cpuCalculatedError, 1)
+XOR_TEXTURE_SRV(Texture2D<float>, heightMap, 0)
+XOR_TEXTURE_SRV(Texture2D<float>, cpuCalculatedError, 1)
 
 XOR_SAMPLER_POINT(pointSampler)
 

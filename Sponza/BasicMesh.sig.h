@@ -25,7 +25,7 @@ XOR_CBUFFER(Constants, 0)
     MaterialProperties materialProperties;
 };
 
-XOR_SRV(Texture2D<float4>, albedoTex, 0)
+XOR_TEXTURE_SRV(Texture2D<float4>, albedoTex, 0)
 
 XOR_SAMPLER_BILINEAR(bilinear)
 

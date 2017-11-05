@@ -11,7 +11,7 @@ XOR_CBUFFER(Constants, 0)
     float2 reciprocalResolution;
 };
 
-XOR_SRV(Texture2D<float>, tex, 0)
+XOR_TEXTURE_SRV(Texture2D<float>, tex, 0)
 
 XOR_SAMPLER_POINT(pointSampler)
 

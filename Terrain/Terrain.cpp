@@ -353,6 +353,12 @@ struct Terrain
     ImageData heightData;
     Rect area;
     Mesh mesh;
+    TextureSRV cpuError;
+
+    float2 worldMin;
+    float2 worldMax;
+    float worldHeight   = 0;
+    float worldDiameter = 0;
 
     Terrain() = default;
     Terrain(Device device, Heightmap &heightmap)
@@ -663,8 +669,8 @@ struct Terrain
         int2 verts = sz / vertexDistance;
         float2 fVerts = float2(verts);
         float2 fRes   = float2(sz);
-        float2 minWorld = -szWorld / 2.f;
-        float2 maxWorld = minWorld + szWorld;
+        float2 worldMin = -szWorld / 2.f;
+        float2 worldMax = worldMin + szWorld;
 
         auto numVerts   = (verts.x + 1) * (verts.y + 1);
 
@@ -714,6 +720,8 @@ struct Terrain
                 indices.emplace_back(ur);
             }
         }
+
+        setBounds(area);
 
         log("HeightmapRenderer", "Generated uniform grid mesh with %zu vertices and %zu indices in %.2f ms\n",
             normalizedPos.size(),
@@ -888,6 +896,8 @@ struct Terrain
 
         mesh.vertexRemoveUnconnected();
 
+        setBounds(area);
+
         log("Heightmap", "Generated incremental max error triangulation with %d vertices and %d triangles in %.2f ms\n",
             mesh.numValidVertices(),
             mesh.numValidTriangles(),
@@ -912,7 +922,7 @@ struct Terrain
     {
         Timer timer;
 
-        float2 areaSize = maxWorld - minWorld;
+        float2 areaSize = worldMax - worldMin;
 
         float heightNormalization = 1.f / std::max(areaSize.x, areaSize.y);
 
@@ -1019,350 +1029,11 @@ struct Terrain
         this->mesh = Mesh::generate(device, attrs, indices);
     }
 #endif
-};
-
-struct TerrainRenderer
-{
-    using DE = DirectedEdge<Empty, int3>;
-
-    Device device;
-    GraphicsPipeline renderTerrain;
-    GraphicsPipeline visualizeTriangulation;
-    ComputePipeline computeNormalMapCS;
-    ComputePipeline shadowFiltering;
-    Mesh mesh;
-    Terrain *terrain = nullptr;
-    Heightmap *heightmap = nullptr;
-    Rect area;
-    float2 minWorld;
-    float2 maxWorld;
-    float worldHeight   = 0;
-    float worldDiameter = 0;
-    float  maxErrorCoeff = .05f;
-    VisualizationMode mode = VisualizationMode::WireframeHeight;
-    TextureSRV cpuError;
-    RWTexture normalMap;
-    RWTexture aoMap;
-    RWTexture shadowMap;
-    RWTexture shadowTerm[2];
-    RWTexture shadowHistory;
-    RWTexture motionVectors;
-    BlueNoise blueNoise;
-    Matrix prevViewProj = Matrix::identity();
-
-    std::vector<info::ShaderDefine> lightingDefines;
-
-    TerrainRenderer() = default;
-    TerrainRenderer(Device device, Terrain &terrain, uint2 resolution)
-    {
-        this->device = device;
-        this->terrain = &terrain;
-        this->heightmap = terrain.heightmap;
-        this->mesh = terrain.mesh;
-
-        renderTerrain  = device.createGraphicsPipeline(
-            GraphicsPipeline::Info()
-            .vertexShader("RenderTerrain.vs")
-            .pixelShader("RenderTerrain.ps")
-            .depthMode(info::DepthMode::Write)
-            .depthFormat(DXGI_FORMAT_D32_FLOAT)
-            .renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-            .inputLayout(mesh.inputLayout()));
-
-        visualizeTriangulation  = device.createGraphicsPipeline(
-            GraphicsPipeline::Info()
-            .vertexShader("VisualizeTriangulation.vs")
-            .pixelShader("VisualizeTriangulation.ps")
-            .renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-            .inputLayout(mesh.inputLayout()));
-
-        computeNormalMapCS = device.createComputePipeline(
-            ComputePipeline::Info("ComputeNormalMap.cs"));
-        {
-            normalMap = RWTexture(device, info::TextureInfoBuilder()
-                                  .size(uint2(heightmap->size))
-                                  .format(DXGI_FORMAT_R16G16B16A16_FLOAT)
-                                  .allowUAV());
-
-            auto cmd = device.graphicsCommandList();
-            computeNormalMap(cmd);
-            device.execute(cmd);
-        }
-
-        setShadowMapDim(1024);
-
-        blueNoise = BlueNoise(device);
-
-        {
-            auto shadowTermInfo = info::TextureInfoBuilder()
-                .size(resolution)
-                .format(DXGI_FORMAT_R16_FLOAT)
-                .allowRenderTarget()
-                .allowUAV();
-            shadowTerm[0]  = RWTexture(device, shadowTermInfo.debugName("shadowTerm0"));
-            shadowTerm[1]  = RWTexture(device, shadowTermInfo.debugName("shadowTerm1"));
-            shadowHistory = RWTexture(device, shadowTermInfo.debugName("shadowHistory"));
-            auto cmd = device.graphicsCommandList();
-            cmd.clearRTV(shadowTerm[0].rtv);
-            cmd.clearRTV(shadowTerm[1].rtv);
-            cmd.clearRTV(shadowHistory.rtv);
-            device.execute(cmd);
-        }
-
-        shadowFiltering = device.createComputePipeline(
-            info::ComputePipelineInfo("TerrainShadowFiltering.cs"));
-
-        motionVectors = RWTexture(device, info::TextureInfoBuilder()
-                               .size(resolution)
-                               .format(DXGI_FORMAT_R16G16_FLOAT)
-                               .allowRenderTarget());
-    }
-
-    void computeNormalMap(CommandList &cmd)
-    {
-        //auto e = cmd.profilingEventPrint("computeNormalMap");
-        auto e = cmd.profilingEvent("computeNormalMap");
-
-        cmd.bind(computeNormalMapCS);
-
-        ComputeNormalMap::Constants constants;
-        constants.size = normalMap.texture()->size;
-        constants.axisMultiplier = float2(heightmap->texelSize);
-        constants.heightMultiplier = 1.f;
-
-        cmd.setConstants(constants);
-        cmd.setShaderView(ComputeNormalMap::heightMap, heightmap->heightSRV);
-        cmd.setShaderView(ComputeNormalMap::normalMap, normalMap.uav);
-
-        cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
-    }
-
-    void computeAmbientOcclusion(CommandList &cmd,
-                                 SwapChain &sc,
-                                 std::function<void()> wait,
-                                 uint samples = 0,
-                                 uint aoMapResolution = 2048,
-                                 uint depthBufferResolution = 4096)
-    {
-        if (samples == 0)
-        {
-#if defined(_DEBUG)
-            samples = 10;
-#else
-            samples = 1000;
-#endif
-        }
-        // auto e = cmd.profilingEventPrint("computeAmbientOcclusion");
-        auto e = cmd.profilingEvent("computeAmbientOcclusion");
-
-        auto renderAO = device.createGraphicsPipeline(
-            GraphicsPipeline::Info()
-            .vertexShader("RenderTerrainAO.vs")
-            .depthMode(info::DepthMode::Write)
-            .depthFormat(DXGI_FORMAT_D32_FLOAT)
-            .inputLayout(mesh.inputLayout()));
-        auto accumulateAO = device.createComputePipeline(
-            ComputePipeline::Info("AccumulateTerrainAO.cs"));
-        auto resolveAO = device.createComputePipeline(
-            ComputePipeline::Info("ResolveTerrainAO.cs"));
-
-        auto renderAODepthPrepass         = renderAO.variant()
-            .cull(D3D12_CULL_MODE_NONE);
-        auto renderAOAccumulateVisibility = renderAO.variant()
-            .pixelShader("RenderTerrainAO.ps")
-            .depthMode(info::DepthMode::ReadOnly)
-            .depthFunction(D3D12_COMPARISON_FUNC_EQUAL);
-
-        aoMap = RWTexture(device, info::TextureInfoBuilder()
-                          .size(uint2(aoMapResolution))
-                          .format(DXGI_FORMAT_R16_FLOAT)
-                          .allowUAV());
-        RWTexture aoVisibilityBits = RWTexture(device, info::TextureInfoBuilder()
-                                               .size(uint2(aoMapResolution))
-                                               .format(DXGI_FORMAT_R32_UINT)
-                                               .allowUAV());
-        RWTexture aoVisibilitySamples = RWTexture(device, info::TextureInfoBuilder()
-                                        .size(uint2(aoMapResolution))
-                                        .format(DXGI_FORMAT_R32_UINT)
-                                        .allowUAV());
-
-        auto zBuffer = device.createTextureDSV(info::TextureInfoBuilder()
-                                               .size(uint2(depthBufferResolution))
-                                               .format(DXGI_FORMAT_D32_FLOAT));
-#if 0
-        auto zBufferSRV = device.createTextureSRV(zBuffer.texture());
-        Blit blit(device);
-#endif
-
-        std::mt19937 gen(120495);
-
-        float radius = worldDiameter / 2;
-
-        cmd.clearUAV(aoVisibilitySamples.uav);
-        cmd.clearUAV(aoVisibilityBits.uav);
-        constexpr uint AOBitsPerPixel = 32;
-
-        {
-            uint i = 0;
-            while (i < samples)
-            {
-                for (uint j = 0; j < AOBitsPerPixel; ++j)
-                {
-#if 0
-                    auto bb = sc.backbuffer();
-                    cmd.clearRTV(bb);
-#endif
-
-                    //float3 hemisphere = uniformHemisphereGen(gen);
-                    float3 hemisphere = cosineWeightedHemisphereGen(gen);
-                    float3 sampleCameraPos = hemisphere.s_xzy * radius;
-                    Matrix view = Matrix::lookAt(sampleCameraPos, float3(0));
-                    Matrix proj = Matrix::projectionOrtho(worldDiameter, worldDiameter, 1.f, worldDiameter);
-                    Matrix viewProj = proj * view;
-
-                    cmd.clearDSV(zBuffer);
-                    cmd.setRenderTargets(zBuffer);
-                    cmd.bind(renderAODepthPrepass);
-
-                    RenderTerrainAO::Constants constants;
-                    constants.viewProj = viewProj;
-                    constants.worldMin = minWorld;
-                    constants.worldMax = maxWorld;
-                    constants.aoTextureSize = float2(aoMap.texture()->size);
-                    constants.aoBitMask = 1 << j;
-
-                    cmd.setConstants(constants);
-                    cmd.setShaderView(RenderTerrainAO::terrainAOVisibleBits, aoVisibilityBits.uav);
-                    mesh.setForRendering(cmd);
-                    cmd.drawIndexed(mesh.numIndices());
-
-                    cmd.bind(renderAOAccumulateVisibility);
-                    cmd.drawIndexed(mesh.numIndices());
-#if 0
-
-                    blit.blit(cmd, bb, Rect::withSize(900), zBufferSRV);
-                    device.execute(cmd);
-                    device.present(sc);
-                    cmd = device.graphicsCommandList();
-                    print("Sample %u\n", i);
-                    // wait();
-#endif
-                }
-
-                {
-                    cmd.bind(accumulateAO);
-                    AccumulateTerrainAO::Constants constants;
-                    constants.size = uint2(aoMap.texture()->size);
-
-                    cmd.setConstants(constants);
-                    cmd.setShaderView(AccumulateTerrainAO::terrainAOVisibleSamples, aoVisibilitySamples.uav);
-                    cmd.setShaderView(AccumulateTerrainAO::terrainAOVisibleBits, aoVisibilityBits.uav);
-
-                    cmd.dispatchThreads(ResolveTerrainAO::threadGroupSize, uint3(constants.size));
-                }
-
-                i += AOBitsPerPixel;
-            }
-        }
-
-        float maxVisibleSamples = float(samples);
-
-        cmd.setRenderTargets();
-
-        {
-            constexpr int BlurTaps = 1;
-            constexpr int NumWeights = BlurTaps + 1;
-
-            cmd.bind(resolveAO);
-
-            ResolveTerrainAO::Constants constants = {};
-            constants.size              = int2(aoMap.texture()->size);
-            constants.maxVisibleSamples = maxVisibleSamples;
-            constants.blurKernelSize    = BlurTaps;
-
-            for (int i = 0; i <= BlurTaps; ++i)
-            {
-                int n = BlurTaps * 2;
-                int k = BlurTaps + i;
-                int total = 1 << n;
-
-                auto fact = [] (int x)
-                {
-                    int prod = 1;
-                    for (int i = 2; i <= x; ++i)
-                        prod *= i;
-                    return prod;
-                };
-
-                int n_k = fact(n) / (fact(k) * fact(n - k));
-
-                constants.blurWeights[i].x = float(n_k) / float(total);
-            }
-
-            cmd.setConstants(constants);
-            cmd.setShaderView(ResolveTerrainAO::terrainAO, aoMap.uav);
-            cmd.setShaderView(ResolveTerrainAO::terrainAOVisibleSamples, aoVisibilitySamples.srv);
-
-            cmd.dispatchThreads(ResolveTerrainAO::threadGroupSize, uint3(constants.size));
-        }
-
-#if 0
-        auto bb = sc.backbuffer();
-        blit.blit(cmd, bb, Rect::withSize(900), aoMap.srv);
-        device.execute(cmd);
-        device.present(sc);
-        cmd = device.graphicsCommandList();
-        print("AO map\n");
-        wait();
-#endif
-    }
-
-    void updateLighting()
-    {
-        lightingDefines.clear();
-
-        if (heightmap->colorSRV)
-            lightingDefines.emplace_back("TEXTURED");
-
-        auto renderingMode = cfg_Settings.renderingMode;
-
-        if (renderingMode == RenderingMode::Lighting)
-            lightingDefines.emplace_back("LIGHTING");
-        else if (renderingMode == RenderingMode::AmbientOcclusion)
-            lightingDefines.emplace_back("SHOW_AO");
-        else if (renderingMode == RenderingMode::ShadowTerm)
-            lightingDefines.emplace_back("SHADOW_TERM");
-
-        setShadowMapDim(1 << cfg_Settings.shadow.shadowDimExp);
-    }
-
-    int noiseIndex()
-    {
-        if (cfg_Settings.shadow.noisePeriod <= 0)
-            return int(device.frameNumber());
-        else if (cfg_Settings.shadow.frozenNoise >= 0)
-            return cfg_Settings.shadow.frozenNoise;
-        else
-            return int(device.frameNumber()) % cfg_Settings.shadow.noisePeriod;
-    }
-
-    void setShadowMapDim(int shadowDim)
-    {
-        if (!shadowMap.valid() || any(shadowMap.texture()->size != uint2(shadowDim)))
-        {
-            shadowMap = RWTexture(device, info::TextureInfoBuilder()
-                                  .size(uint2(shadowDim))
-                                  .format(DXGI_FORMAT_D32_FLOAT)
-                                  .allowDepthStencil());
-        }
-    }
 
     ErrorMetrics calculateMeshError()
     {
         return ErrorMetrics {};
         Timer timer;
-
-        auto heightData = terrain->heightData;
 
         RWImageData error(uint2(area.size()), DXGI_FORMAT_R32_FLOAT);
         error.ownedData.fill(0);
@@ -1452,12 +1123,342 @@ struct TerrainRenderer
         float2 texels = float2(area.size());
         float2 size   = texels * heightmap->texelSize;
         float2 extent = size / 2.f;
-        minWorld = -extent;
-        maxWorld =  extent;
+        worldMin = -extent;
+        worldMax =  extent;
 
-        float2 worldSize = maxWorld - minWorld;
+        float2 worldSize = worldMax - worldMin;
         worldHeight   = heightmap->maxHeight - heightmap->minHeight;
         worldDiameter = sqrt(worldSize.lengthSqr() + worldHeight * worldHeight);
+    }
+
+    void render(CommandList &cmd)
+    {
+        TerrainPatch::Constants constants;
+
+        constants.worldMin  = worldMin;
+        constants.worldMax  = worldMax;
+        constants.heightMin = heightmap->minHeight;
+        constants.heightMax = heightmap->maxHeight;
+
+        cmd.setConstants(constants);
+
+        mesh.setForRendering(cmd);
+
+        cmd.drawIndexed(mesh.numIndices());
+    }
+
+    info::InputLayoutInfo inputLayout()
+    {
+        return mesh.inputLayout();
+    }
+};
+
+struct TerrainRenderer
+{
+    using DE = DirectedEdge<Empty, int3>;
+
+    Device device;
+    GraphicsPipeline renderTerrain;
+    GraphicsPipeline visualizeTriangulation;
+    ComputePipeline computeNormalMapCS;
+    ComputePipeline shadowFiltering;
+    Terrain *terrain = nullptr;
+    Heightmap *heightmap = nullptr;
+    Rect area;
+    float  maxErrorCoeff = .05f;
+    VisualizationMode mode = VisualizationMode::WireframeHeight;
+    RWTexture normalMap;
+    RWTexture aoMap;
+    RWTexture shadowMap;
+    RWTexture shadowTerm[2];
+    RWTexture shadowHistory;
+    RWTexture motionVectors;
+    BlueNoise blueNoise;
+    Matrix prevViewProj = Matrix::identity();
+
+    std::vector<info::ShaderDefine> lightingDefines;
+
+    TerrainRenderer() = default;
+    TerrainRenderer(Device device, Terrain &terrain, uint2 resolution)
+    {
+        this->device = device;
+        this->terrain = &terrain;
+        this->heightmap = terrain.heightmap;
+
+        renderTerrain  = device.createGraphicsPipeline(
+            GraphicsPipeline::Info()
+            .vertexShader("RenderTerrain.vs")
+            .pixelShader("RenderTerrain.ps")
+            .depthMode(info::DepthMode::Write)
+            .depthFormat(DXGI_FORMAT_D32_FLOAT)
+            .renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+            .inputLayout(terrain.inputLayout()));
+
+        visualizeTriangulation  = device.createGraphicsPipeline(
+            GraphicsPipeline::Info()
+            .vertexShader("VisualizeTriangulation.vs")
+            .pixelShader("VisualizeTriangulation.ps")
+            .renderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+            .inputLayout(terrain.inputLayout()));
+
+        computeNormalMapCS = device.createComputePipeline(
+            ComputePipeline::Info("ComputeNormalMap.cs"));
+        {
+            normalMap = RWTexture(device, info::TextureInfoBuilder()
+                                  .size(uint2(heightmap->size))
+                                  .format(DXGI_FORMAT_R16G16B16A16_FLOAT)
+                                  .allowUAV());
+
+            auto cmd = device.graphicsCommandList();
+            computeNormalMap(cmd);
+            device.execute(cmd);
+        }
+
+        setShadowMapDim(1024);
+
+        blueNoise = BlueNoise(device);
+
+        {
+            auto shadowTermInfo = info::TextureInfoBuilder()
+                .size(resolution)
+                .format(DXGI_FORMAT_R16_FLOAT)
+                .allowRenderTarget()
+                .allowUAV();
+            shadowTerm[0]  = RWTexture(device, shadowTermInfo.debugName("shadowTerm0"));
+            shadowTerm[1]  = RWTexture(device, shadowTermInfo.debugName("shadowTerm1"));
+            shadowHistory = RWTexture(device, shadowTermInfo.debugName("shadowHistory"));
+            auto cmd = device.graphicsCommandList();
+            cmd.clearRTV(shadowTerm[0].rtv);
+            cmd.clearRTV(shadowTerm[1].rtv);
+            cmd.clearRTV(shadowHistory.rtv);
+            device.execute(cmd);
+        }
+
+        shadowFiltering = device.createComputePipeline(
+            info::ComputePipelineInfo("TerrainShadowFiltering.cs"));
+
+        motionVectors = RWTexture(device, info::TextureInfoBuilder()
+                               .size(resolution)
+                               .format(DXGI_FORMAT_R16G16_FLOAT)
+                               .allowRenderTarget());
+    }
+
+    void computeNormalMap(CommandList &cmd)
+    {
+        //auto e = cmd.profilingEventPrint("computeNormalMap");
+        auto e = cmd.profilingEvent("computeNormalMap");
+
+        cmd.bind(computeNormalMapCS);
+
+        ComputeNormalMap::Constants constants;
+        constants.size = normalMap.texture()->size;
+        constants.axisMultiplier = float2(heightmap->texelSize);
+        constants.heightMultiplier = 1.f;
+
+        cmd.setConstants(constants);
+        cmd.setShaderView(ComputeNormalMap::heightMap, heightmap->heightSRV);
+        cmd.setShaderView(ComputeNormalMap::normalMap, normalMap.uav);
+
+        cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
+    }
+
+    void computeAmbientOcclusion(CommandList &cmd,
+                                 SwapChain &sc,
+                                 std::function<void()> wait,
+                                 uint samples = 0,
+                                 uint aoMapResolution = 2048,
+                                 uint depthBufferResolution = 4096)
+    {
+        if (samples == 0)
+        {
+#if defined(_DEBUG)
+            samples = 10;
+#else
+            samples = 1000;
+#endif
+        }
+        // auto e = cmd.profilingEventPrint("computeAmbientOcclusion");
+        auto e = cmd.profilingEvent("computeAmbientOcclusion");
+
+        auto renderAO = device.createGraphicsPipeline(
+            GraphicsPipeline::Info()
+            .vertexShader("RenderTerrainAO.vs")
+            .depthMode(info::DepthMode::Write)
+            .depthFormat(DXGI_FORMAT_D32_FLOAT)
+            .inputLayout(terrain->inputLayout()));
+        auto accumulateAO = device.createComputePipeline(
+            ComputePipeline::Info("AccumulateTerrainAO.cs"));
+        auto resolveAO = device.createComputePipeline(
+            ComputePipeline::Info("ResolveTerrainAO.cs"));
+
+        auto renderAODepthPrepass         = renderAO.variant()
+            .cull(D3D12_CULL_MODE_NONE);
+        auto renderAOAccumulateVisibility = renderAO.variant()
+            .pixelShader("RenderTerrainAO.ps")
+            .depthMode(info::DepthMode::ReadOnly)
+            .depthFunction(D3D12_COMPARISON_FUNC_EQUAL);
+
+        aoMap = RWTexture(device, info::TextureInfoBuilder()
+                          .size(uint2(aoMapResolution))
+                          .format(DXGI_FORMAT_R16_FLOAT)
+                          .allowUAV());
+        RWTexture aoVisibilityBits = RWTexture(device, info::TextureInfoBuilder()
+                                               .size(uint2(aoMapResolution))
+                                               .format(DXGI_FORMAT_R32_UINT)
+                                               .allowUAV());
+        RWTexture aoVisibilitySamples = RWTexture(device, info::TextureInfoBuilder()
+                                        .size(uint2(aoMapResolution))
+                                        .format(DXGI_FORMAT_R32_UINT)
+                                        .allowUAV());
+
+        auto zBuffer = device.createTextureDSV(info::TextureInfoBuilder()
+                                               .size(uint2(depthBufferResolution))
+                                               .format(DXGI_FORMAT_D32_FLOAT));
+#if 0
+        auto zBufferSRV = device.createTextureSRV(zBuffer.texture());
+        Blit blit(device);
+#endif
+
+        std::mt19937 gen(120495);
+
+        float radius = terrain->worldDiameter / 2;
+
+        cmd.clearUAV(aoVisibilitySamples.uav);
+        cmd.clearUAV(aoVisibilityBits.uav);
+        constexpr uint AOBitsPerPixel = 32;
+
+        {
+            uint i = 0;
+            while (i < samples)
+            {
+                for (uint j = 0; j < AOBitsPerPixel; ++j)
+                {
+                    float worldDiameter = terrain->worldDiameter;
+
+                    //float3 hemisphere = uniformHemisphereGen(gen);
+                    float3 hemisphere = cosineWeightedHemisphereGen(gen);
+                    float3 sampleCameraPos = hemisphere.s_xzy * radius;
+                    Matrix view = Matrix::lookAt(sampleCameraPos, float3(0));
+                    Matrix proj = Matrix::projectionOrtho(worldDiameter, worldDiameter, 1.f, worldDiameter);
+                    Matrix viewProj = proj * view;
+
+                    cmd.clearDSV(zBuffer);
+                    cmd.setRenderTargets(zBuffer);
+                    cmd.bind(renderAODepthPrepass);
+
+                    RenderTerrainAO::Constants constants;
+                    constants.viewProj = viewProj;
+                    constants.worldMin = terrain->worldMin;
+                    constants.worldMax = terrain->worldMax;
+                    constants.aoTextureSize = float2(aoMap.texture()->size);
+                    constants.aoBitMask = 1 << j;
+
+                    cmd.setConstants(constants);
+                    cmd.setShaderView(RenderTerrainAO::terrainAOVisibleBits, aoVisibilityBits.uav);
+
+                    terrain->render(cmd);
+
+                    cmd.bind(renderAOAccumulateVisibility);
+
+                    terrain->render(cmd);
+                }
+
+                {
+                    cmd.bind(accumulateAO);
+                    AccumulateTerrainAO::Constants constants;
+                    constants.size = uint2(aoMap.texture()->size);
+
+                    cmd.setConstants(constants);
+                    cmd.setShaderView(AccumulateTerrainAO::terrainAOVisibleSamples, aoVisibilitySamples.uav);
+                    cmd.setShaderView(AccumulateTerrainAO::terrainAOVisibleBits, aoVisibilityBits.uav);
+
+                    cmd.dispatchThreads(ResolveTerrainAO::threadGroupSize, uint3(constants.size));
+                }
+
+                i += AOBitsPerPixel;
+            }
+        }
+
+        float maxVisibleSamples = float(samples);
+
+        cmd.setRenderTargets();
+
+        {
+            constexpr int BlurTaps = 1;
+            constexpr int NumWeights = BlurTaps + 1;
+
+            cmd.bind(resolveAO);
+
+            ResolveTerrainAO::Constants constants = {};
+            constants.size              = int2(aoMap.texture()->size);
+            constants.maxVisibleSamples = maxVisibleSamples;
+            constants.blurKernelSize    = BlurTaps;
+
+            for (int i = 0; i <= BlurTaps; ++i)
+            {
+                int n = BlurTaps * 2;
+                int k = BlurTaps + i;
+                int total = 1 << n;
+
+                auto fact = [] (int x)
+                {
+                    int prod = 1;
+                    for (int i = 2; i <= x; ++i)
+                        prod *= i;
+                    return prod;
+                };
+
+                int n_k = fact(n) / (fact(k) * fact(n - k));
+
+                constants.blurWeights[i].x = float(n_k) / float(total);
+            }
+
+            cmd.setConstants(constants);
+            cmd.setShaderView(ResolveTerrainAO::terrainAO, aoMap.uav);
+            cmd.setShaderView(ResolveTerrainAO::terrainAOVisibleSamples, aoVisibilitySamples.srv);
+
+            cmd.dispatchThreads(ResolveTerrainAO::threadGroupSize, uint3(constants.size));
+        }
+    }
+
+    void updateLighting()
+    {
+        lightingDefines.clear();
+
+        if (heightmap->colorSRV)
+            lightingDefines.emplace_back("TEXTURED");
+
+        auto renderingMode = cfg_Settings.renderingMode;
+
+        if (renderingMode == RenderingMode::Lighting)
+            lightingDefines.emplace_back("LIGHTING");
+        else if (renderingMode == RenderingMode::AmbientOcclusion)
+            lightingDefines.emplace_back("SHOW_AO");
+        else if (renderingMode == RenderingMode::ShadowTerm)
+            lightingDefines.emplace_back("SHADOW_TERM");
+
+        setShadowMapDim(1 << cfg_Settings.shadow.shadowDimExp);
+    }
+
+    int noiseIndex()
+    {
+        if (cfg_Settings.shadow.noisePeriod <= 0)
+            return int(device.frameNumber());
+        else if (cfg_Settings.shadow.frozenNoise >= 0)
+            return cfg_Settings.shadow.frozenNoise;
+        else
+            return int(device.frameNumber()) % cfg_Settings.shadow.noisePeriod;
+    }
+
+    void setShadowMapDim(int shadowDim)
+    {
+        if (!shadowMap.valid() || any(shadowMap.texture()->size != uint2(shadowDim)))
+        {
+            shadowMap = RWTexture(device, info::TextureInfoBuilder()
+                                  .size(uint2(shadowDim))
+                                  .format(DXGI_FORMAT_D32_FLOAT)
+                                  .allowDepthStencil());
+        }
     }
 
     void renderShadowMap(CommandList &cmd, const RenderTerrain::Constants &constants)
@@ -1474,7 +1475,6 @@ struct TerrainRenderer
         auto c = constants;
         c.viewProj = c.shadowViewProj;
         cmd.setConstants(c);
-        mesh.setForRendering(cmd);
 
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainColor);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainNormal);
@@ -1485,24 +1485,21 @@ struct TerrainRenderer
 
         {
             auto p = cmd.profilingEvent("Draw shadows");
-            cmd.drawIndexed(mesh.numIndices());
+            terrain->render(cmd);
         }
 
         cmd.setRenderTargets();
     }
 
-    void render(CommandList &cmd,
-                TextureRTV &rtv,
-                TextureDSV &dsv,
-                const Matrix &viewProj,
-                bool wireframe = false)
+    RenderTerrain::Constants computeConstants(TextureRTV &rtv,
+                                              const Matrix &viewProj)
     {
-        updateLighting();
+        RenderTerrain::Constants constants;
 
         float2 resolution = rtv.texture()->sizeFloat();
 
-        float3 terrainMin = float3(minWorld.x, minWorld.y, heightmap->minHeight);
-        float3 terrainMax = float3(maxWorld.x, maxWorld.y, heightmap->maxHeight);
+        float3 terrainMin = float3(terrain->worldMin.x, terrain->worldMin.y, heightmap->minHeight);
+        float3 terrainMax = float3(terrain->worldMax.x, terrain->worldMax.y, heightmap->maxHeight);
 
         float3 terrainCorners[] =
         {
@@ -1525,7 +1522,7 @@ struct TerrainRenderer
         float2 shadowJitter  = cfg_Settings.shadow.shadowJitter ? lerp(float2(-.5f), float2(.5f), noise.s_xy) : 0;
 
         Matrix R = Matrix::axisAngle(float3(0, 0, -1), shadowRotation);
-        Matrix shadowView = R * Matrix::lookAt(cfg_Settings.lighting.sunDirection() * worldDiameter, float3(0));
+        Matrix shadowView = R * Matrix::lookAt(cfg_Settings.lighting.sunDirection() * terrain->worldDiameter, float3(0));
 
         for (auto c : terrainCorners)
         {
@@ -1549,35 +1546,31 @@ struct TerrainRenderer
         Matrix shadowViewProj = (shadowProj * shadowView)
             + Matrix::projectionJitter(shadowJitter * (2.f / shadowMap.texture()->sizeFloat()));
 
-#if 0
-        for (auto c : terrainCorners)
-        {
-            print("%s -> %s -> %s\n",
-                  toString(c).cStr(),
-                  toString(shadowView.transform(c)).cStr(),
-                  toString(shadowViewProj.transform(c)).cStr());
-        }
-#endif
-
-        RenderTerrain::Constants constants;
-        constants.viewProj        = viewProj;
-        constants.shadowViewProj  = shadowViewProj;
-        constants.prevViewProj    = prevViewProj;
-        constants.worldMin        = minWorld;
-        constants.worldMax        = maxWorld;
-        constants.heightMin       = heightmap->minHeight;
-        constants.heightMax       = heightmap->maxHeight;
-        constants.noiseResolution = float2(blueNoise.srv().texture()->size);
-        constants.noiseAmplitude  = cfg_Settings.shadow.shadowNoiseAmplitude / shadowMap.texture()->sizeFloat().x;
-        constants.resolution      = rtv.texture()->sizeFloat();
+        constants.viewProj           = viewProj;
+        constants.shadowViewProj     = shadowViewProj;
+        constants.prevViewProj       = prevViewProj;
+        constants.noiseResolution    = float2(blueNoise.srv().texture()->size);
+        constants.noiseAmplitude     = cfg_Settings.shadow.shadowNoiseAmplitude / shadowMap.texture()->sizeFloat().x;
+        constants.resolution         = rtv.texture()->sizeFloat();
         constants.shadowResolution   = shadowMap.texture()->sizeFloat();
         constants.shadowHistoryBlend = cfg_Settings.shadow.shadowHistoryBlend;
         constants.shadowBias         = cfg_Settings.shadow.shadowBias;
+        constants.sunDirection       = cfg_Settings.lighting.sunDirection().s_xyz0;
+        constants.sunColor           = cfg_Settings.lighting.sunColor().s_xyz0;
+        constants.ambient            = float3(cfg_Settings.lighting.ambient).s_xyz0;
 
-        RenderTerrain::LightingConstants lightingConstants;
-        lightingConstants.sunDirection = cfg_Settings.lighting.sunDirection().s_xyz0;
-        lightingConstants.sunColor     = cfg_Settings.lighting.sunColor().s_xyz0;
-        lightingConstants.ambient      = float3(cfg_Settings.lighting.ambient).s_xyz0;
+        return constants;
+    }
+
+    void render(CommandList &cmd,
+                TextureRTV &rtv,
+                TextureDSV &dsv,
+                const Matrix &viewProj,
+                bool wireframe = false)
+    {
+        updateLighting();
+
+        RenderTerrain::Constants constants = computeConstants(rtv, viewProj);
 
         renderShadowMap(cmd, constants);
 
@@ -1599,8 +1592,6 @@ struct TerrainRenderer
 
             cmd.setRenderTargets({ &shadowTerm[0].rtv, &motionVectors.rtv }, dsv);
 
-            mesh.setForRendering(cmd);
-
             cmd.setShaderView(RenderTerrain::terrainColor,   heightmap->colorSRV);
             cmd.setShaderView(RenderTerrain::terrainNormal,  normalMap.srv);
             cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
@@ -1609,9 +1600,8 @@ struct TerrainRenderer
             cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
 
             cmd.setConstants(constants);
-            cmd.setConstants(lightingConstants);
 
-            cmd.drawIndexed(mesh.numIndices());
+            terrain->render(cmd);
         }
 
         RWTexture *shadowIn  = &shadowTerm[0];
@@ -1681,8 +1671,6 @@ struct TerrainRenderer
 
             cmd.setRenderTargets(rtv, dsv);
 
-            mesh.setForRendering(cmd);
-
             cmd.setShaderView(RenderTerrain::terrainColor,   heightmap->colorSRV);
             cmd.setShaderView(RenderTerrain::terrainNormal,  normalMap.srv);
             cmd.setShaderView(RenderTerrain::terrainAO,      aoMap.srv);
@@ -1691,9 +1679,8 @@ struct TerrainRenderer
             cmd.setShaderView(RenderTerrain::shadowTerm,     shadowIn->srv);
 
             cmd.setConstants(constants);
-            cmd.setConstants(lightingConstants);
 
-            cmd.drawIndexed(mesh.numIndices());
+            terrain->render(cmd);
         }
 
         if (wireframe)
@@ -1705,7 +1692,8 @@ struct TerrainRenderer
                      .depthMode(info::DepthMode::ReadOnly)
                      .depthBias(10000)
                      .fill(D3D12_FILL_MODE_WIREFRAME));
-            cmd.drawIndexed(mesh.numIndices());
+
+            terrain->render(cmd);
         }
 
         cmd.setRenderTargets();
@@ -1726,8 +1714,6 @@ struct TerrainRenderer
         vtConstants.maxCorner = maxCorner;
         vtConstants.maxError  = maxErrorCoeff * (vtConstants.maxHeight - vtConstants.minHeight);
 
-        mesh.setForRendering(cmd);
-
         if (mode == VisualizationMode::OnlyError || mode == VisualizationMode::WireframeError)
             cmd.bind(visualizeTriangulation.variant()
                      .pixelShader(info::SameShader {}, { { "SHOW_ERROR" } }));
@@ -1739,15 +1725,16 @@ struct TerrainRenderer
 
         cmd.setConstants(vtConstants);
         cmd.setShaderView(VisualizeTriangulation::heightMap,          heightmap->heightSRV);
-        cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, cpuError);
-        cmd.drawIndexed(mesh.numIndices());
+        cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, terrain->cpuError);
+
+        terrain->render(cmd);
 
         if (mode == VisualizationMode::WireframeHeight || mode == VisualizationMode::WireframeError)
         {
             cmd.bind(visualizeTriangulation.variant()
                      .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
                      .fill(D3D12_FILL_MODE_WIREFRAME));
-            cmd.drawIndexed(mesh.numIndices());
+            terrain->render(cmd);
         }
     }
 };
@@ -1848,9 +1835,7 @@ public:
             break;
         }
 
-        terrainRenderer.mesh = terrain.mesh;
-        terrainRenderer.setBounds(area);
-        terrainRenderer.calculateMeshError();
+        terrain.calculateMeshError();
 
         camera.position = float3(0, heightmap.maxHeight + NearPlane * 10, 0);
 
@@ -1879,16 +1864,13 @@ public:
         std::vector<ErrorMetrics> uni(N);
         std::vector<ErrorMetrics> inc(N);
 
-        terrainRenderer.setBounds(area);
         for (int d = 2; d < N; ++d)
         {
             terrain.uniformGrid(area, quadsPerDim(d));
-            terrainRenderer.mesh = terrain.mesh;
-            uni[d] = terrainRenderer.calculateMeshError();
+            uni[d] = terrain.calculateMeshError();
 
             terrain.incrementalMaxError(area, vertexCount(d), true);
-            terrainRenderer.mesh = terrain.mesh;
-            inc[d] = terrainRenderer.calculateMeshError();
+            inc[d] = terrain.calculateMeshError();
         }
 
         print("%20s;%20s;%20s;%20s\n", "Vertices", "Uniform", "IncrementalMaxError", "Ratio");

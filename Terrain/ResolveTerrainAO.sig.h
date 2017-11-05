@@ -13,8 +13,8 @@ XOR_CBUFFER(Constants, 0)
     float4 blurWeights[9];
 };
 
-XOR_SRV(Texture2D<uint>,    terrainAOVisibleSamples, 0)
-XOR_UAV(RWTexture2D<float>, terrainAO, 0)
+XOR_TEXTURE_SRV(Texture2D<uint>,    terrainAOVisibleSamples, 0)
+XOR_TEXTURE_UAV(RWTexture2D<float>, terrainAO, 0)
 
 XOR_THREADGROUP_SIZE_2D(16, 16)
 

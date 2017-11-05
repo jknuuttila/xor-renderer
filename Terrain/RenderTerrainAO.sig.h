@@ -14,7 +14,7 @@ XOR_CBUFFER(Constants, 0)
     uint aoBitMask;
 };
 
-XOR_UAV(RWTexture2D<uint>, terrainAOVisibleBits, 0)
+XOR_TEXTURE_UAV(RWTexture2D<uint>, terrainAOVisibleBits, 0)
 
 XOR_END_SIGNATURE
 

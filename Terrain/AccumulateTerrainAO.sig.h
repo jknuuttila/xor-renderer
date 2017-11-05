@@ -10,8 +10,8 @@ XOR_CBUFFER(Constants, 0)
     uint2 size;
 };
 
-XOR_UAV(RWTexture2D<uint>, terrainAOVisibleSamples, 0)
-XOR_UAV(RWTexture2D<uint>, terrainAOVisibleBits,    1)
+XOR_TEXTURE_UAV(RWTexture2D<uint>, terrainAOVisibleSamples, 0)
+XOR_TEXTURE_UAV(RWTexture2D<uint>, terrainAOVisibleBits,    1)
 
 XOR_THREADGROUP_SIZE_2D(16, 16)
 
