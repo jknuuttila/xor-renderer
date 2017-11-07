@@ -7,8 +7,8 @@ XOR_BEGIN_SIGNATURE(TerrainPatch)
 
 XOR_CBUFFER(Constants, 0)
 {
-    float2 worldMin;
-    float2 worldMax;
+    float2 tileMin;
+    float2 tileMax;
     float heightMin;
     float heightMax;
 };

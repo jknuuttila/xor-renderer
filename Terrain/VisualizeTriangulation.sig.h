@@ -2,10 +2,11 @@
 #define VisualizeTriangulation_SIG_H
 
 #include "Xor/Shaders.h"
+#include "TerrainPatchConstants.h"
 
 XOR_BEGIN_SIGNATURE(VisualizeTriangulation)
 
-XOR_CBUFFER(Constants, 0)
+XOR_CBUFFER(Constants, 1)
 {
 	float2 minCorner;
 	float2 maxCorner;
@@ -21,6 +22,6 @@ XOR_SAMPLER_POINT(pointSampler)
 
 XOR_END_SIGNATURE
 
-#define VisualizeTriangulation_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CS(1,2)
+#define VisualizeTriangulation_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CS(2, 2)
 
 #endif

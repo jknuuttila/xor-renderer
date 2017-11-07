@@ -320,30 +320,11 @@ struct BlueNoise
     }
 };
 
-class TiledTerrain
+struct TerrainTile
 {
-    using DE = DirectedEdge<Empty, int3>;
-    ImageData m_heightData;
-    Rect      m_bounds;
-    int2      m_tileSize;
-
-    struct Tile
-    {
-        int2                 coords;
-        Rect                 bounds;
-        std::vector<int2>    vertices;
-        std::vector<int>     indices;
-        std::vector<Block32> lods;
-    };
-    struct Edge
-    {
-        std::vector<int2>    vertices;
-        std::vector<Block32> lods;
-    };
-    std::vector<Tile> m_tiles;
-    std::vector<Edge> m_edges;
-public:
-    TiledTerrain() = default;
+    float2 tileMin;
+    float2 tileMax;
+    Mesh mesh;
 };
 
 struct Terrain
@@ -352,13 +333,14 @@ struct Terrain
     Heightmap *heightmap = nullptr;
     ImageData heightData;
     Rect area;
-    Mesh mesh;
     TextureSRV cpuError;
 
     float2 worldMin;
     float2 worldMax;
     float worldHeight   = 0;
     float worldDiameter = 0;
+
+    std::vector<TerrainTile> tiles;
 
     Terrain() = default;
     Terrain(Device device, Heightmap &heightmap)
@@ -371,7 +353,7 @@ struct Terrain
     }
 
     template <typename DEMesh>
-    void gpuMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
+    Mesh gpuMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
     {
         auto verts    = mesh.vertices();
         auto numVerts = verts.size();
@@ -424,11 +406,11 @@ struct Terrain
             { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
         };
 
-        this->mesh = Mesh::generate(device, attrs, indices);
+        return Mesh::generate(device, attrs, indices);
     }
 
     template <typename DEMesh>
-    void tipsifyMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
+    Mesh tipsifyMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
     {
         Timer timer;
 
@@ -624,12 +606,14 @@ struct Terrain
             { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
         };
 
-        this->mesh = Mesh::generate(device, attrs, indices);
+        Mesh gpuMesh = Mesh::generate(device, attrs, indices);
 
         log("Heightmap", "Generated tipsified mesh with %d vertices and %d triangles in %.2f ms\n",
             mesh.numVertices(),
             mesh.numTriangles(),
             timer.milliseconds());
+
+        return gpuMesh;
     }
 
     using Vert = Vector<int64_t, 3>;
@@ -649,6 +633,15 @@ struct Terrain
     {
         float2 unnormalized = lerp(float2(area.min), float2(area.max), uv);
         return vertex(int2(unnormalized));
+    }
+
+    void singleTile(Rect area, Mesh m)
+    {
+        setBounds(area);
+        tiles.resize(1);
+        tiles.front().tileMin = worldMin;
+        tiles.front().tileMax = worldMax;
+        tiles.front().mesh    = std::move(m);
     }
 
     void uniformGrid(Rect area, uint quadsPerDim)
@@ -721,8 +714,6 @@ struct Terrain
             }
         }
 
-        setBounds(area);
-
         log("HeightmapRenderer", "Generated uniform grid mesh with %zu vertices and %zu indices in %.2f ms\n",
             normalizedPos.size(),
             indices.size(),
@@ -735,7 +726,7 @@ struct Terrain
             { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uvs) },
         };
 
-        this->mesh = Mesh::generate(device, attrs, indices);
+        singleTile(area, Mesh::generate(device, attrs, indices));
     }
 
     void incrementalMaxError(Rect area, uint vertices, bool tipsify = true)
@@ -896,8 +887,6 @@ struct Terrain
 
         mesh.vertexRemoveUnconnected();
 
-        setBounds(area);
-
         log("Heightmap", "Generated incremental max error triangulation with %d vertices and %d triangles in %.2f ms\n",
             mesh.numValidVertices(),
             mesh.numValidTriangles(),
@@ -905,134 +894,24 @@ struct Terrain
 
         if (tipsify)
         {
-            tipsifyMesh(mesh,
-                        float2(area.min) / float2(heightmap->size),
-                        float2(area.max) / float2(heightmap->size));
+            singleTile(area,
+                       tipsifyMesh(mesh,
+                                   float2(area.min) / float2(heightmap->size),
+                                   float2(area.max) / float2(heightmap->size)));
         }
         else
         {
-            gpuMesh(mesh,
-                    float2(area.min) / float2(heightmap->size),
-                    float2(area.max) / float2(heightmap->size));
+            singleTile(area,
+                       gpuMesh(mesh,
+                               float2(area.min) / float2(heightmap->size),
+                               float2(area.max) / float2(heightmap->size)));
         }
     }
-
-#if 0
-    void quadricSimplification(Rect area, uint vertices, bool tipsify = true)
-    {
-        Timer timer;
-
-        float2 areaSize = worldMax - worldMin;
-
-        float heightNormalization = 1.f / std::max(areaSize.x, areaSize.y);
-
-        SimpleMesh groundTruth;
-
-        int2 size = int2(area.size());
-        float2 sizeF = float2(size);
-
-        for (int y = area.min.y; y <= area.max.y; ++y)
-        {
-            for (int x = area.min.x; x <= area.max.x; ++x)
-            {
-                float z = heightData.pixel<float>(int2(x, y));
-                float xNorm = static_cast<float>(x - area.min.x) / sizeF.x;
-                float yNorm = static_cast<float>(y - area.min.y) / sizeF.y;
-                float zNorm = z * heightNormalization;
-
-                groundTruth.vertices.emplace_back(xNorm, yNorm, zNorm);
-            }
-        }
-
-        int vertsPerRow = size.x + 1;
-        for (int y = 0; y < size.y; ++y)
-        {
-            for (int x = 0; x < size.x; ++x)
-            {
-                int2 a = int2(x,     y);
-                int2 b = int2(x,     y + 1);
-                int2 c = int2(x + 1, y);
-                int2 d = int2(x + 1, y + 1);
-
-                int ia = a.y * vertsPerRow + a.x;
-                int ib = b.y * vertsPerRow + b.x;
-                int ic = c.y * vertsPerRow + c.x;
-                int id = d.y * vertsPerRow + d.x;
-
-                groundTruth.indices.emplace_back(ia);
-                groundTruth.indices.emplace_back(ib);
-                groundTruth.indices.emplace_back(ic);
-
-                groundTruth.indices.emplace_back(ib);
-                groundTruth.indices.emplace_back(id);
-                groundTruth.indices.emplace_back(ic);
-            }
-        }
-
-        log("Heightmap", "Ground truth mesh generated with %zu vertices and %zu triangles in %.2f ms\n",
-            groundTruth.vertices.size(),
-            groundTruth.indices.size() / 3,
-            timer.milliseconds());
-
-        SimpleMesh simplifiedMesh = quadricMeshSimplification(groundTruth,
-                                                              vertices * 2);
-
-        std::vector<float2> normalizedPos;
-        std::vector<float>  heights;
-        std::vector<float2> uvs;
-        std::vector<uint>   indices;
-
-        float2 minUV = float2(area.min) / float2(heightmap->size);
-        float2 maxUV = float2(area.max) / float2(heightmap->size);
-
-        heightNormalization = 1.f / heightNormalization;
-
-        for (auto &v : simplifiedMesh.vertices)
-        {
-            normalizedPos.emplace_back();
-            auto &pos = normalizedPos.back();
-            pos = float2(v);
-            heights.emplace_back(v.z * heightNormalization);
-            uvs.emplace_back(lerp(minUV, maxUV, pos));
-        }
-
-        indices = std::move(simplifiedMesh.indices);
-
-        for (uint i = 0; i < indices.size(); i += 3)
-        {
-            uint a = indices[i];
-            uint b = indices[i + 1];
-            uint c = indices[i + 2];
-
-            float2 pa = normalizedPos[a];
-            float2 pb = normalizedPos[b];
-            float2 pc = normalizedPos[c];
-
-            bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
-
-            if (!ccw)
-                std::swap(indices[i + 1], indices[i + 2]);
-        }
-
-        log("Heightmap", "Generated quadric simplified triangulation with %zu vertices and %zu triangles in %.2f ms\n",
-            normalizedPos.size(),
-            indices.size() / 3,
-            timer.milliseconds());
-
-        VertexAttribute attrs[] =
-        {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
-            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uvs) },
-        };
-
-        this->mesh = Mesh::generate(device, attrs, indices);
-    }
-#endif
 
     ErrorMetrics calculateMeshError()
     {
         return ErrorMetrics {};
+#if 0
         Timer timer;
 
         RWImageData error(uint2(area.size()), DXGI_FORMAT_R32_FLOAT);
@@ -1115,6 +994,7 @@ struct Terrain
             timer.milliseconds());
 
         return metrics;
+#endif
     }
 
     void setBounds(Rect area)
@@ -1133,23 +1013,29 @@ struct Terrain
 
     void render(CommandList &cmd)
     {
-        TerrainPatch::Constants constants;
+        for (auto &t : tiles)
+        {
+            TerrainPatch::Constants constants;
 
-        constants.worldMin  = worldMin;
-        constants.worldMax  = worldMax;
-        constants.heightMin = heightmap->minHeight;
-        constants.heightMax = heightmap->maxHeight;
+            constants.tileMin   = t.tileMin;
+            constants.tileMax   = t.tileMax;
+            constants.heightMin = heightmap->minHeight;
+            constants.heightMax = heightmap->maxHeight;
 
-        cmd.setConstants(constants);
+            cmd.setConstants(constants);
 
-        mesh.setForRendering(cmd);
+            t.mesh.setForRendering(cmd);
 
-        cmd.drawIndexed(mesh.numIndices());
+            cmd.drawIndexed(t.mesh.numIndices());
+        }
     }
 
     info::InputLayoutInfo inputLayout()
     {
-        return mesh.inputLayout();
+        return info::InputLayoutInfoBuilder()
+            .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0)
+            .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT,    1)
+            .element("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 2);
     }
 };
 

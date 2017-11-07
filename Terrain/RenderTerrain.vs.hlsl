@@ -19,7 +19,7 @@ struct VSOutput
 VSOutput main(VSInput i)
 {
     VSOutput o;
-	o.worldPos.xz = lerp(worldMin, worldMax, i.normalizedPos);
+	o.worldPos.xz = lerp(tileMin, tileMax, i.normalizedPos);
     o.worldPos.y  = i.height;
     o.worldPos.w  = 1;
     o.uv          = float4(i.uv, i.normalizedPos);
