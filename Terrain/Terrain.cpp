@@ -908,6 +908,105 @@ struct Terrain
         }
     }
 
+    TerrainTile uniformGridTile(Rect area, uint quadsExp, bool tipsify = true)
+    {
+        uint2 areaSize     = uint2(area.size());
+        uint sideLength    = std::max(areaSize.x, areaSize.y);
+
+        XOR_ASSERT(roundUpToPow2(sideLength) == sideLength, "Side length must be a power of 2");
+
+        uint quadsPerSide  = 2u << quadsExp;
+        uint vertsPerSide  = quadsPerSide + 1;
+        uint pixelsPerQuad = sideLength / quadsPerSide;
+
+        TerrainTile tile;
+
+        float2 minUV = float2(area.min) / float2(heightmap->size);
+        float2 maxUV = float2(area.max) / float2(heightmap->size);
+        tile.tileMin = worldCoords(area.min);
+        tile.tileMax = worldCoords(area.max);
+
+        float vertexDistance = float(pixelsPerQuad) * heightmap->texelSize;
+
+        DirectedEdge<Empty, uint2> de;
+
+        int numVertices = 0;
+        uint2 maxCoords = uint2(heightmap->size - 1);
+
+        for (uint y = 0; y < vertsPerSide; ++y)
+        {
+            for (uint x = 0; x < vertsPerSide; ++x)
+            {
+                uint2 pixelCoords = uint2(x, y) * uint2(pixelsPerQuad) + uint2(area.min);
+                pixelCoords = min(pixelCoords, maxCoords);
+
+                int v = de.addVertex(pixelCoords);
+                XOR_ASSERT(v == numVertices, "Unexpected vertex number");
+
+                ++numVertices;
+            }
+        }
+
+        auto vertexNumber = [vertsPerSide](int x, int y)
+        {
+            return y * vertsPerSide + x;
+        };
+
+        // Loop all "even" vertices in the interior, generate triangles
+        for (uint y = 1; y < vertsPerSide; y += 2)
+        {
+            for (uint x = 1; x < vertsPerSide; x += 2)
+            {
+                // numpad directions
+                int v7 = vertexNumber(x - 1, y - 1);
+                int v8 = vertexNumber(x + 0, y - 1);
+                int v9 = vertexNumber(x + 1, y - 1);
+                int v4 = vertexNumber(x - 1, y + 0);
+                int v5 = vertexNumber(x + 0, y + 0);
+                int v6 = vertexNumber(x + 1, y + 0);
+                int v1 = vertexNumber(x - 1, y + 1);
+                int v2 = vertexNumber(x + 0, y + 1);
+                int v3 = vertexNumber(x + 1, y + 1);
+
+                de.addTriangle(v5, v8, v7);
+                de.addTriangle(v5, v9, v8);
+                de.addTriangle(v5, v7, v4);
+                de.addTriangle(v5, v6, v9);
+                de.addTriangle(v5, v4, v1);
+                de.addTriangle(v5, v3, v6);
+                de.addTriangle(v5, v1, v2);
+                de.addTriangle(v5, v2, v3);
+            }
+        }
+
+        de.connectAdjacentTriangles();
+
+        if (tipsify)
+            tile.mesh = tipsifyMesh(de, minUV, maxUV);
+        else
+            tile.mesh = gpuMesh(de, minUV, maxUV);
+
+        return tile;
+    }
+
+    void tiledUniformGrid(Rect area, uint tileSize, uint quadsExp, bool tipsify = true)
+    {
+        setBounds(area);
+
+        tiles.clear();
+
+        for (int y = area.min.y; y < area.max.y; y += int(tileSize))
+        {
+            for (int x = area.min.x; x < area.max.x; x += int(tileSize))
+            {
+                int2 coords = area.min + int2(x, y);
+                tiles.emplace_back(uniformGridTile(
+                    Rect { coords, coords + int2(tileSize) },
+                    quadsExp, tipsify));
+            }
+        }
+    }
+
     ErrorMetrics calculateMeshError()
     {
         return ErrorMetrics {};
@@ -995,6 +1094,12 @@ struct Terrain
 
         return metrics;
 #endif
+    }
+
+    float2 worldCoords(int2 pixelCoords) const
+    {
+        pixelCoords -= heightmap->size / int2(2);
+        return float2(pixelCoords) * heightmap->texelSize;
     }
 
     void setBounds(Rect area)
