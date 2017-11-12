@@ -16,6 +16,7 @@ XOR_CBUFFER(Constants, 0)
     float heightMin;
     float heightMax;
     float texelSize;
+    int tileLOD;
 };
 
 XOR_END_SIGNATURE

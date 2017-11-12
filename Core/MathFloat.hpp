@@ -77,4 +77,9 @@ namespace xor
             remap(a.z, b.z, c.z, d.z, x.z),
             remap(a.w, b.w, c.w, d.w, x.w));
     }
+
+    inline float clamp(float x, float minimum, float maximum)
+    {
+        return std::max(minimum, std::min(maximum, x));
+    }
 }

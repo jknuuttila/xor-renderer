@@ -11,12 +11,15 @@ XOR_CBUFFER(Constants, 1)
     float4x4 viewProj;
     float4x4 shadowViewProj;
     float4x4 prevViewProj;
+    float4 cameraPos3D;
+    float2 cameraPos2D;
+    float2 padding0;
     float4 sunDirection;
 	float4 sunColor;
     float4 ambient;
     float2 noiseResolution;
     float  noiseAmplitude;
-    float  padding;
+    float  padding1;
     float2 resolution;
     float2 shadowResolution;
     float  shadowHistoryBlend;

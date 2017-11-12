@@ -66,4 +66,9 @@ namespace xor
 
         return v;
     }
+
+    inline int clamp(int x, int minimum, int maximum)
+    {
+        return std::max(minimum, std::min(maximum, x));
+    }
 }

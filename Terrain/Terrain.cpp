@@ -151,6 +151,13 @@ struct FilterPass
 XOR_CONFIG_WINDOW(Settings, 500, 100)
 {
     XOR_CONFIG_ENUM(RenderingMode, renderingMode, "Rendering mode", RenderingMode::Lighting);
+    XOR_CONFIG_SLIDER(int, tileSizeExp, "Terrain tile size exponent", 7, 7, 10);
+    XOR_CONFIG_TEXT("Terrain tile size", "%d", &Settings::tileSize);
+    XOR_CONFIG_SLIDER(int, lodCount, "LOD count", 5, 1, 10);
+    XOR_CONFIG_SLIDER(float, lodSwitchDistance, "LOD switch distance", 1000.f, 100.f, 5000.f);
+    XOR_CONFIG_SLIDER(float, lodSwitchExponent, "LOD switch exponent", 1.f, 1.f, 4.f);
+
+    int tileSize() const { return 1 << tileSizeExp; }
 
     XOR_CONFIG_GROUP(LightingProperties)
     {
@@ -324,7 +331,8 @@ struct TerrainTile
 {
     int2 tileMin;
     int2 tileMax;
-    Mesh mesh;
+    float2 tileCenterPos;
+    std::vector<Mesh> lodMeshes;
 };
 
 struct Terrain
@@ -633,10 +641,11 @@ struct Terrain
     void singleTile(Rect area, Mesh m)
     {
         setBounds(area);
+        tiles.clear();
         tiles.resize(1);
         tiles.front().tileMin = area.min;
         tiles.front().tileMax = area.max;
-        tiles.front().mesh    = std::move(m);
+        tiles.front().lodMeshes.emplace_back(std::move(m));
     }
 
     void uniformGrid(Rect area, uint quadsPerDim)
@@ -892,102 +901,130 @@ struct Terrain
         }
     }
 
-    TerrainTile uniformGridTile(Rect area, uint quadsExp, bool tipsify = true)
+    TerrainTile uniformGridTile(Rect area, bool tipsify = true)
     {
         uint2 areaSize     = uint2(area.size());
         uint sideLength    = std::max(areaSize.x, areaSize.y);
 
         XOR_ASSERT(roundUpToPow2(sideLength) == sideLength, "Side length must be a power of 2");
 
-        uint quadsPerSide  = 2u << quadsExp;
-        uint vertsPerSide  = quadsPerSide + 1;
-        uint pixelsPerQuad = sideLength / quadsPerSide;
-
         TerrainTile tile;
         tile.tileMin = area.min;
         tile.tileMax = area.max;
+        tile.tileCenterPos = worldCoords(area.min + area.size() / 2);
 
-        float vertexDistance = float(pixelsPerQuad) * heightmap->texelSize;
-
-        DirectedEdge<Empty, uint2> de;
-
-        int numVertices = 0;
-        uint2 maxCoords = uint2(heightmap->size - 1);
-
-        for (uint y = 0; y < vertsPerSide; ++y)
+        for (int lod = 0; lod < cfg_Settings.lodCount; ++lod)
         {
-            for (uint x = 0; x < vertsPerSide; ++x)
+            Timer t;
+
+            uint quadsPerSide = 2u << lod;
+
+            if (quadsPerSide > sideLength)
+                break;
+
+            uint vertsPerSide = quadsPerSide + 1;
+            uint pixelsPerQuad = sideLength / quadsPerSide;
+
+            float vertexDistance = float(pixelsPerQuad) * heightmap->texelSize;
+
+            DirectedEdge<Empty, uint2> de;
+
+            int numVertices = 0;
+            uint2 maxCoords = uint2(heightmap->size - 1);
+
+            for (uint y = 0; y < vertsPerSide; ++y)
             {
-                uint2 pixelCoords = uint2(x, y) * uint2(pixelsPerQuad) + uint2(area.min);
-                pixelCoords = min(pixelCoords, maxCoords);
+                for (uint x = 0; x < vertsPerSide; ++x)
+                {
+                    uint2 pixelCoords = uint2(x, y) * uint2(pixelsPerQuad) + uint2(area.min);
+                    pixelCoords = min(pixelCoords, maxCoords);
 
-                int v = de.addVertex(pixelCoords);
-                XOR_ASSERT(v == numVertices, "Unexpected vertex number");
+                    int v = de.addVertex(pixelCoords);
+                    XOR_ASSERT(v == numVertices, "Unexpected vertex number");
 
-                ++numVertices;
+                    ++numVertices;
+                }
             }
+
+            auto vertexNumber = [vertsPerSide](int x, int y)
+            {
+                return y * vertsPerSide + x;
+            };
+
+            // Loop all "even" vertices in the interior, generate triangles
+            for (uint y = 1; y < vertsPerSide; y += 2)
+            {
+                for (uint x = 1; x < vertsPerSide; x += 2)
+                {
+                    // numpad directions
+                    int v7 = vertexNumber(x - 1, y - 1);
+                    int v8 = vertexNumber(x + 0, y - 1);
+                    int v9 = vertexNumber(x + 1, y - 1);
+                    int v4 = vertexNumber(x - 1, y + 0);
+                    int v5 = vertexNumber(x + 0, y + 0);
+                    int v6 = vertexNumber(x + 1, y + 0);
+                    int v1 = vertexNumber(x - 1, y + 1);
+                    int v2 = vertexNumber(x + 0, y + 1);
+                    int v3 = vertexNumber(x + 1, y + 1);
+
+                    de.addTriangle(v5, v8, v7);
+                    de.addTriangle(v5, v9, v8);
+                    de.addTriangle(v5, v7, v4);
+                    de.addTriangle(v5, v6, v9);
+                    de.addTriangle(v5, v4, v1);
+                    de.addTriangle(v5, v3, v6);
+                    de.addTriangle(v5, v1, v2);
+                    de.addTriangle(v5, v2, v3);
+                }
+            }
+
+            de.connectAdjacentTriangles();
+
+            if (tipsify)
+                tile.lodMeshes.emplace_back(tipsifyMesh(de));
+            else
+                tile.lodMeshes.emplace_back(gpuMesh(de));
+
+            log("uniformGridTile",
+                "Tile (%d, %d) ... (%d, %d), LOD %d, %.3f ms\n",
+                area.min.x, area.min.y,
+                area.max.x, area.max.y,
+                lod,
+                t.milliseconds());
         }
 
-        auto vertexNumber = [vertsPerSide](int x, int y)
-        {
-            return y * vertsPerSide + x;
-        };
-
-        // Loop all "even" vertices in the interior, generate triangles
-        for (uint y = 1; y < vertsPerSide; y += 2)
-        {
-            for (uint x = 1; x < vertsPerSide; x += 2)
-            {
-                // numpad directions
-                int v7 = vertexNumber(x - 1, y - 1);
-                int v8 = vertexNumber(x + 0, y - 1);
-                int v9 = vertexNumber(x + 1, y - 1);
-                int v4 = vertexNumber(x - 1, y + 0);
-                int v5 = vertexNumber(x + 0, y + 0);
-                int v6 = vertexNumber(x + 1, y + 0);
-                int v1 = vertexNumber(x - 1, y + 1);
-                int v2 = vertexNumber(x + 0, y + 1);
-                int v3 = vertexNumber(x + 1, y + 1);
-
-                de.addTriangle(v5, v8, v7);
-                de.addTriangle(v5, v9, v8);
-                de.addTriangle(v5, v7, v4);
-                de.addTriangle(v5, v6, v9);
-                de.addTriangle(v5, v4, v1);
-                de.addTriangle(v5, v3, v6);
-                de.addTriangle(v5, v1, v2);
-                de.addTriangle(v5, v2, v3);
-            }
-        }
-
-        de.connectAdjacentTriangles();
-
-        if (tipsify)
-            tile.mesh = tipsifyMesh(de);
-        else
-            tile.mesh = gpuMesh(de);
+        std::reverse(tile.lodMeshes.begin(), tile.lodMeshes.end());
 
         return tile;
     }
 
-    void tiledUniformGrid(Rect area, uint tileSize, uint quadsExp, bool tipsify = true)
+    void tiledUniformGrid(Rect area, bool tipsify = true)
     {
+        Timer t;
+
         setBounds(area);
 
         tiles.clear();
 
-        int2 midpoint = area.min + area.size() / int2(2);
+        int2 midpoint = area.min + area.size() / 2;
+
+        int tileSize = cfg_Settings.tileSize();
 
         for (int y = area.min.y; y < area.max.y; y += int(tileSize))
         {
             for (int x = area.min.x; x < area.max.x; x += int(tileSize))
             {
                 int2 coords = int2(x, y);
-                tiles.emplace_back(uniformGridTile(
-                    Rect { coords, coords + int2(tileSize) },
-                    quadsExp, tipsify));
+                tiles.emplace_back(
+                    uniformGridTile(
+                        Rect{ coords, coords + int2(tileSize) },
+                        tipsify));
             }
         }
+
+        log("tiledUniformGrid", "Generated %zu tiles in %.3f ms\n",
+            tiles.size(),
+            t.milliseconds());
     }
 
     ErrorMetrics calculateMeshError()
@@ -1096,10 +1133,10 @@ struct Terrain
 
         worldMin = area.min;
         worldMax = area.max;
-        worldCenter = area.min + area.size() / int2(2);
+        worldCenter = area.min + area.size() / 2;
     }
 
-    void render(CommandList &cmd)
+    void render(CommandList &cmd, const float2 *cameraPos = nullptr)
     {
         TerrainPatch::Constants constants;
         constants.heightmapInvSize = float2(1.f) / float2(heightmap->size);
@@ -1115,11 +1152,32 @@ struct Terrain
             constants.tileMin = t.tileMin;
             constants.tileMax = t.tileMax;
 
+            Mesh *mesh = nullptr;
+
+            // If LOD is disabled, use the best LOD
+            if (cameraPos)
+            {
+                float distanceToCenter = (t.tileCenterPos - *cameraPos).length();
+                float linearLOD = distanceToCenter / cfg_Settings.lodSwitchDistance;
+                float logLOD    = cfg_Settings.lodSwitchExponent > 1.05f
+                    ? (logf(linearLOD) / logf(cfg_Settings.lodSwitchExponent))
+                    : linearLOD;
+                int lod                = int(std::floor(logLOD));
+                lod                    = clamp(lod, 0, int(t.lodMeshes.size()) - 1);
+
+                mesh = &t.lodMeshes[lod];
+                constants.tileLOD = lod;
+            }
+            else
+            {
+                mesh = &t.lodMeshes.front();
+                constants.tileLOD = 0;
+            }
+
             cmd.setConstants(constants);
+            mesh->setForRendering(cmd);
 
-            t.mesh.setForRendering(cmd);
-
-            cmd.drawIndexed(t.mesh.numIndices());
+            cmd.drawIndexed(mesh->numIndices());
         }
     }
 
@@ -1240,8 +1298,7 @@ struct TerrainRenderer
         cmd.dispatchThreads(ComputeNormalMap::threadGroupSize, uint3(constants.size));
     }
 
-    void computeAmbientOcclusion(CommandList &cmd,
-                                 SwapChain &sc,
+    void computeAmbientOcclusion(SwapChain &sc,
                                  std::function<void()> wait,
                                  uint samples = 0,
                                  uint aoMapResolution = 2048,
@@ -1255,9 +1312,6 @@ struct TerrainRenderer
             samples = 1000;
 #endif
         }
-        // auto e = cmd.profilingEventPrint("computeAmbientOcclusion");
-        auto e = cmd.profilingEvent("computeAmbientOcclusion");
-
         auto renderAO = device.createGraphicsPipeline(
             GraphicsPipeline::Info()
             .vertexShader("RenderTerrainAO.vs")
@@ -1301,14 +1355,22 @@ struct TerrainRenderer
 
         float radius = terrain->worldDiameter / 2;
 
-        cmd.clearUAV(aoVisibilitySamples.uav);
-        cmd.clearUAV(aoVisibilityBits.uav);
+
         constexpr uint AOBitsPerPixel = 32;
 
         {
             uint i = 0;
             while (i < samples)
             {
+                auto cmd = device.graphicsCommandList();
+                auto e = cmd.profilingEvent("Ambient occlusion sampling");
+
+                if (i == 0)
+                {
+                    cmd.clearUAV(aoVisibilitySamples.uav);
+                    cmd.clearUAV(aoVisibilityBits.uav);
+                }
+
                 for (uint j = 0; j < AOBitsPerPixel; ++j)
                 {
                     float worldDiameter = terrain->worldDiameter;
@@ -1352,11 +1414,15 @@ struct TerrainRenderer
                 }
 
                 i += AOBitsPerPixel;
+
+                device.execute(cmd);
             }
         }
 
         float maxVisibleSamples = float(samples);
 
+        auto cmd = device.graphicsCommandList();
+        auto e = cmd.profilingEvent("Ambient occlusion resolve");
         cmd.setRenderTargets();
 
         {
@@ -1395,6 +1461,9 @@ struct TerrainRenderer
 
             cmd.dispatchThreads(ResolveTerrainAO::threadGroupSize, uint3(constants.size));
         }
+
+        device.execute(cmd);
+        device.waitUntilDrained();
     }
 
     void updateLighting()
@@ -1461,14 +1530,15 @@ struct TerrainRenderer
 
         {
             auto p = cmd.profilingEvent("Draw shadows");
-            terrain->render(cmd);
+            terrain->render(cmd, &c.cameraPos2D);
         }
 
         cmd.setRenderTargets();
     }
 
     RenderTerrain::Constants computeConstants(TextureRTV &rtv,
-                                              const Matrix &viewProj)
+                                              const Matrix &viewProj,
+                                              const FPSCamera &camera)
     {
         RenderTerrain::Constants constants;
 
@@ -1528,6 +1598,8 @@ struct TerrainRenderer
         constants.viewProj           = viewProj;
         constants.shadowViewProj     = shadowViewProj;
         constants.prevViewProj       = prevViewProj;
+        constants.cameraPos3D        = camera.position.s_xyz1;
+        constants.cameraPos2D        = camera.position.s_xz;
         constants.noiseResolution    = float2(blueNoise.srv().texture()->size);
         constants.noiseAmplitude     = cfg_Settings.shadow.shadowNoiseAmplitude / shadowMap.texture()->sizeFloat().x;
         constants.resolution         = rtv.texture()->sizeFloat();
@@ -1545,11 +1617,12 @@ struct TerrainRenderer
                 TextureRTV &rtv,
                 TextureDSV &dsv,
                 const Matrix &viewProj,
+                const FPSCamera &camera,
                 bool wireframe = false)
     {
         updateLighting();
 
-        RenderTerrain::Constants constants = computeConstants(rtv, viewProj);
+        RenderTerrain::Constants constants = computeConstants(rtv, viewProj, camera);
 
         renderShadowMap(cmd, constants);
 
@@ -1580,7 +1653,7 @@ struct TerrainRenderer
 
             cmd.setConstants(constants);
 
-            terrain->render(cmd);
+            terrain->render(cmd, &constants.cameraPos2D);
         }
 
         RWTexture *shadowIn  = &shadowTerm[0];
@@ -1659,7 +1732,7 @@ struct TerrainRenderer
 
             cmd.setConstants(constants);
 
-            terrain->render(cmd);
+            terrain->render(cmd, &constants.cameraPos2D);
         }
 
         if (wireframe)
@@ -1672,14 +1745,14 @@ struct TerrainRenderer
                      .depthBias(10000)
                      .fill(D3D12_FILL_MODE_WIREFRAME));
 
-            terrain->render(cmd);
+            terrain->render(cmd, &constants.cameraPos2D);
         }
 
         cmd.setRenderTargets();
         prevViewProj = viewProj;
     }
 
-    void visualize(CommandList &cmd, float2 minCorner, float2 maxCorner)
+    void visualize(CommandList &cmd, const FPSCamera &camera, float2 minCorner, float2 maxCorner)
     {
         if (mode == VisualizationMode::Disabled)
             return;
@@ -1706,14 +1779,15 @@ struct TerrainRenderer
         cmd.setShaderView(VisualizeTriangulation::heightMap,          heightmap->heightSRV);
         cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, terrain->cpuError);
 
-        terrain->render(cmd);
+        float2 cameraPos = camera.position.s_xz;
+        terrain->render(cmd, &cameraPos);
 
         if (mode == VisualizationMode::WireframeHeight || mode == VisualizationMode::WireframeError)
         {
             cmd.bind(visualizeTriangulation.variant()
                      .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
                      .fill(D3D12_FILL_MODE_WIREFRAME));
-            terrain->render(cmd);
+            terrain->render(cmd, &cameraPos);
         }
     }
 };
@@ -1810,7 +1884,7 @@ public:
             terrain.incrementalMaxError(area, vertexCount(), tipsifyMesh);
             break;
         case TriangulationMode::TiledUniformGrid:
-            terrain.tiledUniformGrid(area, 128, quadsPerDim() - 8);
+            terrain.tiledUniformGrid(area);
             break;
         }
 
@@ -1825,10 +1899,7 @@ public:
             };
 
             Timer aoTimer;
-            auto cmd = device.graphicsCommandList();
-            terrainRenderer.computeAmbientOcclusion(cmd, swapChain, waitForKey);
-            device.execute(cmd);
-            device.waitUntilCompleted(cmd.number());
+            terrainRenderer.computeAmbientOcclusion(swapChain, waitForKey);
 
             log("Heightmap", "Generated ambient occlusion map in %.2f ms\n",
                 aoTimer.milliseconds());
@@ -1946,6 +2017,7 @@ public:
                                Matrix::projectionPerspective(backbuffer.texture()->size, math::DefaultFov,
                                                              1.f, heightmap.worldSize.x * 1.5f)
                                * camera.viewMatrix(),
+                               camera,
                                wireframe);
 
         cmd.setRenderTargets(backbuffer, depthBuffer);
@@ -1958,7 +2030,7 @@ public:
             else
                 min = max - 300;
 
-            terrainRenderer.visualize(cmd,
+            terrainRenderer.visualize(cmd, camera,
                                       remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), min),
                                       remap(float2(0), float2(backbuffer.texture()->size), float2(-1, 1), float2(1, -1), max));
         }
