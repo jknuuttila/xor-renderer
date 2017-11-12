@@ -322,8 +322,8 @@ struct BlueNoise
 
 struct TerrainTile
 {
-    float2 tileMin;
-    float2 tileMax;
+    int2 tileMin;
+    int2 tileMax;
     Mesh mesh;
 };
 
@@ -335,8 +335,9 @@ struct Terrain
     Rect area;
     TextureSRV cpuError;
 
-    float2 worldMin;
-    float2 worldMax;
+    int2 worldMin;
+    int2 worldMax;
+    int2 worldCenter;
     float worldHeight   = 0;
     float worldDiameter = 0;
 
@@ -353,22 +354,20 @@ struct Terrain
     }
 
     template <typename DEMesh>
-    Mesh gpuMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
+    Mesh gpuMesh(const DEMesh &mesh)
     {
         auto verts    = mesh.vertices();
         auto numVerts = verts.size();
-        std::vector<float2> normalizedPos(numVerts);
-        std::vector<float>  height(numVerts);
-        std::vector<float2> uv(numVerts);
+        std::vector<int2>  pixelCoords(numVerts);
+        std::vector<float> height(numVerts);
 
         float2 dims = float2(heightmap->size);
 
         for (uint i = 0; i < numVerts; ++i)
         {
-            auto &v          = verts[i];
-            uv[i]            = float2(v.pos) / dims;
-            normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), uv[i]);
-            height[i]        = heightData.pixel<float>(uint2(v.pos));
+            auto &v         = verts[i];
+            pixelCoords[i] = int2(v.pos);
+            height[i]      = heightData.pixel<float>(uint2(v.pos));
         }
 
         std::vector<uint> indices;
@@ -381,9 +380,9 @@ struct Terrain
             uint b = deIndices[i + 1];
             uint c = deIndices[i + 2];
 
-            // Negate CCW test because the positions are in UV coordinates,
+            // Negate CCW test because the positions are in pixel coordinates,
             // which is left handed because +Y goes down
-            bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
+            bool ccw = !isTriangleCCW(pixelCoords[a], pixelCoords[b], pixelCoords[c]);
 
             if (ccw)
             {
@@ -401,16 +400,15 @@ struct Terrain
 
         VertexAttribute attrs[] =
         {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
-            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(height) },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
+            { "POSITION", 0, DXGI_FORMAT_R32G32_SINT, asBytes(pixelCoords) },
+            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,   asBytes(height) },
         };
 
         return Mesh::generate(device, attrs, indices);
     }
 
     template <typename DEMesh>
-    Mesh tipsifyMesh(const DEMesh &mesh, float2 minUV = float2(0, 0), float2 maxUV = float2(1, 1))
+    Mesh tipsifyMesh(const DEMesh &mesh)
     {
         Timer timer;
 
@@ -568,9 +566,8 @@ struct Terrain
             }
         }
 
-        std::vector<float2> normalizedPos(numVerts);
-        std::vector<float>  height(numVerts);
-        std::vector<float2> uv(numVerts);
+        std::vector<int2>  pixelCoords(numVerts);
+        std::vector<float> height(numVerts);
 
         float2 dims = float2(heightmap->size);
 
@@ -578,10 +575,9 @@ struct Terrain
 
         for (int i = 0; i < numVerts; ++i)
         {
-            auto &v          = verts[vertexForNewIndex[i]];
-            uv[i]            = float2(v.pos) / dims;
-            normalizedPos[i] = remap(minUV, maxUV, float2(0), float2(1), uv[i]);
-            height[i]        = heightData.pixel<float>(uint2(v.pos));
+            auto &v        = verts[vertexForNewIndex[i]];
+            pixelCoords[i] = int2(v.pos);
+            height[i]      = heightData.pixel<float>(uint2(v.pos));
         }
 
         XOR_ASSERT(indices.size() % 3 == 0, "Unexpected amount of indices");
@@ -593,7 +589,7 @@ struct Terrain
 
             // Negate CCW test because the positions are in UV coordinates,
             // which is left handed because +Y goes down
-            bool ccw = !isTriangleCCW(normalizedPos[a], normalizedPos[b], normalizedPos[c]);
+            bool ccw = !isTriangleCCW(pixelCoords[a], pixelCoords[b], pixelCoords[c]);
 
             if (!ccw)
                 std::swap(indices[i + 1], indices[i + 2]);
@@ -601,9 +597,8 @@ struct Terrain
 
         VertexAttribute attrs[] =
         {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
-            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(height) },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uv) },
+            { "POSITION", 0, DXGI_FORMAT_R32G32_SINT, asBytes(pixelCoords) },
+            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,   asBytes(height) },
         };
 
         Mesh gpuMesh = Mesh::generate(device, attrs, indices);
@@ -639,8 +634,8 @@ struct Terrain
     {
         setBounds(area);
         tiles.resize(1);
-        tiles.front().tileMin = worldMin;
-        tiles.front().tileMax = worldMax;
+        tiles.front().tileMin = area.min;
+        tiles.front().tileMax = area.max;
         tiles.front().mesh    = std::move(m);
     }
 
@@ -667,13 +662,11 @@ struct Terrain
 
         auto numVerts   = (verts.x + 1) * (verts.y + 1);
 
-        std::vector<float2> normalizedPos;
-        std::vector<float>  heights;
-        std::vector<float2> uvs;
-        std::vector<uint>   indices;
+        std::vector<int2>  pixelCoords;
+        std::vector<float> heights;
+        std::vector<uint>  indices;
 
-        normalizedPos.reserve(numVerts);
-        uvs.reserve(numVerts);
+        pixelCoords.reserve(numVerts);
         heights.reserve(numVerts);
         indices.reserve(verts.x * verts.y * (3 * 2));
 
@@ -685,13 +678,11 @@ struct Terrain
             {
                 int2 vertexGridCoords = int2(x, y);
                 int2 texCoords = min(vertexGridCoords * vertexDistance + area.min, heightmap->size - 1);
-                float2 uv = float2(vertexGridCoords * vertexDistance) / fRes;
 
                 float height = heightData.pixel<float>(uint2(texCoords));
 
-                normalizedPos.emplace_back(uv);
+                pixelCoords.emplace_back(texCoords);
                 heights.emplace_back(height);
-                uvs.emplace_back((float2(texCoords) + 0.5f) * invSize);
             }
         }
 
@@ -715,15 +706,14 @@ struct Terrain
         }
 
         log("HeightmapRenderer", "Generated uniform grid mesh with %zu vertices and %zu indices in %.2f ms\n",
-            normalizedPos.size(),
+            pixelCoords.size(),
             indices.size(),
             t.milliseconds());
 
         VertexAttribute attrs[] =
         {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(normalizedPos) },
+            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(pixelCoords) },
             { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
-            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(uvs) },
         };
 
         singleTile(area, Mesh::generate(device, attrs, indices));
@@ -894,21 +884,15 @@ struct Terrain
 
         if (tipsify)
         {
-            singleTile(area,
-                       tipsifyMesh(mesh,
-                                   float2(area.min) / float2(heightmap->size),
-                                   float2(area.max) / float2(heightmap->size)));
+            singleTile(area, tipsifyMesh(mesh));
         }
         else
         {
-            singleTile(area,
-                       gpuMesh(mesh,
-                               float2(area.min) / float2(heightmap->size),
-                               float2(area.max) / float2(heightmap->size)));
+            singleTile(area, gpuMesh(mesh));
         }
     }
 
-    TerrainTile uniformGridTile(float2 posOffset, Rect area, uint quadsExp, bool tipsify = true)
+    TerrainTile uniformGridTile(Rect area, uint quadsExp, bool tipsify = true)
     {
         uint2 areaSize     = uint2(area.size());
         uint sideLength    = std::max(areaSize.x, areaSize.y);
@@ -920,11 +904,8 @@ struct Terrain
         uint pixelsPerQuad = sideLength / quadsPerSide;
 
         TerrainTile tile;
-
-        float2 minUV = float2(area.min) / float2(heightmap->size);
-        float2 maxUV = float2(area.max) / float2(heightmap->size);
-        tile.tileMin = worldCoords(area.min) + posOffset;
-        tile.tileMax = worldCoords(area.max) + posOffset;
+        tile.tileMin = area.min;
+        tile.tileMax = area.max;
 
         float vertexDistance = float(pixelsPerQuad) * heightmap->texelSize;
 
@@ -982,9 +963,9 @@ struct Terrain
         de.connectAdjacentTriangles();
 
         if (tipsify)
-            tile.mesh = tipsifyMesh(de, minUV, maxUV);
+            tile.mesh = tipsifyMesh(de);
         else
-            tile.mesh = gpuMesh(de, minUV, maxUV);
+            tile.mesh = gpuMesh(de);
 
         return tile;
     }
@@ -1003,7 +984,6 @@ struct Terrain
             {
                 int2 coords = int2(x, y);
                 tiles.emplace_back(uniformGridTile(
-                    -worldCoords(midpoint),
                     Rect { coords, coords + int2(tileSize) },
                     quadsExp, tipsify));
             }
@@ -1101,8 +1081,8 @@ struct Terrain
 
     float2 worldCoords(int2 pixelCoords) const
     {
-        pixelCoords -= heightmap->size / int2(2);
-        return float2(pixelCoords) * heightmap->texelSize;
+        int2 centered = pixelCoords - worldCenter;
+        return float2(centered) * heightmap->texelSize;
     }
 
     void setBounds(Rect area)
@@ -1110,25 +1090,30 @@ struct Terrain
         this->area = area;
         float2 texels = float2(area.size());
         float2 size   = texels * heightmap->texelSize;
-        float2 extent = size / 2.f;
-        worldMin = -extent;
-        worldMax =  extent;
 
-        float2 worldSize = worldMax - worldMin;
         worldHeight   = heightmap->maxHeight - heightmap->minHeight;
-        worldDiameter = sqrt(worldSize.lengthSqr() + worldHeight * worldHeight);
+        worldDiameter = sqrt(size.lengthSqr() + worldHeight * worldHeight);
+
+        worldMin = area.min;
+        worldMax = area.max;
+        worldCenter = area.min + area.size() / int2(2);
     }
 
     void render(CommandList &cmd)
     {
+        TerrainPatch::Constants constants;
+        constants.heightmapInvSize = float2(1.f) / float2(heightmap->size);
+        constants.worldCenter      = worldCenter;
+        constants.worldMin         = worldMin;
+        constants.worldMax         = worldMax;
+        constants.texelSize        = heightmap->texelSize;
+        constants.heightMin        = heightmap->minHeight;
+        constants.heightMax        = heightmap->maxHeight;
+
         for (auto &t : tiles)
         {
-            TerrainPatch::Constants constants;
-
-            constants.tileMin   = t.tileMin;
-            constants.tileMax   = t.tileMax;
-            constants.heightMin = heightmap->minHeight;
-            constants.heightMax = heightmap->maxHeight;
+            constants.tileMin = t.tileMin;
+            constants.tileMax = t.tileMax;
 
             cmd.setConstants(constants);
 
@@ -1141,9 +1126,8 @@ struct Terrain
     info::InputLayoutInfo inputLayout()
     {
         return info::InputLayoutInfoBuilder()
-            .element("POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0)
-            .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT,    1)
-            .element("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 2);
+            .element("POSITION", 0, DXGI_FORMAT_R32G32_SINT, 0)
+            .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT,   1);
     }
 };
 
@@ -1342,8 +1326,6 @@ struct TerrainRenderer
 
                     RenderTerrainAO::Constants constants;
                     constants.viewProj = viewProj;
-                    constants.worldMin = terrain->worldMin;
-                    constants.worldMax = terrain->worldMax;
                     constants.aoTextureSize = float2(aoMap.texture()->size);
                     constants.aoBitMask = 1 << j;
 
@@ -1492,8 +1474,11 @@ struct TerrainRenderer
 
         float2 resolution = rtv.texture()->sizeFloat();
 
-        float3 terrainMin = float3(terrain->worldMin.x, terrain->worldMin.y, heightmap->minHeight);
-        float3 terrainMax = float3(terrain->worldMax.x, terrain->worldMax.y, heightmap->maxHeight);
+        float2 worldMin = terrain->worldCoords(terrain->worldMin);
+        float2 worldMax = terrain->worldCoords(terrain->worldMax);
+
+        float3 terrainMin = float3(worldMin.x, worldMin.y, heightmap->minHeight);
+        float3 terrainMax = float3(worldMax.x, worldMax.y, heightmap->maxHeight);
 
         float3 terrainCorners[] =
         {
@@ -1825,7 +1810,7 @@ public:
             terrain.incrementalMaxError(area, vertexCount(), tipsifyMesh);
             break;
         case TriangulationMode::TiledUniformGrid:
-            terrain.tiledUniformGrid(area, 128, 2);
+            terrain.tiledUniformGrid(area, 128, quadsPerDim() - 8);
             break;
         }
 
@@ -1917,7 +1902,7 @@ public:
                          reinterpret_cast<int *>(&triangulationMode),
                          "Uniform grid\0"
                          "Incremental max error\0"
-                         "Quadric\0");
+                         "Tiled uniform grid\0");
             ImGui::Checkbox("Tipsify vertex cache optimization", &tipsifyMesh);
 
             ImGui::Separator();

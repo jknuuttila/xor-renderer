@@ -2,14 +2,13 @@
 #define RENDERTERRAINAO_SIG_H
 
 #include "Xor/Shaders.h"
+#include "TerrainPatchConstants.h"
 
 XOR_BEGIN_SIGNATURE(RenderTerrainAO)
 
-XOR_CBUFFER(Constants, 0)
+XOR_CBUFFER(Constants, 1)
 {
     float4x4 viewProj;
-	float2 worldMin;
-	float2 worldMax;
     float2 aoTextureSize;
     uint aoBitMask;
 };
@@ -18,6 +17,6 @@ XOR_TEXTURE_UAV(RWTexture2D<uint>, terrainAOVisibleBits, 0)
 
 XOR_END_SIGNATURE
 
-#define RENDERTERRAINAO_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CU(1, 1)
+#define RENDERTERRAINAO_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CU(2, 1)
 
 #endif

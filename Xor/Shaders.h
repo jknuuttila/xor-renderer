@@ -45,6 +45,8 @@ namespace xor
 
 #else
 
+#define XOR_SHADER
+
 #include "Xor/ShaderMath.h.hlsl"
 #include "Xor/ShaderDebug.h.hlsl"
 

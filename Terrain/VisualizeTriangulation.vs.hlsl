@@ -2,9 +2,8 @@
 
 struct VSInput
 {
-	float2 normalizedPos : POSITION0;
-	float  height        : POSITION1;
-	float2 uv            : TEXCOORD;
+	int2  pixelCoords : POSITION0;
+	float height      : POSITION1;
 };
 
 struct VSOutput
@@ -17,9 +16,13 @@ struct VSOutput
 [RootSignature(VisualizeTriangulation_ROOT_SIGNATURE)]
 VSOutput main(VSInput i)
 {
+    float2 worldPos      = terrainWorldCoords(i.pixelCoords);
+    float2 uv            = terrainUV(i.pixelCoords);
+    float2 normalizedPos = terrainNormalizedPos(i.pixelCoords);
+
     VSOutput o;
-	o.uvHeight = float4(i.uv, i.height, 0);
-    o.areaUv   = float4(i.normalizedPos, 0, 0);
-	o.pos      = float4(lerp(minCorner, maxCorner, i.normalizedPos), 0, 1);
+	o.uvHeight = float4(uv, i.height, 0);
+    o.areaUv   = float4(normalizedPos, 0, 0);
+	o.pos      = float4(lerp(minCorner, maxCorner, normalizedPos), 0, 1);
     return o;
 }

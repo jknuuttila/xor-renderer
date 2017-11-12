@@ -2,9 +2,8 @@
 
 struct VSInput
 {
-    float2 normalizedPos : POSITION0;
-    float  height        : POSITION1;
-    float2 uv            : TEXCOORD0;
+    int2  pixelCoords : POSITION0;
+    float height      : POSITION1;
 };
 
 struct VSOutput
@@ -17,12 +16,15 @@ struct VSOutput
 [RootSignature(RENDERTERRAINAO_ROOT_SIGNATURE)]
 VSOutput main(VSInput i)
 {
+    float2 worldPos      = terrainWorldCoords(i.pixelCoords);
+    float2 uv            = terrainUV(i.pixelCoords);
+    float2 normalizedPos = terrainNormalizedPos(i.pixelCoords);
+
     VSOutput o;
-	o.worldPos.xz = lerp(worldMin, worldMax, i.normalizedPos);
+	o.worldPos.xz = worldPos;
     o.worldPos.y  = i.height;
     o.worldPos.w  = 1;
-    //o.uv          = float4(i.uv, 0, 0);
-    o.uv          = float4(i.normalizedPos, 0, 0);
+    o.uv          = float4(normalizedPos, 0, 0);
 	o.pos         = mul(viewProj, o.worldPos);
     return o;
 }

@@ -38,10 +38,16 @@ namespace xor
         case DXGI_FORMAT_D32_FLOAT:
             return 4;
         case DXGI_FORMAT_R32G32_FLOAT:
+        case DXGI_FORMAT_R32G32_SINT:
+        case DXGI_FORMAT_R32G32_UINT:
             return 8;
         case DXGI_FORMAT_R32G32B32_FLOAT:
+        case DXGI_FORMAT_R32G32B32_SINT:
+        case DXGI_FORMAT_R32G32B32_UINT:
             return 12;
         case DXGI_FORMAT_R32G32B32A32_FLOAT:
+        case DXGI_FORMAT_R32G32B32A32_SINT:
+        case DXGI_FORMAT_R32G32B32A32_UINT:
             return 16;
         default:
             XOR_CHECK(false, "Unknown format");
