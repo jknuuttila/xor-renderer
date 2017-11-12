@@ -587,6 +587,43 @@ namespace xor
             if (e1 >= 0) E(e1).neighbor = e0;
         }
 
+        // Check all triangles in the mesh, and connect all triangles that share a correctly oriented edge.
+        // If edges are incorrectly oriented or there are more than 2 triangles per edge, an error occurs.
+        void connectAdjacentTriangles()
+        {
+            int numEs = numEdges();
+
+            std::unordered_map<int64_t, int> connectingEdges;
+            connectingEdges.reserve(numEs);
+
+            for (int e = 0; e < numEs; ++e)
+            {
+                int a = edgeStart(e);
+                int b = edgeTarget(e);
+
+                // Encode the edge as the two edge numbers, sorted
+                // so the order doesn't matter.
+                if (b < a) std::swap(a, b);
+                int64_t encodedEdge = (int64_t(b) << 32) | int64_t(a);
+
+                auto res = connectingEdges.emplace(encodedEdge, e);
+
+                // If the insertion failed, there is already a triangle for that
+                // edge. Check that this is exactly the second triangle for that
+                // edge, and then connect the two triangles.
+                if (!res.second)
+                {
+                    int another = res.first->second;
+
+                    // When we have attached two triangles for an edge, mark the edge
+                    // as invalid for more attachments.
+                    XOR_ASSERT(another >= 0, "More than two triangles for edge.");
+                    edgeUpdateNeighbor(e, another);
+                    res.first->second = -1;
+                }
+            }
+        }
+
         void debugEdge(const char *file, int line, const char *name, int e, const char *prefix = nullptr) const
         {
             if (e >= 0)

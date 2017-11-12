@@ -116,7 +116,7 @@ enum class TriangulationMode
 {
     UniformGrid,
     IncMaxError,
-    Quadric,
+    TiledUniformGrid,
 };
 
 enum class VisualizationMode
@@ -908,7 +908,7 @@ struct Terrain
         }
     }
 
-    TerrainTile uniformGridTile(Rect area, uint quadsExp, bool tipsify = true)
+    TerrainTile uniformGridTile(float2 posOffset, Rect area, uint quadsExp, bool tipsify = true)
     {
         uint2 areaSize     = uint2(area.size());
         uint sideLength    = std::max(areaSize.x, areaSize.y);
@@ -923,8 +923,8 @@ struct Terrain
 
         float2 minUV = float2(area.min) / float2(heightmap->size);
         float2 maxUV = float2(area.max) / float2(heightmap->size);
-        tile.tileMin = worldCoords(area.min);
-        tile.tileMax = worldCoords(area.max);
+        tile.tileMin = worldCoords(area.min) + posOffset;
+        tile.tileMax = worldCoords(area.max) + posOffset;
 
         float vertexDistance = float(pixelsPerQuad) * heightmap->texelSize;
 
@@ -995,12 +995,15 @@ struct Terrain
 
         tiles.clear();
 
+        int2 midpoint = area.min + area.size() / int2(2);
+
         for (int y = area.min.y; y < area.max.y; y += int(tileSize))
         {
             for (int x = area.min.x; x < area.max.x; x += int(tileSize))
             {
-                int2 coords = area.min + int2(x, y);
+                int2 coords = int2(x, y);
                 tiles.emplace_back(uniformGridTile(
+                    -worldCoords(midpoint),
                     Rect { coords, coords + int2(tileSize) },
                     quadsExp, tipsify));
             }
@@ -1749,7 +1752,7 @@ class TerrainRendering : public Window
     int areaSize  = 2048;
 #endif
     int triangulationDensity = 6;
-    TriangulationMode triangulationMode = TriangulationMode::IncMaxError;//TriangulationMode::UniformGrid;
+    TriangulationMode triangulationMode = TriangulationMode::TiledUniformGrid;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
     bool blitArea    = true;
     bool blitNormal  = false;
@@ -1821,8 +1824,8 @@ public:
         case TriangulationMode::IncMaxError:
             terrain.incrementalMaxError(area, vertexCount(), tipsifyMesh);
             break;
-        case TriangulationMode::Quadric:
-            // terrainRenderer.quadricSimplification(area, vertexCount(), tipsifyMesh);
+        case TriangulationMode::TiledUniformGrid:
+            terrain.tiledUniformGrid(area, 128, 2);
             break;
         }
 
