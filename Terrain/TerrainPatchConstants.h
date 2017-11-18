@@ -25,22 +25,54 @@ XOR_END_SIGNATURE
 
 #include "Xor/ShaderMath.h.hlsl"
 
-float2 terrainWorldCoords(int2 pixelCoords)
-{
-    int2 xy = pixelCoords - worldCenter;
-    float2 world = float2(xy) * texelSize;
-    return world;
-}
 float2 terrainUV(int2 pixelCoords)
 {
     return float2(pixelCoords) * heightmapInvSize;
 }
-float2 terrainNormalizedPos(int2 pixelCoords)
+
+struct TerrainVertex
 {
-    float2 minUV = terrainUV(worldMin);
-    float2 maxUV = terrainUV(worldMax);
-    return remap(minUV, maxUV, 0, 1, terrainUV(pixelCoords));
+    int2  pixelCoords;
+    float height;
+    int2  nextLodPixelCoords;
+    float nextLodHeight;
+
+    float2 unnormalizedUV()
+    {
+        return float2(pixelCoords);
+    }
+
+    float2 worldCoords()
+    {
+        int2 xy      = pixelCoords - worldCenter;
+        float2 world = float2(xy) * texelSize;
+        return world;
+    }
+
+    float2 uv()
+    {
+        return terrainUV(pixelCoords);
+    }
+
+    float2 normalizedPos()
+    {
+        float2 minUV = terrainUV(worldMin);
+        float2 maxUV = terrainUV(worldMax);
+        return remap(minUV, maxUV, 0, 1, terrainUV(pixelCoords));
+    }
+};
+
+TerrainVertex makeTerrainVertex(int2 pixelCoords, float height,
+                                int2 nextLodPixelCoords, float nextLodHeight)
+{
+    TerrainVertex v;
+    v.pixelCoords        = pixelCoords;
+    v.height             = height;
+    v.nextLodPixelCoords = nextLodPixelCoords;
+    v.nextLodHeight      = nextLodHeight;
+    return v;
 }
+
 #endif
 
 #endif

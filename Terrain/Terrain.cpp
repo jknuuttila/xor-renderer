@@ -362,57 +362,58 @@ struct Terrain
     }
 
     template <typename DEMesh>
-    Mesh gpuMesh(const DEMesh &mesh)
+    Mesh gpuMesh(const DEMesh &mesh,
+                 std::vector<int> indices = {},
+                 Span<const int> vertexForIndex = {})
     {
-        auto verts    = mesh.vertices();
-        auto numVerts = verts.size();
+        int numVerts = mesh.numVertices();
+
+        if (indices.empty())
+            indices = mesh.triangleIndices();
+
         std::vector<int2>  pixelCoords(numVerts);
         std::vector<float> height(numVerts);
+        std::vector<int2>  nextLodPixelCoords(numVerts);
+        std::vector<float> nextLodHeight(numVerts);
 
         float2 dims = float2(heightmap->size);
 
-        for (uint i = 0; i < numVerts; ++i)
+        auto verts = mesh.vertices();
+
+        for (int i = 0; i < numVerts; ++i)
         {
-            auto &v         = verts[i];
-            pixelCoords[i] = int2(v.pos);
-            height[i]      = heightData.pixel<float>(uint2(v.pos));
+            int vertexIndex       = vertexForIndex.empty() ? i : vertexForIndex[i];
+            auto &v               = verts[vertexIndex];
+            pixelCoords[i]        = int2(v.pos);
+            height[i]             = heightData.pixel<float>(uint2(v.pos));
+            nextLodPixelCoords[i] = pixelCoords[i];
+            nextLodHeight[i]      = height[i];
         }
 
-        std::vector<uint> indices;
-        auto deIndices = mesh.triangleIndices();
-        indices.reserve(deIndices.size());
-        XOR_ASSERT(deIndices.size() % 3 == 0, "Unexpected amount of indices");
-        for (size_t i = 0; i < deIndices.size(); i += 3)
+        XOR_ASSERT(indices.size() % 3 == 0, "Unexpected amount of indices");
+        for (size_t i = 0; i < indices.size(); i += 3)
         {
-            uint a = deIndices[i];
-            uint b = deIndices[i + 1];
-            uint c = deIndices[i + 2];
+            uint a = indices[i];
+            uint b = indices[i + 1];
+            uint c = indices[i + 2];
 
-            // Negate CCW test because the positions are in pixel coordinates,
+            // Negate CCW test because the positions are in UV coordinates,
             // which is left handed because +Y goes down
             bool ccw = !isTriangleCCW(pixelCoords[a], pixelCoords[b], pixelCoords[c]);
 
-            if (ccw)
-            {
-                indices.emplace_back(a);
-                indices.emplace_back(b);
-                indices.emplace_back(c);
-            }
-            else
-            {
-                indices.emplace_back(a);
-                indices.emplace_back(c);
-                indices.emplace_back(b);
-            }
+            if (!ccw)
+                std::swap(indices[i + 1], indices[i + 2]);
         }
 
         VertexAttribute attrs[] =
         {
             { "POSITION", 0, DXGI_FORMAT_R32G32_SINT, asBytes(pixelCoords) },
             { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,   asBytes(height) },
+            { "POSITION", 2, DXGI_FORMAT_R32G32_SINT, asBytes(nextLodPixelCoords) },
+            { "POSITION", 3, DXGI_FORMAT_R32_FLOAT,   asBytes(nextLodHeight) },
         };
 
-        return Mesh::generate(device, attrs, indices);
+        return Mesh::generate(device, attrs, reinterpretSpan<const uint>(indices));
     }
 
     template <typename DEMesh>
@@ -444,7 +445,7 @@ struct Terrain
         std::vector<int> recentVertices;
         std::vector<int> liveTriangles;
         std::vector<uint8_t> triangleEmitted;
-        std::vector<uint> indices;
+        std::vector<int> indices;
 
         constexpr int VertexCacheSize = 16;
         int vertexCacheTime = 0;
@@ -574,42 +575,7 @@ struct Terrain
             }
         }
 
-        std::vector<int2>  pixelCoords(numVerts);
-        std::vector<float> height(numVerts);
-
-        float2 dims = float2(heightmap->size);
-
-        auto verts = mesh.vertices();
-
-        for (int i = 0; i < numVerts; ++i)
-        {
-            auto &v        = verts[vertexForNewIndex[i]];
-            pixelCoords[i] = int2(v.pos);
-            height[i]      = heightData.pixel<float>(uint2(v.pos));
-        }
-
-        XOR_ASSERT(indices.size() % 3 == 0, "Unexpected amount of indices");
-        for (size_t i = 0; i < indices.size(); i += 3)
-        {
-            uint a = indices[i];
-            uint b = indices[i + 1];
-            uint c = indices[i + 2];
-
-            // Negate CCW test because the positions are in UV coordinates,
-            // which is left handed because +Y goes down
-            bool ccw = !isTriangleCCW(pixelCoords[a], pixelCoords[b], pixelCoords[c]);
-
-            if (!ccw)
-                std::swap(indices[i + 1], indices[i + 2]);
-        }
-
-        VertexAttribute attrs[] =
-        {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_SINT, asBytes(pixelCoords) },
-            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,   asBytes(height) },
-        };
-
-        Mesh gpuMesh = Mesh::generate(device, attrs, indices);
+        Mesh gpuMesh = this->gpuMesh(mesh, std::move(indices), vertexForNewIndex);
 
         log("Heightmap", "Generated tipsified mesh with %d vertices and %d triangles in %.2f ms\n",
             mesh.numVertices(),
@@ -1185,7 +1151,10 @@ struct Terrain
     {
         return info::InputLayoutInfoBuilder()
             .element("POSITION", 0, DXGI_FORMAT_R32G32_SINT, 0)
-            .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT,   1);
+            .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT,   1)
+            .element("POSITION", 2, DXGI_FORMAT_R32G32_SINT, 0)
+            .element("POSITION", 3, DXGI_FORMAT_R32_FLOAT,   1)
+            ;
     }
 };
 
@@ -1415,6 +1384,7 @@ struct TerrainRenderer
 
                 i += AOBitsPerPixel;
 
+                e.done();
                 device.execute(cmd);
             }
         }
@@ -1462,6 +1432,7 @@ struct TerrainRenderer
             cmd.dispatchThreads(ResolveTerrainAO::threadGroupSize, uint3(constants.size));
         }
 
+        e.done();
         device.execute(cmd);
         device.waitUntilDrained();
     }
