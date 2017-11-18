@@ -141,6 +141,11 @@ XOR_DEFINE_CONFIG_ENUM(FilterKind,
                        Gaussian,
                        Median);
 
+XOR_DEFINE_CONFIG_ENUM(LodMode,
+                       NoSnap,
+                       Snap,
+                       Morph);
+
 struct FilterPass
 {
     FilterKind kind = FilterKind::Gaussian;
@@ -156,6 +161,7 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
     XOR_CONFIG_SLIDER(int, lodCount, "LOD count", 5, 1, 10);
     XOR_CONFIG_SLIDER(float, lodSwitchDistance, "LOD switch distance", 1000.f, 100.f, 5000.f);
     XOR_CONFIG_SLIDER(float, lodSwitchExponent, "LOD switch exponent", 1.f, 1.f, 4.f);
+    XOR_CONFIG_ENUM(LodMode, lodMode, "LOD mode", LodMode::NoSnap);
 
     int tileSize() const { return 1 << tileSizeExp; }
 
@@ -361,6 +367,21 @@ struct Terrain
         uniformGrid(Rect::withSize(heightmap.size), 100);
     }
 
+    struct VertexLod
+    {
+        int2 nextLodPixelCoords;
+    };
+
+    static int2 vertexNextLodPixelCoords(const Empty &, int2 pixelCoords)
+    {
+        return pixelCoords;
+    }
+
+    static int2 vertexNextLodPixelCoords(const VertexLod &v, int2 pixelCoords)
+    {
+        return v.nextLodPixelCoords;
+    }
+
     template <typename DEMesh>
     Mesh gpuMesh(const DEMesh &mesh,
                  std::vector<int> indices = {},
@@ -386,8 +407,8 @@ struct Terrain
             auto &v               = verts[vertexIndex];
             pixelCoords[i]        = int2(v.pos);
             height[i]             = heightData.pixel<float>(uint2(v.pos));
-            nextLodPixelCoords[i] = pixelCoords[i];
-            nextLodHeight[i]      = height[i];
+            nextLodPixelCoords[i] = vertexNextLodPixelCoords(v, pixelCoords[i]);
+            nextLodHeight[i]      = heightData.pixel<float>(uint2(nextLodPixelCoords[i]));
         }
 
         XOR_ASSERT(indices.size() % 3 == 0, "Unexpected amount of indices");
@@ -893,7 +914,7 @@ struct Terrain
 
             float vertexDistance = float(pixelsPerQuad) * heightmap->texelSize;
 
-            DirectedEdge<Empty, uint2> de;
+            DirectedEdge<Empty, uint2, VertexLod> de;
 
             int numVertices = 0;
             uint2 maxCoords = uint2(heightmap->size - 1);
@@ -902,11 +923,26 @@ struct Terrain
             {
                 for (uint x = 0; x < vertsPerSide; ++x)
                 {
+                    bool onlyOnThisLod = (x & 1) || (y & 1);
+
                     uint2 pixelCoords = uint2(x, y) * uint2(pixelsPerQuad) + uint2(area.min);
                     pixelCoords = min(pixelCoords, maxCoords);
 
                     int v = de.addVertex(pixelCoords);
                     XOR_ASSERT(v == numVertices, "Unexpected vertex number");
+
+                    VertexLod &lod = de.V(v);
+
+                    if (onlyOnThisLod)
+                    {
+                        uint coarseX = x & ~1u;
+                        uint coarseY = y & ~1u;
+                        lod.nextLodPixelCoords = int2(coarseX, coarseY) * int2(pixelsPerQuad) + int2(area.min);
+                    }
+                    else
+                    {
+                        lod.nextLodPixelCoords = int2(pixelCoords);
+                    }
 
                     ++numVertices;
                 }
@@ -1102,16 +1138,32 @@ struct Terrain
         worldCenter = area.min + area.size() / 2;
     }
 
+    static int computeLOD(float distance)
+    {
+        float linearLOD        = distance / cfg_Settings.lodSwitchDistance;
+        float logLOD           = cfg_Settings.lodSwitchExponent > 1.05f
+            ? (logf(linearLOD) / logf(cfg_Settings.lodSwitchExponent))
+            : linearLOD;
+        int lod = int(std::floor(logLOD));
+
+        return lod;
+    }
+
     void render(CommandList &cmd, const float2 *cameraPos = nullptr)
     {
         TerrainPatch::Constants constants;
-        constants.heightmapInvSize = float2(1.f) / float2(heightmap->size);
-        constants.worldCenter      = worldCenter;
-        constants.worldMin         = worldMin;
-        constants.worldMax         = worldMax;
-        constants.texelSize        = heightmap->texelSize;
-        constants.heightMin        = heightmap->minHeight;
-        constants.heightMax        = heightmap->maxHeight;
+        constants.heightmapInvSize  = float2(1.f) / float2(heightmap->size);
+        constants.worldCenter       = float2(worldCenter);
+        constants.worldMin          = worldMin;
+        constants.worldMax          = worldMax;
+        constants.texelSize         = heightmap->texelSize;
+        constants.heightMin         = heightmap->minHeight;
+        constants.heightMax         = heightmap->maxHeight;
+
+        if (cameraPos)
+            constants.cameraWorldCoords = *cameraPos;
+
+        float tileSize = cfg_Settings.tileSize() * heightmap->texelSize;
 
         for (auto &t : tiles)
         {
@@ -1120,24 +1172,45 @@ struct Terrain
 
             Mesh *mesh = nullptr;
 
+            auto clampLod = [&t] (int lod) { return clamp(lod, 0, int(t.lodMeshes.size()) - 1); };
+
+
             // If LOD is disabled, use the best LOD
             if (cameraPos)
             {
                 float distanceToCenter = (t.tileCenterPos - *cameraPos).length();
-                float linearLOD = distanceToCenter / cfg_Settings.lodSwitchDistance;
-                float logLOD    = cfg_Settings.lodSwitchExponent > 1.05f
-                    ? (logf(linearLOD) / logf(cfg_Settings.lodSwitchExponent))
-                    : linearLOD;
-                int lod                = int(std::floor(logLOD));
-                lod                    = clamp(lod, 0, int(t.lodMeshes.size()) - 1);
+                float distanceToNextCenter = distanceToCenter + tileSize;
+
+                int lod = computeLOD(distanceToCenter);
+                lod = clampLod(lod);;
+
+                int nextLod = computeLOD(distanceToNextCenter);
+                nextLod = clampLod(nextLod);
 
                 mesh = &t.lodMeshes[lod];
                 constants.tileLOD = lod;
+
+                if (lod == nextLod)
+                {
+                    constants.lodEnabled          = 0;
+                    constants.lodMorphMinDistance = 0;
+                    constants.lodMorphMaxDistance = 0;
+                }
+                else
+                {
+                    constants.lodEnabled          = static_cast<int>(cfg_Settings.lodMode != LodMode::NoSnap);
+                    constants.lodMorphMinDistance = distanceToCenter;
+                    constants.lodMorphMaxDistance = distanceToCenter + tileSize / 2;
+
+                    if (cfg_Settings.lodMode == LodMode::Snap)
+                        constants.lodMorphMinDistance = constants.lodMorphMaxDistance;
+                }
             }
             else
             {
                 mesh = &t.lodMeshes.front();
                 constants.tileLOD = 0;
+                constants.lodEnabled = 0;
             }
 
             cmd.setConstants(constants);

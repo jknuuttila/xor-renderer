@@ -11,12 +11,16 @@ XOR_CBUFFER(Constants, 0)
     int2 tileMax;
     int2 worldMin;
     int2 worldMax;
-    int2 worldCenter;
+    float2 worldCenter;
     float2 heightmapInvSize;
     float heightMin;
     float heightMax;
     float texelSize;
     int tileLOD;
+    float2 cameraWorldCoords;
+    float lodMorphMinDistance;
+    float lodMorphMaxDistance;
+    int lodEnabled;
 };
 
 XOR_END_SIGNATURE
@@ -36,29 +40,55 @@ struct TerrainVertex
     float height;
     int2  nextLodPixelCoords;
     float nextLodHeight;
-
-    float2 unnormalizedUV()
-    {
-        return float2(pixelCoords);
-    }
+    float2 loddedPixelCoords;
+    float  loddedHeight;
 
     float2 worldCoords()
     {
-        int2 xy      = pixelCoords - worldCenter;
-        float2 world = float2(xy) * texelSize;
+        float2 xy    = loddedPixelCoords - worldCenter;
+        float2 world = xy * texelSize;
         return world;
     }
 
     float2 uv()
     {
-        return terrainUV(pixelCoords);
+        return terrainUV(loddedPixelCoords);
     }
 
     float2 normalizedPos()
     {
         float2 minUV = terrainUV(worldMin);
         float2 maxUV = terrainUV(worldMax);
-        return remap(minUV, maxUV, 0, 1, terrainUV(pixelCoords));
+        return remap(minUV, maxUV, 0, 1, terrainUV(loddedPixelCoords));
+    }
+
+    void computeLOD()
+    {
+        float distanceToCamera = length(float2(pixelCoords) - cameraWorldCoords);
+
+        loddedPixelCoords = pixelCoords;
+        loddedHeight      = height;
+
+        if (lodEnabled)
+        {
+            float alpha;
+
+            if (lodMorphMinDistance == lodMorphMaxDistance)
+            {
+                alpha = (distanceToCamera < lodMorphMaxDistance)
+                    ? 0 : 1;
+            }
+            else
+            {
+                alpha = smoothstep(lodMorphMinDistance, lodMorphMaxDistance, distanceToCamera);
+            }
+
+            float2 morphPixelCoords = lerp(pixelCoords, nextLodPixelCoords, alpha);
+            float  morphHeight      = lerp(height, nextLodHeight, alpha);
+
+            loddedPixelCoords = morphPixelCoords;
+            loddedHeight      = morphHeight;
+        }
     }
 };
 
@@ -70,6 +100,9 @@ TerrainVertex makeTerrainVertex(int2 pixelCoords, float height,
     v.height             = height;
     v.nextLodPixelCoords = nextLodPixelCoords;
     v.nextLodHeight      = nextLodHeight;
+
+    v.computeLOD();
+
     return v;
 }
 
