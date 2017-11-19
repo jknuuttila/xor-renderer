@@ -401,6 +401,14 @@ namespace xor
                 return a / L;
         }
 
+        template <uint N>
+        inline Vector<float, N> fmod(Vector<float, N> a, Vector<float, N> b)
+        {
+            Vector<float, N> c;
+            for (uint i = 0; i < N; ++i) c[i] = fmodf(a[i], b[i]);
+            return c;
+        }
+
         template <typename T, uint N>
         Vector<T, N> abs(Vector<T, N> a)
         {

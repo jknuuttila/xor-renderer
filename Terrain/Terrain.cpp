@@ -1187,6 +1187,11 @@ struct Terrain
         return lod;
     }
 
+    static int computeLOD(float distance, size_t numLODs)
+    {
+        return clamp(computeLOD(distance), 0, int(numLODs) - 1);
+    }
+
     void render(CommandList &cmd, const float2 *cameraPos = nullptr)
     {
         TerrainPatch::Constants constants;
@@ -1217,8 +1222,6 @@ struct Terrain
 
             Mesh *mesh = nullptr;
 
-            auto clampLod = [&t] (int lod) { return clamp(lod, 0, int(t.lodMeshes.size()) - 1); };
-
 
             // If LOD is disabled, use the best LOD
             if (cameraPos)
@@ -1227,19 +1230,50 @@ struct Terrain
                 float2 tileMax = worldCoords(t.tileMax);
                 float2 clampedCamera = max(min(*cameraPos, tileMax), tileMin);
 
-                float distanceToTile = (clampedCamera - *cameraPos).length();
-                float distanceToNextCenter = distanceToTile + tileSize;
+                float2 camera = *cameraPos;
+                float distanceToTile = (clampedCamera - camera).length();
 
-                int lod = computeLOD(distanceToTile);
-                lod = clampLod(lod);
+                int lod = computeLOD(distanceToTile, t.lodMeshes.size());
 
-                int nextLod = computeLOD(distanceToNextCenter);
-                nextLod = clampLod(nextLod);
+                float2 modulo   = fmod(clampedCamera, float2(tileSize));
+
+                float2 tileLeft  = clampedCamera - modulo.s_x0;
+                float2 tileRight = clampedCamera + (tileSize - modulo).s_x0;
+                float2 tileUp    = clampedCamera - modulo.s_0y;
+                float2 tileDown  = clampedCamera + (tileSize - modulo).s_0y;
+
+                float distanceLeft  = (tileLeft  - camera).length();
+                float distanceRight = (tileRight - camera).length();
+                float distanceUp    = (tileUp    - camera).length();
+                float distanceDown  = (tileDown  - camera).length();
+
+                float distanceToSameLOD = distanceToTile;
+                float distanceToNextLOD = -1;
+
+                for (float d : { distanceLeft, distanceRight, distanceUp, distanceDown })
+                {
+                    // Discard the edge we just clamped to
+                    if (d < .1f) continue;
+
+                    // Check if it's a new LOD
+                    int neighborLOD = computeLOD(d, t.lodMeshes.size());
+                    if (neighborLOD > lod)
+                    {
+                        if (distanceToNextLOD < 0 || d < distanceToNextLOD)
+                        {
+                            distanceToNextLOD = d;
+                        }
+                    }
+                    else
+                    {
+                        distanceToSameLOD = std::max(distanceToSameLOD, d);
+                    }
+                }
 
                 mesh = &t.lodMeshes[lod];
                 constants.tileLOD = lod;
 
-                if (lod == nextLod)
+                if (distanceToNextLOD < 0)
                 {
                     constants.lodEnabled          = 0;
                     constants.lodMorphMinDistance = 0;
@@ -1249,20 +1283,8 @@ struct Terrain
                 {
                     constants.lodEnabled          = static_cast<int>(cfg_Settings.lodMode != LodMode::NoSnap);
 
-#if 0
-                    bool cameraInTile = distanceToCenter < halfTile;
-
-                    if (cameraInTile)
-                    {
-                        constants.lodMorphMinDistance = 0;
-                        constants.lodMorphMaxDistance = halfTile - distanceToCenter;
-                    }
-                    else
-                    {
-                        constants.lodMorphMinDistance = distanceToCenter - halfTile * sqrt(2.f);
-                        constants.lodMorphMaxDistance = constants.lodMorphMinDistance + tileSize / sqrt(2.f);
-                    }
-#endif
+                    constants.lodMorphMinDistance = distanceToSameLOD;
+                    constants.lodMorphMaxDistance = distanceToNextLOD;
 
                     if (cfg_Settings.lodMode == LodMode::Snap)
                         constants.lodMorphMinDistance = constants.lodMorphMaxDistance;

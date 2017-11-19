@@ -54,9 +54,14 @@ float terrainLOD(float distance)
 
 float terrainLODAlpha(float distance)
 {
+#if 0
     float lod   = terrainLOD(distance);
     float alpha = saturate(lod - float(tileLOD));
     return alpha;
+#else
+    float alpha = smoothstep(lodMorphMinDistance, lodMorphMaxDistance, distance);
+    return alpha;
+#endif
 }
 
 struct TerrainVertex
@@ -99,7 +104,7 @@ struct TerrainVertex
             float2 morphPixelCoords = lerp(pixelCoords, nextLodPixelCoords, alpha);
             float  morphHeight      = lerp(height, nextLodHeight, alpha);
 
-            loddedPixelCoords = round(morphPixelCoords);
+            loddedPixelCoords = morphPixelCoords;
             loddedHeight      = morphHeight;
         }
     }
