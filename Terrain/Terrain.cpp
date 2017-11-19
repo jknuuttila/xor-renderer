@@ -119,15 +119,16 @@ enum class TriangulationMode
     TiledUniformGrid,
 };
 
-enum class VisualizationMode
-{
+XOR_DEFINE_CONFIG_ENUM(VisualizationMode,
     Disabled,
     WireframeHeight,
     OnlyHeight,
     WireframeError,
     OnlyError,
     CPUError,
-};
+    MorphDistance,
+    TileLOD,
+    TileLODContinuous);
 
 XOR_DEFINE_CONFIG_ENUM(RenderingMode,
     Height,
@@ -159,7 +160,7 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
     XOR_CONFIG_SLIDER(int, tileSizeExp, "Terrain tile size exponent", 7, 7, 10);
     XOR_CONFIG_TEXT("Terrain tile size", "%d", &Settings::tileSize);
     XOR_CONFIG_SLIDER(int, lodCount, "LOD count", 5, 1, 10);
-    XOR_CONFIG_SLIDER(float, lodSwitchDistance, "LOD switch distance", 1000.f, 100.f, 5000.f);
+    XOR_CONFIG_SLIDER(float, lodSwitchDistance, "LOD switch distance", 1500.f, 100.f, 5000.f);
     XOR_CONFIG_SLIDER(float, lodSwitchExponent, "LOD switch exponent", 1.f, 1.f, 4.f);
     XOR_CONFIG_ENUM(LodMode, lodMode, "LOD mode", LodMode::NoSnap);
 
@@ -923,26 +924,63 @@ struct Terrain
             {
                 for (uint x = 0; x < vertsPerSide; ++x)
                 {
-                    bool onlyOnThisLod = (x & 1) || (y & 1);
-
                     uint2 pixelCoords = uint2(x, y) * uint2(pixelsPerQuad) + uint2(area.min);
                     pixelCoords = min(pixelCoords, maxCoords);
 
                     int v = de.addVertex(pixelCoords);
                     XOR_ASSERT(v == numVertices, "Unexpected vertex number");
 
-                    VertexLod &lod = de.V(v);
+                    VertexLod &vl = de.V(v);
 
-                    if (onlyOnThisLod)
+                    uint2 coarser;
+                    switch (x % 4)
                     {
-                        uint coarseX = x & ~1u;
-                        uint coarseY = y & ~1u;
-                        lod.nextLodPixelCoords = int2(coarseX, coarseY) * int2(pixelsPerQuad) + int2(area.min);
+                    case 0:
+                    case 2:
+                        coarser.x = x;
+                        break;
+                    case 1:
+                        coarser.x = x - 1;
+                        break;
+                    case 3:
+                        coarser.x = x + 1;
+                        break;
+                    }
+
+                    switch (y % 4)
+                    {
+                    case 0:
+                    case 2:
+                        coarser.y = y;
+                        break;
+                    case 1:
+                        coarser.y = y - 1;
+                        break;
+                    case 3:
+                        coarser.y = y + 1;
+                        break;
+                    }
+
+                    if (any(coarser != uint2(x, y)))
+                    {
+                        vl.nextLodPixelCoords = int2(coarser) * int2(pixelsPerQuad) + int2(area.min);
+                        vl.nextLodPixelCoords = min(vl.nextLodPixelCoords, int2(maxCoords));
                     }
                     else
                     {
-                        lod.nextLodPixelCoords = int2(pixelCoords);
+                        vl.nextLodPixelCoords = int2(pixelCoords);
                     }
+
+#if 0
+                    if (lod == 1)
+                    {
+                        print("(%u, %u) (%u, %u) (%u, %u), (%d, %d)\n",
+                              x, y, coarser.x, coarser.y,
+                              pixelCoords.x, pixelCoords.y,
+                              vl.nextLodPixelCoords.x,
+                              vl.nextLodPixelCoords.y);
+                    }
+#endif
 
                     ++numVertices;
                 }
@@ -1160,10 +1198,17 @@ struct Terrain
         constants.heightMin         = heightmap->minHeight;
         constants.heightMax         = heightmap->maxHeight;
 
+        constants.lodSwitchDistance = cfg_Settings.lodSwitchDistance;
+        if (cfg_Settings.lodSwitchExponent > 1.05f)
+            constants.lodSwitchExponentInvLog = 1 / logf(cfg_Settings.lodSwitchExponent);
+        else
+            constants.lodSwitchExponentInvLog = 0;
+
         if (cameraPos)
             constants.cameraWorldCoords = *cameraPos;
 
         float tileSize = cfg_Settings.tileSize() * heightmap->texelSize;
+        float halfTile = tileSize / 2;
 
         for (auto &t : tiles)
         {
@@ -1178,11 +1223,15 @@ struct Terrain
             // If LOD is disabled, use the best LOD
             if (cameraPos)
             {
-                float distanceToCenter = (t.tileCenterPos - *cameraPos).length();
-                float distanceToNextCenter = distanceToCenter + tileSize;
+                float2 tileMin = worldCoords(t.tileMin);
+                float2 tileMax = worldCoords(t.tileMax);
+                float2 clampedCamera = max(min(*cameraPos, tileMax), tileMin);
 
-                int lod = computeLOD(distanceToCenter);
-                lod = clampLod(lod);;
+                float distanceToTile = (clampedCamera - *cameraPos).length();
+                float distanceToNextCenter = distanceToTile + tileSize;
+
+                int lod = computeLOD(distanceToTile);
+                lod = clampLod(lod);
 
                 int nextLod = computeLOD(distanceToNextCenter);
                 nextLod = clampLod(nextLod);
@@ -1199,8 +1248,21 @@ struct Terrain
                 else
                 {
                     constants.lodEnabled          = static_cast<int>(cfg_Settings.lodMode != LodMode::NoSnap);
-                    constants.lodMorphMinDistance = distanceToCenter;
-                    constants.lodMorphMaxDistance = distanceToCenter + tileSize / 2;
+
+#if 0
+                    bool cameraInTile = distanceToCenter < halfTile;
+
+                    if (cameraInTile)
+                    {
+                        constants.lodMorphMinDistance = 0;
+                        constants.lodMorphMaxDistance = halfTile - distanceToCenter;
+                    }
+                    else
+                    {
+                        constants.lodMorphMinDistance = distanceToCenter - halfTile * sqrt(2.f);
+                        constants.lodMorphMaxDistance = constants.lodMorphMinDistance + tileSize / sqrt(2.f);
+                    }
+#endif
 
                     if (cfg_Settings.lodMode == LodMode::Snap)
                         constants.lodMorphMinDistance = constants.lodMorphMaxDistance;
@@ -1225,8 +1287,8 @@ struct Terrain
         return info::InputLayoutInfoBuilder()
             .element("POSITION", 0, DXGI_FORMAT_R32G32_SINT, 0)
             .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT,   1)
-            .element("POSITION", 2, DXGI_FORMAT_R32G32_SINT, 0)
-            .element("POSITION", 3, DXGI_FORMAT_R32_FLOAT,   1)
+            .element("POSITION", 2, DXGI_FORMAT_R32G32_SINT, 2)
+            .element("POSITION", 3, DXGI_FORMAT_R32_FLOAT,   3)
             ;
     }
 };
@@ -1816,6 +1878,15 @@ struct TerrainRenderer
         else if (mode == VisualizationMode::CPUError)
             cmd.bind(visualizeTriangulation.variant()
                      .pixelShader(info::SameShader {}, { { "CPU_ERROR" } }));
+        else if (mode == VisualizationMode::MorphDistance)
+            cmd.bind(visualizeTriangulation.variant()
+                     .pixelShader(info::SameShader {}, { { "MORPH_DISTANCE" } }));
+        else if (mode == VisualizationMode::TileLOD)
+            cmd.bind(visualizeTriangulation.variant()
+                     .pixelShader(info::SameShader {}, { { "TILE_LOD" } }));
+        else if (mode == VisualizationMode::TileLODContinuous)
+            cmd.bind(visualizeTriangulation.variant()
+                     .pixelShader(info::SameShader {}, { { "TILE_LOD_CONTINUOUS" } }));
         else
             cmd.bind(visualizeTriangulation);
 
@@ -1826,7 +1897,7 @@ struct TerrainRenderer
         float2 cameraPos = camera.position.s_xz;
         terrain->render(cmd, &cameraPos);
 
-        if (mode == VisualizationMode::WireframeHeight || mode == VisualizationMode::WireframeError)
+        if (mode != VisualizationMode::OnlyHeight && mode != VisualizationMode::OnlyError)
         {
             cmd.bind(visualizeTriangulation.variant()
                      .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
@@ -2029,14 +2100,7 @@ public:
 
             ImGui::Separator();
 
-            ImGui::Combo("Visualize triangulation",
-                         reinterpret_cast<int *>(&terrainRenderer.mode),
-                         "Disabled\0"
-                         "WireframeHeight\0"
-                         "OnlyHeight\0"
-                         "WireframeError\0"
-                         "OnlyError\0"
-                         "CPUError\0");
+            configEnumImguiCombo("Visualize triangulation", terrainRenderer.mode);
             ImGui::Checkbox("Large visualization", &largeVisualization);
             ImGui::SliderFloat("Error magnitude", &terrainRenderer.maxErrorCoeff, 0, .25f);
 

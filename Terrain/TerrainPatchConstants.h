@@ -21,6 +21,8 @@ XOR_CBUFFER(Constants, 0)
     float lodMorphMinDistance;
     float lodMorphMaxDistance;
     int lodEnabled;
+    float lodSwitchDistance;
+    float lodSwitchExponentInvLog;
 };
 
 XOR_END_SIGNATURE
@@ -29,9 +31,32 @@ XOR_END_SIGNATURE
 
 #include "Xor/ShaderMath.h.hlsl"
 
+float2 terrainWorldCoords(int2 pixelCoords)
+{
+    float2 xy    = pixelCoords - worldCenter;
+    float2 world = xy * texelSize;
+    return world;
+}
+
 float2 terrainUV(int2 pixelCoords)
 {
     return float2(pixelCoords) * heightmapInvSize;
+}
+
+float terrainLOD(float distance)
+{
+    float linearLOD        = distance / lodSwitchDistance;
+    float logLOD           = lodSwitchExponentInvLog != 0
+        ? (log(linearLOD) * lodSwitchExponentInvLog)
+        : linearLOD;
+    return logLOD;
+}
+
+float terrainLODAlpha(float distance)
+{
+    float lod   = terrainLOD(distance);
+    float alpha = saturate(lod - float(tileLOD));
+    return alpha;
 }
 
 struct TerrainVertex
@@ -45,9 +70,7 @@ struct TerrainVertex
 
     float2 worldCoords()
     {
-        float2 xy    = loddedPixelCoords - worldCenter;
-        float2 world = xy * texelSize;
-        return world;
+        return terrainWorldCoords(loddedPixelCoords);
     }
 
     float2 uv()
@@ -64,29 +87,19 @@ struct TerrainVertex
 
     void computeLOD()
     {
-        float distanceToCamera = length(float2(pixelCoords) - cameraWorldCoords);
+        float distanceToCamera = length(terrainWorldCoords(pixelCoords) - cameraWorldCoords);
 
         loddedPixelCoords = pixelCoords;
         loddedHeight      = height;
 
         if (lodEnabled)
         {
-            float alpha;
-
-            if (lodMorphMinDistance == lodMorphMaxDistance)
-            {
-                alpha = (distanceToCamera < lodMorphMaxDistance)
-                    ? 0 : 1;
-            }
-            else
-            {
-                alpha = smoothstep(lodMorphMinDistance, lodMorphMaxDistance, distanceToCamera);
-            }
+            float alpha = terrainLODAlpha(distanceToCamera);
 
             float2 morphPixelCoords = lerp(pixelCoords, nextLodPixelCoords, alpha);
             float  morphHeight      = lerp(height, nextLodHeight, alpha);
 
-            loddedPixelCoords = morphPixelCoords;
+            loddedPixelCoords = round(morphPixelCoords);
             loddedHeight      = morphHeight;
         }
     }

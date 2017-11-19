@@ -24,7 +24,7 @@ VSOutput main(VSInput i)
 
     VSOutput o;
 	o.worldPos.xz = v.worldCoords();
-    o.worldPos.y  = v.height;
+    o.worldPos.y  = v.loddedHeight;
     o.worldPos.w  = 1;
     o.uv          = float4(v.uv(), v.normalizedPos());
 	o.pos         = mul(viewProj, o.worldPos);
