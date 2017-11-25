@@ -18,11 +18,11 @@ XOR_CBUFFER(Constants, 0)
     float texelSize;
     int tileLOD;
     float2 cameraWorldCoords;
-    float lodMorphMinDistance;
-    float lodMorphMaxDistance;
     int lodEnabled;
     float lodSwitchDistance;
     float lodSwitchExponentInvLog;
+    float lodBias;
+    float lodMorphStart;
 };
 
 XOR_END_SIGNATURE
@@ -49,19 +49,19 @@ float terrainLOD(float distance)
     float logLOD           = lodSwitchExponentInvLog != 0
         ? (log(linearLOD) * lodSwitchExponentInvLog)
         : linearLOD;
-    return logLOD;
+    return logLOD + lodBias;
 }
 
 float terrainLODAlpha(float distance)
 {
-#if 0
-    float lod   = terrainLOD(distance);
-    float alpha = saturate(lod - float(tileLOD));
-    return alpha;
+    float lod        = terrainLOD(distance);
+    float fractional = saturate(lod - float(tileLOD));
+#if 1
+    float alpha      = saturate(remap(lodMorphStart, 1, 0, 1, fractional));
 #else
-    float alpha = smoothstep(lodMorphMinDistance, lodMorphMaxDistance, distance);
-    return alpha;
+    float alpha      = smoothstep(lodMorphStart, 1.0, fractional);
 #endif
+    return alpha;
 }
 
 struct TerrainVertex

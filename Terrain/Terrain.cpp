@@ -128,7 +128,8 @@ XOR_DEFINE_CONFIG_ENUM(VisualizationMode,
     CPUError,
     MorphDistance,
     TileLOD,
-    TileLODContinuous);
+    TileLODContinuous,
+    TileLODMorph);
 
 XOR_DEFINE_CONFIG_ENUM(RenderingMode,
     Height,
@@ -162,7 +163,10 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
     XOR_CONFIG_SLIDER(int, lodCount, "LOD count", 5, 1, 10);
     XOR_CONFIG_SLIDER(float, lodSwitchDistance, "LOD switch distance", 1500.f, 100.f, 5000.f);
     XOR_CONFIG_SLIDER(float, lodSwitchExponent, "LOD switch exponent", 1.f, 1.f, 4.f);
+    XOR_CONFIG_SLIDER(float, lodBias, "LOD bias", 0.f, -5.f, 5.f);
+    XOR_CONFIG_SLIDER(float, lodMorphStart, "LOD morph start", 0.5f, 0.f, 1.f);
     XOR_CONFIG_ENUM(LodMode, lodMode, "LOD mode", LodMode::NoSnap);
+    XOR_CONFIG_CHECKBOX(highlightCracks, "Highlight cracks", false);
 
     int tileSize() const { return 1 << tileSizeExp; }
 
@@ -1212,6 +1216,9 @@ struct Terrain
         if (cameraPos)
             constants.cameraWorldCoords = *cameraPos;
 
+        constants.lodBias       = cfg_Settings.lodBias;
+        constants.lodMorphStart = cfg_Settings.lodMorphStart;
+
         float tileSize = cfg_Settings.tileSize() * heightmap->texelSize;
         float halfTile = tileSize / 2;
 
@@ -1235,60 +1242,9 @@ struct Terrain
 
                 int lod = computeLOD(distanceToTile, t.lodMeshes.size());
 
-                float2 modulo   = fmod(clampedCamera, float2(tileSize));
-
-                float2 tileLeft  = clampedCamera - modulo.s_x0;
-                float2 tileRight = clampedCamera + (tileSize - modulo).s_x0;
-                float2 tileUp    = clampedCamera - modulo.s_0y;
-                float2 tileDown  = clampedCamera + (tileSize - modulo).s_0y;
-
-                float distanceLeft  = (tileLeft  - camera).length();
-                float distanceRight = (tileRight - camera).length();
-                float distanceUp    = (tileUp    - camera).length();
-                float distanceDown  = (tileDown  - camera).length();
-
-                float distanceToSameLOD = distanceToTile;
-                float distanceToNextLOD = -1;
-
-                for (float d : { distanceLeft, distanceRight, distanceUp, distanceDown })
-                {
-                    // Discard the edge we just clamped to
-                    if (d < .1f) continue;
-
-                    // Check if it's a new LOD
-                    int neighborLOD = computeLOD(d, t.lodMeshes.size());
-                    if (neighborLOD > lod)
-                    {
-                        if (distanceToNextLOD < 0 || d < distanceToNextLOD)
-                        {
-                            distanceToNextLOD = d;
-                        }
-                    }
-                    else
-                    {
-                        distanceToSameLOD = std::max(distanceToSameLOD, d);
-                    }
-                }
-
                 mesh = &t.lodMeshes[lod];
                 constants.tileLOD = lod;
-
-                if (distanceToNextLOD < 0)
-                {
-                    constants.lodEnabled          = 0;
-                    constants.lodMorphMinDistance = 0;
-                    constants.lodMorphMaxDistance = 0;
-                }
-                else
-                {
-                    constants.lodEnabled          = static_cast<int>(cfg_Settings.lodMode != LodMode::NoSnap);
-
-                    constants.lodMorphMinDistance = distanceToSameLOD;
-                    constants.lodMorphMaxDistance = distanceToNextLOD;
-
-                    if (cfg_Settings.lodMode == LodMode::Snap)
-                        constants.lodMorphMinDistance = constants.lodMorphMaxDistance;
-                }
+                constants.lodEnabled = static_cast<int>(cfg_Settings.lodMode != LodMode::NoSnap);
             }
             else
             {
@@ -1603,7 +1559,9 @@ struct TerrainRenderer
 
         auto renderingMode = cfg_Settings.renderingMode;
 
-        if (renderingMode == RenderingMode::Lighting)
+        if (cfg_Settings.highlightCracks)
+            lightingDefines.emplace_back("HIGHLIGHT_CRACKS");
+        else if (renderingMode == RenderingMode::Lighting)
             lightingDefines.emplace_back("LIGHTING");
         else if (renderingMode == RenderingMode::AmbientOcclusion)
             lightingDefines.emplace_back("SHOW_AO");
@@ -1842,6 +1800,9 @@ struct TerrainRenderer
         }
 
         {
+            if (cfg_Settings.highlightCracks)
+                cmd.clearRTV(rtv, {1, 1, 1, 1});
+
             auto p = cmd.profilingEvent("Draw opaque");
 
             cmd.bind(renderTerrain.variant()
@@ -1894,21 +1855,36 @@ struct TerrainRenderer
         vtConstants.maxCorner = maxCorner;
         vtConstants.maxError  = maxErrorCoeff * (vtConstants.maxHeight - vtConstants.minHeight);
 
-        if (mode == VisualizationMode::OnlyError || mode == VisualizationMode::WireframeError)
+        info::ShaderDefine defines[1];
+
+        switch (mode)
+        {
+        case VisualizationMode::OnlyError:
+        case VisualizationMode::WireframeError:
+            defines[0] = info::ShaderDefine("SHOW_ERROR");
+            break;
+        case VisualizationMode::CPUError:
+            defines[0] = info::ShaderDefine("CPU_ERROR");
+            break;
+        case VisualizationMode::MorphDistance:
+            defines[0] = info::ShaderDefine("MORPH_DISTANCE");
+            break;
+        case VisualizationMode::TileLOD:
+            defines[0] = info::ShaderDefine("TILE_LOD");
+            break;
+        case VisualizationMode::TileLODContinuous:
+            defines[0] = info::ShaderDefine("TILE_LOD_CONTINUOUS");
+            break;
+        case VisualizationMode::TileLODMorph:
+            defines[0] = info::ShaderDefine("TILE_LOD_MORPH");
+            break;
+        default:
+            break;
+        }
+
+        if (defines[0].define)
             cmd.bind(visualizeTriangulation.variant()
-                     .pixelShader(info::SameShader {}, { { "SHOW_ERROR" } }));
-        else if (mode == VisualizationMode::CPUError)
-            cmd.bind(visualizeTriangulation.variant()
-                     .pixelShader(info::SameShader {}, { { "CPU_ERROR" } }));
-        else if (mode == VisualizationMode::MorphDistance)
-            cmd.bind(visualizeTriangulation.variant()
-                     .pixelShader(info::SameShader {}, { { "MORPH_DISTANCE" } }));
-        else if (mode == VisualizationMode::TileLOD)
-            cmd.bind(visualizeTriangulation.variant()
-                     .pixelShader(info::SameShader {}, { { "TILE_LOD" } }));
-        else if (mode == VisualizationMode::TileLODContinuous)
-            cmd.bind(visualizeTriangulation.variant()
-                     .pixelShader(info::SameShader {}, { { "TILE_LOD_CONTINUOUS" } }));
+                     .pixelShader(info::SameShader {}, defines));
         else
             cmd.bind(visualizeTriangulation);
 

@@ -62,6 +62,18 @@ float4 main(PSInput i) : SV_Target
     else
         color.rgb = LodColors[clamp(tileLOD, 0, 9)];
 #elif defined(TILE_LOD_CONTINUOUS)
+    float lod = terrainLOD(distanceToCamera);
+
+    lod = clamp(lod, 0, 9);
+
+    float3 A = LodColors[uint(floor(lod))];
+    float3 B = LodColors[uint(ceil(lod))];
+
+    if (cameraNear)
+        color.rgb = 1;
+    else
+        color.rgb = lerp(A, B, frac(lod));
+#elif defined(TILE_LOD_MORPH)
     float alpha = terrainLODAlpha(distanceToCamera);
 
     float3 A = LodColors[clamp(tileLOD,     0, 9)];

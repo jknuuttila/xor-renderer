@@ -88,6 +88,8 @@ PSOutput main(PSInput i)
     o.color.rgb = lerp(0.1, 0.9, shadow) * ambientOcclusion;
 #elif defined(SHADOW_HISTORY)
     o.color.rgb = o.shadowTerm;
+#elif defined(HIGHLIGHT_CRACKS)
+    o.color.rgb = h * .05;
 #else
     o.color.rgb = albedo;
 #endif
