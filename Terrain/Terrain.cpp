@@ -343,6 +343,7 @@ struct TerrainTile
     int2 tileMin;
     int2 tileMax;
     float2 tileCenterPos;
+    int selectedLod = -1;
     std::vector<Mesh> lodMeshes;
 };
 
@@ -1196,7 +1197,32 @@ struct Terrain
         return clamp(computeLOD(distance), 0, int(numLODs) - 1);
     }
 
-    void render(CommandList &cmd, const float2 *cameraPos = nullptr)
+    void selectLODs(const float2 *cameraPos = nullptr)
+    {
+        for (auto &t : tiles)
+        {
+            // If LOD is disabled, use the best LOD
+            if (cameraPos)
+            {
+                float2 tileMin = worldCoords(t.tileMin);
+                float2 tileMax = worldCoords(t.tileMax);
+                float2 clampedCamera = max(min(*cameraPos, tileMax), tileMin);
+
+                float2 camera = *cameraPos;
+                float distanceToTile = (clampedCamera - camera).length();
+
+                int lod = computeLOD(distanceToTile, t.lodMeshes.size());
+
+                t.selectedLod = lod;
+            }
+            else
+            {
+                t.selectedLod = -1;
+            }
+        }
+    }
+
+    void render(CommandList &cmd, const float2 *cameraPos = nullptr) const
     {
         TerrainPatch::Constants constants;
         constants.heightmapInvSize  = float2(1.f) / float2(heightmap->size);
@@ -1227,23 +1253,13 @@ struct Terrain
             constants.tileMin = t.tileMin;
             constants.tileMax = t.tileMax;
 
-            Mesh *mesh = nullptr;
-
+            const Mesh *mesh = nullptr;
 
             // If LOD is disabled, use the best LOD
-            if (cameraPos)
+            if (t.selectedLod >= 0)
             {
-                float2 tileMin = worldCoords(t.tileMin);
-                float2 tileMax = worldCoords(t.tileMax);
-                float2 clampedCamera = max(min(*cameraPos, tileMax), tileMin);
-
-                float2 camera = *cameraPos;
-                float distanceToTile = (clampedCamera - camera).length();
-
-                int lod = computeLOD(distanceToTile, t.lodMeshes.size());
-
-                mesh = &t.lodMeshes[lod];
-                constants.tileLOD = lod;
+                mesh = &t.lodMeshes[t.selectedLod];
+                constants.tileLOD = t.selectedLod;
                 constants.lodEnabled = static_cast<int>(cfg_Settings.lodMode != LodMode::NoSnap);
             }
             else
@@ -1437,6 +1453,7 @@ struct TerrainRenderer
 
         float radius = terrain->worldDiameter / 2;
 
+        terrain->selectLODs();
 
         constexpr uint AOBitsPerPixel = 32;
 
@@ -1709,6 +1726,8 @@ struct TerrainRenderer
         updateLighting();
 
         RenderTerrain::Constants constants = computeConstants(rtv, viewProj, camera);
+
+        terrain->selectLODs(&constants.cameraPos2D);
 
         renderShadowMap(cmd, constants);
 
