@@ -361,7 +361,10 @@ struct Terrain
     float worldHeight   = 0;
     float worldDiameter = 0;
 
+    uint2 numTiles;
     std::vector<TerrainTile> tiles;
+    TextureSRV tileLODs;
+    RWImageData tileLODsCPU;
 
     Terrain() = default;
     Terrain(Device device, Heightmap &heightmap)
@@ -1067,6 +1070,20 @@ struct Terrain
             }
         }
 
+        {
+            numTiles = uint2((area.size() + int2(tileSize - 1)) / tileSize);
+            tileLODsCPU = RWImageData(numTiles, DXGI_FORMAT_R8_UINT);
+            tileLODs = device.createTextureSRV(info::TextureInfoBuilder()
+                                               .size(tileLODsCPU.size)
+                                               .format(tileLODsCPU.format));
+        }
+
+        {
+            auto cmd = device.graphicsCommandList();
+            selectLODs(cmd);
+            device.execute(cmd);
+        }
+
         log("tiledUniformGrid", "Generated %zu tiles in %.3f ms\n",
             tiles.size(),
             t.milliseconds());
@@ -1197,15 +1214,21 @@ struct Terrain
         return clamp(computeLOD(distance), 0, int(numLODs) - 1);
     }
 
-    void selectLODs(const float2 *cameraPos = nullptr)
+    void selectLODs(CommandList &cmd, const float2 *cameraPos = nullptr)
     {
+        float2 worldMinWS = worldCoords(worldMin);
+        float2 worldMaxWS = worldCoords(worldMax);
+
         for (auto &t : tiles)
         {
+            float2 tileMin = worldCoords(t.tileMin);
+            float2 tileMax = worldCoords(t.tileMax);
+
+            float2 tileCoordUV = remap(worldMinWS, worldMaxWS, float2(0.f), float2(1.f), tileMin);
+
             // If LOD is disabled, use the best LOD
             if (cameraPos)
             {
-                float2 tileMin = worldCoords(t.tileMin);
-                float2 tileMax = worldCoords(t.tileMax);
                 float2 clampedCamera = max(min(*cameraPos, tileMax), tileMin);
 
                 float2 camera = *cameraPos;
@@ -1219,7 +1242,11 @@ struct Terrain
             {
                 t.selectedLod = -1;
             }
+
+            tileLODsCPU.pixel<uint8_t>(tileCoordUV) = uint8_t(std::max(0, t.selectedLod));
         }
+
+        cmd.updateTexture(tileLODs.texture(), tileLODsCPU);
     }
 
     void render(CommandList &cmd, const float2 *cameraPos = nullptr) const
@@ -1453,8 +1480,6 @@ struct TerrainRenderer
 
         float radius = terrain->worldDiameter / 2;
 
-        terrain->selectLODs();
-
         constexpr uint AOBitsPerPixel = 32;
 
         {
@@ -1466,6 +1491,7 @@ struct TerrainRenderer
 
                 if (i == 0)
                 {
+                    terrain->selectLODs(cmd);
                     cmd.clearUAV(aoVisibilitySamples.uav);
                     cmd.clearUAV(aoVisibilityBits.uav);
                 }
@@ -1492,6 +1518,7 @@ struct TerrainRenderer
 
                     cmd.setConstants(constants);
                     cmd.setShaderView(RenderTerrainAO::terrainAOVisibleBits, aoVisibilityBits.uav);
+                    cmd.setShaderView(RenderTerrainAO::tileLODs, terrain->tileLODs);
 
                     terrain->render(cmd);
 
@@ -1630,6 +1657,7 @@ struct TerrainRenderer
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainShadows);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::noiseTexture);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
+        cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
 
         {
             auto p = cmd.profilingEvent("Draw shadows");
@@ -1727,7 +1755,7 @@ struct TerrainRenderer
 
         RenderTerrain::Constants constants = computeConstants(rtv, viewProj, camera);
 
-        terrain->selectLODs(&constants.cameraPos2D);
+        terrain->selectLODs(cmd, &constants.cameraPos2D);
 
         renderShadowMap(cmd, constants);
 
@@ -1755,6 +1783,7 @@ struct TerrainRenderer
             cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
             cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(noiseIndex()));
             cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
+            cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
 
             cmd.setConstants(constants);
 
@@ -1837,6 +1866,7 @@ struct TerrainRenderer
             cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
             cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(noiseIndex()));
             cmd.setShaderView(RenderTerrain::shadowTerm,     shadowIn->srv);
+            cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
 
             cmd.setConstants(constants);
 
@@ -1910,6 +1940,7 @@ struct TerrainRenderer
         cmd.setConstants(vtConstants);
         cmd.setShaderView(VisualizeTriangulation::heightMap,          heightmap->heightSRV);
         cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, terrain->cpuError);
+        cmd.setShaderView(VisualizeTriangulation::tileLODs, terrain->tileLODs);
 
         float2 cameraPos = camera.position.s_xz;
         terrain->render(cmd, &cameraPos);

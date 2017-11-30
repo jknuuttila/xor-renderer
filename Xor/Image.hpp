@@ -181,6 +181,7 @@ namespace xor
         Span<uint8_t> mutableData;
         DynamicBuffer<uint8_t> ownedData;
 
+        RWImageData() = default;
         RWImageData(uint2 size, Format format)
         {
             this->size = size;

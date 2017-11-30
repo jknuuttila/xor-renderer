@@ -3,6 +3,14 @@
 
 #include "Xor/Shaders.h"
 
+#ifndef TERRAIN_TILE_LODS
+#define TERRAIN_TILE_LODS tileLODs
+#endif
+
+#ifndef TERRAIN_TILE_LODS_SAMPLER
+#define TERRAIN_TILE_LODS_SAMPLER tileLODSampler
+#endif
+
 XOR_BEGIN_SIGNATURE(TerrainPatch)
 
 XOR_CBUFFER(Constants, 0)
@@ -43,18 +51,22 @@ float2 terrainUV(int2 pixelCoords)
     return float2(pixelCoords) * heightmapInvSize;
 }
 
-float terrainLOD(float distance)
+float terrainLOD(float sampledLOD, float distance)
 {
+#if 1
+    return sampledLOD;
+#else
     float linearLOD        = distance / lodSwitchDistance;
     float logLOD           = lodSwitchExponentInvLog != 0
         ? (log(linearLOD) * lodSwitchExponentInvLog)
         : linearLOD;
     return logLOD + lodBias;
+#endif
 }
 
-float terrainLODAlpha(float distance)
+float terrainLODAlpha(float sampledLOD, float distance)
 {
-    float lod        = terrainLOD(distance);
+    float lod        = terrainLOD(sampledLOD, distance);
     float fractional = saturate(lod - float(tileLOD));
 #if 1
     float alpha      = saturate(remap(lodMorphStart, 1, 0, 1, fractional));
@@ -64,8 +76,15 @@ float terrainLODAlpha(float distance)
     return alpha;
 }
 
+float terrainSampleLOD(float2 uv)
+{
+    return TERRAIN_TILE_LODS.SampleLevel(TERRAIN_TILE_LODS_SAMPLER, uv, 0);
+}
+
 struct TerrainVertex
 {
+    Texture2D<float> tileLODs;
+    SamplerState tileLODSampler;
     int2  pixelCoords;
     float height;
     int2  nextLodPixelCoords;
@@ -99,7 +118,8 @@ struct TerrainVertex
 
         if (lodEnabled)
         {
-            float alpha = terrainLODAlpha(distanceToCamera);
+            float alpha = terrainLODAlpha(terrainSampleLOD(uv()),
+                                          distanceToCamera);
 
             float2 morphPixelCoords = lerp(pixelCoords, nextLodPixelCoords, alpha);
             float  morphHeight      = lerp(height, nextLodHeight, alpha);
