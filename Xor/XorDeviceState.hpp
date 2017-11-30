@@ -169,6 +169,29 @@ namespace xor
                 m_gpuStart           = m_heap->GetGPUDescriptorHandleForHeapStart();
                 if (m_stagingHeap)
                     m_stagingStart = m_stagingHeap->GetCPUDescriptorHandleForHeapStart();
+
+#if 0
+                log("ViewHeap", "Descriptor range type %d CPU handles, heap 0x%016zX ... 0x%016zX, transient 0x%016zX ... 0x%016zX\n",
+                    int(type),
+                    descriptorAtOffset(0).cpu.ptr,
+                    descriptorAtOffset(m_transientStart).cpu.ptr,
+                    descriptorAtOffset(m_transientStart).cpu.ptr,
+                    descriptorAtOffset(totalSize).cpu.ptr);
+
+                log("ViewHeap", "Descriptor range type %d GPU handles, heap 0x%016zX ... 0x%016zX, transient 0x%016zX ... 0x%016zX\n",
+                    int(type),
+                    descriptorAtOffset(0).gpu.ptr,
+                    descriptorAtOffset(m_transientStart).gpu.ptr,
+                    descriptorAtOffset(m_transientStart).gpu.ptr,
+                    descriptorAtOffset(totalSize).gpu.ptr);
+
+                log("ViewHeap", "Descriptor range type %d Staging handles, heap 0x%016zX ... 0x%016zX, transient 0x%016zX ... 0x%016zX\n",
+                    int(type),
+                    descriptorAtOffset(0).staging.ptr,
+                    descriptorAtOffset(m_transientStart).staging.ptr,
+                    descriptorAtOffset(m_transientStart).staging.ptr,
+                    descriptorAtOffset(totalSize).staging.ptr);
+#endif
             }
 
             ID3D12DescriptorHeap *get() { return m_heap.Get(); }

@@ -116,7 +116,8 @@ namespace xor
 
     bool CommandList::hasCompleted()
     {
-        auto completed = S().timesCompleted->GetCompletedValue();
+        UINT64 started   = S().timesStarted;
+        UINT64 completed = S().timesCompleted->GetCompletedValue();
 
         constexpr uint64_t TDRFence = static_cast<uint64_t>(-1LL);
         if (completed == TDRFence)
@@ -126,12 +127,14 @@ namespace xor
             return true;
         }
 
-        XOR_ASSERT(completed <= S().timesStarted,
+        XOR_ASSERT(completed <= started,
                    "Command list completion count out of sync. %p = %llu",
                    S().timesCompleted.Get(),
                    size_t(S().timesCompleted->GetCompletedValue()));
 
-        return completed == S().timesStarted;
+        bool done = completed == started;
+
+        return done;
     }
 
     void CommandList::waitUntilCompleted(DWORD timeout)

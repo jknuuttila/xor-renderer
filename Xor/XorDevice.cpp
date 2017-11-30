@@ -1067,9 +1067,13 @@ namespace xor
 
         ID3D12CommandList *cmds[] = { cmd.S().cmd.Get() };
         S().graphicsQueue->ExecuteCommandLists(1, cmds);
-        S().graphicsQueue->Signal(cmd.S().timesCompleted.Get(), cmd.S().timesStarted);
 
-        XOR_ASSERT(cmd.S().timesCompleted->GetCompletedValue() <= cmd.S().timesStarted,
+        UINT64 started   = cmd.S().timesStarted;
+        UINT64 completed = cmd.S().timesCompleted->GetCompletedValue();
+
+        S().graphicsQueue->Signal(cmd.S().timesCompleted.Get(), started);
+
+        XOR_ASSERT(completed + 1 == started,
                    "Command list completion count out of sync. %p = %llu",
                    cmd.S().timesCompleted.Get(),
                    size_t(cmd.S().timesCompleted->GetCompletedValue()));

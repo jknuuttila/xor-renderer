@@ -5,8 +5,8 @@ namespace xor
 {
     constexpr uint MaxRTVs = 256;
     constexpr uint MaxDSVs = 256;
-    constexpr uint DescriptorHeapSize = 65536 * 4;
-    constexpr uint DescriptorHeapRing = 65536 * 3;
+    constexpr uint DescriptorHeapSize = 65536 * 8;
+    constexpr uint DescriptorHeapRing = 65536 * 7;
     constexpr uint QueryHeapSize = 65536;
 
     namespace backend
@@ -328,7 +328,7 @@ namespace xor
 // #define XOR_GPU_TRANSIENT_VERBOSE_LOGGING
 
 #if defined(XOR_GPU_TRANSIENT_VERBOSE_LOGGING)
-#define XOR_GPU_TRANSIENT_VERBOSE(fmt, ...) log("GPUTransientMemoryAllocator", "\"%s\": " fmt, m_name.cStr(), ## __VA_ARGS__)
+#define XOR_GPU_TRANSIENT_VERBOSE(fmt, ...) if (m_name == "ViewHeap") log("GPUTransientMemoryAllocator", "\"%s\": " fmt, m_name.cStr(), ## __VA_ARGS__)
 #else
 #define XOR_GPU_TRANSIENT_VERBOSE(...)
 #endif
@@ -353,22 +353,27 @@ namespace xor
 
             auto &free = chunk.m_free;
             auto b = free.fitAtBegin(size, alignment);
+#if 0
             XOR_GPU_TRANSIENT_VERBOSE("Trying to allocate %zu for list %lld in existing chunk (%lld, %lld).\n",
                                       size, cmdList,
                                       free.begin, free.end);
+#endif
 
             // If the allocation fits in the previous active chunk, just use that.
             if (b)
             {
                 free.begin = b.end;
+#if 0
                 XOR_GPU_TRANSIENT_VERBOSE("    Allocation successful. Chunk is now (%lld, %lld).\n",
                                           free.begin, free.end);
+#endif
                 return b;
             }
             // If not, get a new chunk.
             else
             {
-                XOR_GPU_TRANSIENT_VERBOSE("    Existing chunk cannot hold allocation, getting new chunk.\n");
+                XOR_GPU_TRANSIENT_VERBOSE("    Existing chunk cannot hold allocation, getting new chunk for list %lld.\n",
+                                          cmdList);
 
                 XOR_CHECK(size <= static_cast<size_t>(m_chunkSize),
                           "Allocation does not fit in one chunk");

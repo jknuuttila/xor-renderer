@@ -104,49 +104,52 @@ namespace xor
         "filter = FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, " \
         "comparisonFunc = COMPARISON_GREATER_EQUAL), " \
 
+#define XOR_DESCRIPTOR_TABLE(type, slot, numDescs, space) \
+    #type "(" #slot ", numDescriptors = " #numDescs ", space = " #space ", flags = DESCRIPTORS_VOLATILE)"
+
 // Built-in descriptors for ShaderDebug
 #define XOR_ROOT_SIGNATURE_DEBUG \
     "RootConstants(num32BitConstants = 3, b0, space = 1)," \
-    "DescriptorTable(UAV(u0, space = 1))"
+    "DescriptorTable(" XOR_DESCRIPTOR_TABLE(UAV, u0, 1, 1) ")"
 
 #define XOR_ROOT_SIGNATURE_C(numCBVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(CBV(b0, numDescriptors = " #numCBVs "))," \
+    "DescriptorTable(" XOR_DESCRIPTOR_TABLE(CBV, b0, numCBVs, 0) ")," \
     XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_S(numSRVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(SRV(t0, numDescriptors = " #numSRVs "))," \
+    "DescriptorTable(" XOR_DESCRIPTOR_TABLE(SRV, t0, numSRVs, 0) ")," \
     XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_U(numUAVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(UAV(u0, numDescriptors = " #numUAVs "))," \
+    "DescriptorTable(" XOR_DESCRIPTOR_TABLE(UAV, u0, numUAVs, 0) ")," \
     XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_CS(numCBVs, numSRVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(CBV(b0, numDescriptors = " #numCBVs ")," \
-    "                SRV(t0, numDescriptors = " #numSRVs "))," \
+    "DescriptorTable(" XOR_DESCRIPTOR_TABLE(CBV, b0, numCBVs, 0) ", " \
+                       XOR_DESCRIPTOR_TABLE(SRV, t0, numSRVs, 0) ")," \
     XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_CU(numCBVs, numUAVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(CBV(b0, numDescriptors = " #numCBVs ")," \
-    "                UAV(u0, numDescriptors = " #numUAVs "))," \
+    "DescriptorTable(" XOR_DESCRIPTOR_TABLE(CBV, b0, numCBVs, 0) ", " \
+                       XOR_DESCRIPTOR_TABLE(UAV, u0, numUAVs, 0) ")," \
     XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_SU(numSRVs, numUAVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(SRV(t0, numDescriptors = " #numSRVs ")," \
-    "                UAV(u0, numDescriptors = " #numUAVs "))," \
+    "DescriptorTable(" XOR_DESCRIPTOR_TABLE(SRV, t0, numSRVs, 0) ", " \
+                       XOR_DESCRIPTOR_TABLE(UAV, u0, numUAVs, 0) ")," \
     XOR_ROOT_SIGNATURE_DEBUG
 
 #define XOR_ROOT_SIGNATURE_CSU(numCBVs, numSRVs, numUAVs) \
     XOR_ROOT_SIGNATURE_BASE \
-    "DescriptorTable(CBV(b0, numDescriptors = " #numCBVs ")," \
-    "                SRV(t0, numDescriptors = " #numSRVs "), " \
-    "                UAV(u0, numDescriptors = " #numUAVs "))," \
+    "DescriptorTable(" XOR_DESCRIPTOR_TABLE(CBV, b0, numCBVs, 0) ", " \
+                       XOR_DESCRIPTOR_TABLE(SRV, t0, numSRVs, 0) ", " \
+                       XOR_DESCRIPTOR_TABLE(UAV, u0, numUAVs, 0) ")," \
     XOR_ROOT_SIGNATURE_DEBUG
 
 #endif
