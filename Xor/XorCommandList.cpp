@@ -6,6 +6,12 @@
 
 #include "ImguiRenderer.sig.h"
 
+// Always use PIX Events, even in Release
+#define USE_PIX
+#include <pix3.h>
+
+#define NUMBERED_COMMAND_LIST_EVENTS
+
 namespace xor
 {
     namespace backend
@@ -61,6 +67,10 @@ namespace xor
         {
             S().cmdListEvent.done();
 
+#if defined(NUMBERED_COMMAND_LIST_EVENTS)
+            PIXEndEvent(cmd());
+#endif
+
             if (S().firstProfilingEvent >= 0)
                 S().queryHeap->resolve(cmd(), S().firstProfilingEvent, S().lastProfilingEvent);
 
@@ -96,6 +106,10 @@ namespace xor
         ++S().timesStarted;
         S().seqNum = progress.startNewCommandList();
         m_number = S().seqNum;
+
+#if defined(NUMBERED_COMMAND_LIST_EVENTS)
+        PIXBeginEvent(cmd(), PIX_COLOR_DEFAULT, "Command list %lld", number());
+#endif
 
         S().uploadChunk.reset();
         S().readbackChunk.reset();
@@ -1034,6 +1048,39 @@ namespace xor
         S().lastProfilingEvent = e.m_offset;
 
         return e;
+    }
+
+    void CommandList::profilingMarker(const char * msg)
+    {
+        PIXSetMarker(cmd(), PIX_COLOR_DEFAULT, msg);
+    }
+
+    void CommandList::profilingMarkerFormat(const char * fmt, ...)
+    {
+        va_list ap;
+        va_start(ap, fmt);
+
+        char msg[512];
+        vsprintf_s(msg, fmt, ap);
+        profilingMarker(msg); 
+        va_end(ap);
+    }
+
+    void cpuProfilingMarker(const char * msg)
+    {
+        PIXSetMarker(PIX_COLOR_DEFAULT, msg);
+    }
+
+    void cpuProfilingMarkerFormat(const char * fmt, ...)
+    {
+        va_list ap;
+        va_start(ap, fmt);
+
+        char msg[512];
+        vsprintf_s(msg, fmt, ap);
+        cpuProfilingMarker(msg);
+
+        va_end(ap);
     }
 
     void ProfilingEvent::done()

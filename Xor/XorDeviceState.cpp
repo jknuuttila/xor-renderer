@@ -5,8 +5,8 @@ namespace xor
 {
     constexpr uint MaxRTVs = 256;
     constexpr uint MaxDSVs = 256;
-    constexpr uint DescriptorHeapSize = 65536 * 8;
-    constexpr uint DescriptorHeapRing = 65536 * 7;
+    constexpr uint DescriptorHeapSize = 65536 * 4;
+    constexpr uint DescriptorHeapRing = 65536 * 3;
     constexpr uint QueryHeapSize = 65536;
 
     namespace backend
@@ -163,6 +163,7 @@ namespace xor
             for (uint i = 0; i < completedLists; ++i)
             {
                 auto &cmd = executedCommandLists[i];
+                cpuProfilingMarkerFormat("Retiring command list %lld", cmd.number());
                 commandListSequence.complete(cmd.number());
             }
 
@@ -400,33 +401,48 @@ namespace xor
             {
                 ChunkNumber c = m_freeChunks.back();
                 m_freeChunks.pop_back();
-                XOR_GPU_TRANSIENT_VERBOSE("Using free chunk %lld.\n", c);
+                XOR_GPU_TRANSIENT_VERBOSE("Using free chunk %lld. Free chunks: %zu\n", c, m_freeChunks.size());
                 return c;
             }
 
             XOR_GPU_TRANSIENT_VERBOSE("No free chunks, checking for released chunks.\n");
 
             // If there is not, try to reclaim all chunks that have been released already.
-            for (auto &c : m_usedChunks)
+
+            auto freeFrom = std::partition(m_usedChunks.begin(), m_usedChunks.end(),
+                                           [&] (auto &c)
             {
                 if (progress.hasCompleted(c.first))
                 {
                     XOR_GPU_TRANSIENT_VERBOSE("    Chunk %lld, belonging to list %lld, was released, freeing.\n", c.second, c.first);
-                    m_freeChunks.emplace_back(c.second);
-                    c.first = -1;
+                    return false;
                 }
-            }
+                else
+                {
+                    return true;
+                }
+            });
 
             // Did we manage to find any? If so, get one and use it, and erase the
             // remnants from the used chunk list.
-            if (!m_freeChunks.empty())
+            if (freeFrom != m_usedChunks.end())
             {
-                m_usedChunks.erase(
-                    std::remove_if(m_usedChunks.begin(), m_usedChunks.end(),
-                                   [] (auto &c) { return c.first < 0; }),
-                    m_usedChunks.end());
+                // Sort the released chunks in reverse order, to try to reuse the oldest ones first.
+                std::sort(freeFrom, m_usedChunks.end(),
+                          [&] (auto &a, auto &b)
+                {
+                    return b < a;
+                });
+
+                // Now we reclaim the chunks, and can throw away the original owner numbers.
+                for (auto it = freeFrom; it < m_usedChunks.end(); ++it)
+                    m_freeChunks.emplace_back(it->second);
+
+                m_usedChunks.erase(freeFrom, m_usedChunks.end());
+
                 ChunkNumber c = m_freeChunks.back();
                 m_freeChunks.pop_back();
+                XOR_GPU_TRANSIENT_VERBOSE("    Using newly freed chunk %lld.\n", c);
                 return c;
             }
 

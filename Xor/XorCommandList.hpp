@@ -200,6 +200,8 @@ namespace xor
         void imguiEndFrame(SwapChain &swapChain);
 
         ProfilingEvent profilingEvent(const char *name, uint64_t uniqueId = 0);
+        void profilingMarker(const char *msg);
+        void profilingMarkerFormat(const char *fmt, ...);
 
     private:
         ID3D12GraphicsCommandList *cmd();
@@ -224,6 +226,9 @@ namespace xor
         static void handleShaderDebug(SeqNum cmdListNumber, Span<const uint8_t> shaderDebugData,
                                       uint4 *shaderDebugFeedback = nullptr);
     };
+
+    void cpuProfilingMarker(const char *msg);
+    void cpuProfilingMarkerFormat(const char *fmt, ...);
 
     template<typename T>
     inline BufferVBV CommandList::dynamicBufferVBV(Span<const T> vertices)

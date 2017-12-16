@@ -30,4 +30,7 @@
   <ItemGroup>
     <FxCompile Include="LoadBalancedShader.cs.hlsl" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
 </Project>

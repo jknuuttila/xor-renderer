@@ -9,7 +9,7 @@ these files.
 
 The Microsoft Program includes the following third-party software:
 
-1. Boost v. 1.61.0 (https://sourceforge.net/projects/boost/files/boost/1.61.0)
+1. Boost v. 1.63.0 (https://sourceforge.net/projects/boost/files/boost/1.63.0)
 
 
 As the recipient of the above third-party software, Microsoft sets forth a copy 
@@ -19,7 +19,7 @@ of the notices and other information below.
 BOOST NOTICES AND INFORMATION BEGIN HERE
 ========================================
 
-Boost v. 1.61.0
+Boost v. 1.63.0
 Copyright Beman Dawes, David Abrahams, 1998-2005
 Copyright Rene Rivera 2006-2007
 Provided for Informational Purposes Only

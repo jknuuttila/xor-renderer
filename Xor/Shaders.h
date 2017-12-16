@@ -105,7 +105,7 @@ namespace xor
         "comparisonFunc = COMPARISON_GREATER_EQUAL), " \
 
 #define XOR_DESCRIPTOR_TABLE(type, slot, numDescs, space) \
-    #type "(" #slot ", numDescriptors = " #numDescs ", space = " #space ", flags = DESCRIPTORS_VOLATILE)"
+    #type "(" #slot ", numDescriptors = " #numDescs ", space = " #space ")" //", flags = DESCRIPTORS_VOLATILE)"
 
 // Built-in descriptors for ShaderDebug
 #define XOR_ROOT_SIGNATURE_DEBUG \

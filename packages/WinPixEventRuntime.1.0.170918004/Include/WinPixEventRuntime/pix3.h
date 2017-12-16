@@ -1,9 +1,3 @@
-//
-// This file was copied from //depot/rs_xbox_dev_flight/xbox/drivers/Graphics/Pix3/PixEvt/inc/pix3.h#4
-//
-// To refresh: run 'UpdateFromXbox -latest'
-//
-
 /*==========================================================================;
  *
  *  Copyright (C) Microsoft Corporation.  All Rights Reserved.
@@ -36,7 +30,7 @@
 #define USE_PIX
 #endif
 
-#if defined(USE_PIX) && !defined(_AMD64_)
+#if defined(USE_PIX) && !defined(_AMD64_) && !defined(USE_PIX_ON_ALL_ARCHITECTURES)
 #pragma message("Warning: Pix markers are only supported on AMD64")
 #endif
 
@@ -68,7 +62,7 @@ typedef union PIXCaptureParameters
 
 
 
-#if defined (USE_PIX) && defined(_AMD64_)
+#if defined (USE_PIX) && (defined(_AMD64_) || defined(USE_PIX_ON_ALL_ARCHITECTURES))
 
 #include "PIXEventsCommon.h"
 #include "PIXEventsGenerated.h"
