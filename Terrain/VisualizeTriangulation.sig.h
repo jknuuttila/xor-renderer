@@ -16,15 +16,14 @@ XOR_CBUFFER(Constants, 1)
 
 XOR_TEXTURE_SRV(Texture2D<float>, heightMap, 0)
 XOR_TEXTURE_SRV(Texture2D<float>, cpuCalculatedError, 1)
-XOR_TEXTURE_SRV(Texture2D<float>, tileLODs, 2)
 
 XOR_SAMPLER_POINT(pointSampler)
 XOR_SAMPLER_BILINEAR(tileLODSampler)
 
 XOR_END_SIGNATURE
 
-#include "TerrainPatchConstants.h"
+#include "TerrainRendering.h"
 
-#define VisualizeTriangulation_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CS(2, 3)
+#define VisualizeTriangulation_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CS(2, 2)
 
 #endif

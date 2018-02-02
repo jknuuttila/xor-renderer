@@ -3,15 +3,7 @@
 
 #include "Xor/Shaders.h"
 
-#ifndef TERRAIN_TILE_LODS
-#define TERRAIN_TILE_LODS tileLODs
-#endif
-
-#ifndef TERRAIN_TILE_LODS_SAMPLER
-#define TERRAIN_TILE_LODS_SAMPLER tileLODSampler
-#endif
-
-XOR_BEGIN_SIGNATURE(TerrainPatch)
+XOR_BEGIN_SIGNATURE(TerrainRendering)
 
 XOR_CBUFFER(Constants, 0)
 {
@@ -74,15 +66,8 @@ float terrainLODAlpha(float sampledLOD, float distance)
     return alpha;
 }
 
-float terrainSampleLOD(float2 uv)
-{
-    return TERRAIN_TILE_LODS.SampleLevel(TERRAIN_TILE_LODS_SAMPLER, uv, 0);
-}
-
 struct TerrainVertex
 {
-    Texture2D<float> tileLODs;
-    SamplerState tileLODSampler;
     int2  pixelCoords;
     float height;
     int2  nextLodPixelCoords;
@@ -114,6 +99,7 @@ struct TerrainVertex
         loddedPixelCoords = pixelCoords;
         loddedHeight      = height;
 
+#if 0
         if (lodEnabled)
         {
             float alpha = terrainLODAlpha(terrainSampleLOD(uv()),
@@ -125,6 +111,7 @@ struct TerrainVertex
             loddedPixelCoords = morphPixelCoords;
             loddedHeight      = morphHeight;
         }
+#endif
     }
 };
 

@@ -43,46 +43,11 @@ float4 main(PSInput i) : SV_Target
 	color.rgb = signedColor(approxHeight - height, maxError);
 #elif defined(CPU_ERROR)
     color.rgb = signedColor(cpuCalculatedError.Sample(pointSampler, uv), maxError);
-#elif defined(MORPH_DISTANCE)
-    float alpha = terrainLODAlpha(distanceToCamera);
-
-    float3 A = float3(1, 0, 0);
-    float3 B = float3(1, 0, 1);
-
-    if (cameraNear)
-        color.rgb = 1;
-    else if (alpha >= 1)
-        color.rgb = float3(1, 1, 0);
-    else
-        color.rgb = lerp(A, B, alpha);
-
 #elif defined(TILE_LOD)
     if (cameraNear)
         color.rgb = 1;
     else
         color.rgb = LodColors[clamp(tileLOD, 0, 9)];
-#elif defined(TILE_LOD_CONTINUOUS)
-    float lod = terrainLOD(distanceToCamera);
-
-    lod = clamp(lod, 0, 9);
-
-    float3 A = LodColors[uint(floor(lod))];
-    float3 B = LodColors[uint(ceil(lod))];
-
-    if (cameraNear)
-        color.rgb = 1;
-    else
-        color.rgb = lerp(A, B, frac(lod));
-#elif defined(TILE_LOD_MORPH)
-    float alpha = terrainLODAlpha(distanceToCamera);
-
-    float3 A = LodColors[clamp(tileLOD,     0, 9)];
-    float3 B = LodColors[clamp(tileLOD + 1, 0, 9)];
-
-    if (cameraNear)
-        color.rgb = 1;
-    else
-        color.rgb = lerp(A, B, alpha);
 #else
     if (cameraNear)
         color.rgb = v + .25;

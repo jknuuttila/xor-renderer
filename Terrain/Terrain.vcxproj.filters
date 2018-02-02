@@ -24,7 +24,7 @@
     <ClInclude Include="ResolveTerrainAO.sig.h" />
     <ClInclude Include="AccumulateTerrainAO.sig.h" />
     <ClInclude Include="TerrainShadowFiltering.sig.h" />
-    <ClInclude Include="TerrainPatchConstants.h" />
+    <ClInclude Include="TerrainRendering.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

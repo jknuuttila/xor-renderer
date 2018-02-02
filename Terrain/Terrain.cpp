@@ -36,82 +36,6 @@ struct ErrorMetrics
     double l_inf = 0;
 };
 
-struct Heightmap
-{
-    Device *device = nullptr;
-    Image height;
-    TextureSRV heightSRV;
-    Image color;
-    TextureSRV colorSRV;
-    int2 size;
-    float2 worldSize;
-    float texelSize;
-    float minHeight = 1e10;
-    float maxHeight = -1e10;
-
-    Heightmap() = default;
-    Heightmap(Device &device,
-              StringView file,
-              float texelSize = ArcSecond / 3.f,
-              float heightMultiplier = 1)
-    {
-        this->device = &device;
-        height = Image(Image::Builder().filename(file));
-
-        if (height.format() == DXGI_FORMAT_R16_UNORM)
-        {
-            ImageData sourceHeight = height.imageData();
-            RWImageData scaledHeight(height.size(), DXGI_FORMAT_R32_FLOAT);
-
-            float heightCoeff = heightMultiplier / static_cast<float>(std::numeric_limits<uint16_t>::max());
-
-            for (uint y = 0; y < scaledHeight.size.y; ++y)
-            {
-                for (uint x = 0; x < scaledHeight.size.x; ++x)
-                {
-                    uint16_t intHeight = sourceHeight.pixel<uint16_t>(uint2(x, y));
-                    float fHeight = static_cast<float>(intHeight) * heightCoeff;
-                    scaledHeight.pixel<float>(uint2(x, y)) = fHeight;
-                }
-            }
-
-            height = Image(scaledHeight);
-        }
-
-        XOR_ASSERT(height.format() == DXGI_FORMAT_R32_FLOAT, "Expected a float heightmap");
-
-        heightSRV = device.createTextureSRV(Texture::Info(height));
-
-        size  = int2(height.size());
-        this->texelSize = texelSize;
-        worldSize = texelSize * float2(size);
-
-#if defined(_DEBUG)
-        minHeight = 340.f;
-        maxHeight = 2600.f;
-#else
-        Timer t;
-        auto size = height.size();
-        auto sr   = height.imageData();
-        for (uint y = 0; y < size.y; ++y)
-        {
-            for (float f : sr.scanline<float>(y))
-            {
-                minHeight = std::min(f, minHeight);
-                maxHeight = std::max(f, maxHeight);
-            }
-        }
-        log("Heightmap", "Scanned heightmap bounds in %.2f ms\n", t.milliseconds());
-#endif
-    }
-
-    void setColor(Image colorMap)
-    {
-        color    = std::move(colorMap);
-        colorSRV = device->createTextureSRV(info::TextureInfo(color));
-    }
-};
-
 enum class TriangulationMode
 {
     UniformGrid,
@@ -125,10 +49,7 @@ XOR_DEFINE_CONFIG_ENUM(VisualizationMode,
     WireframeError,
     OnlyError,
     CPUError,
-    MorphDistance,
-    TileLOD,
-    TileLODContinuous,
-    TileLODMorph);
+    TileLOD);
 
 XOR_DEFINE_CONFIG_ENUM(RenderingMode,
     Height,
@@ -154,13 +75,19 @@ struct FilterPass
     int size = 1;
 };
 
+#ifdef _DEBUG
+constexpr int LODCountDefault           = 3;
+constexpr int LODVertexCountBaseDefault = 5 * 5;
+#else
+constexpr int LODCountDefault           = 5;
+constexpr int LODVertexCountBaseDefault = 9 * 9;
+#endif
+
 XOR_CONFIG_WINDOW(Settings, 500, 100)
 {
     XOR_CONFIG_ENUM(RenderingMode, renderingMode, "Rendering mode", RenderingMode::Lighting);
-    XOR_CONFIG_SLIDER(int, tileSizeExp, "Terrain tile size exponent", 7, 7, 10);
-    XOR_CONFIG_TEXT("Terrain tile size", "%d", &Settings::tileSize);
-    XOR_CONFIG_SLIDER(int, lodCount, "LOD count", 5, 1, 10);
-    XOR_CONFIG_SLIDER(int, lodVertexBase, "LOD vertex count base", 9 * 9, 4, 8192);
+    XOR_CONFIG_SLIDER(int, lodCount, "LOD count", LODCountDefault, 1, 10);
+    XOR_CONFIG_SLIDER(int, lodVertexBase, "LOD vertex count base", LODVertexCountBaseDefault, 4, 8192);
     XOR_CONFIG_SLIDER(float, lodVertexExponent, "LOD vertex count exponent", 4.f, 2.f, 8.f);
     XOR_CONFIG_SLIDER(float, lodSwitchDistance, "LOD switch distance", 1500.f, 100.f, 5000.f);
     XOR_CONFIG_SLIDER(float, lodSwitchExponent, "LOD switch exponent", 1.f, 1.f, 4.f);
@@ -170,7 +97,6 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
     XOR_CONFIG_SLIDER(int, renderLod, "Rendered LOD", -1, -1, 10);
     XOR_CONFIG_CHECKBOX(highlightCracks, "Highlight cracks", false);
 
-    int tileSize() const { return 1 << tileSizeExp; }
     int lodVertexCount(int lod) const
     {
         double vertexCountMultiplier = std::pow(double(lodVertexExponent), double(lod));
@@ -343,6 +269,82 @@ struct BlueNoise
         coords       = coords % img.size;
         auto noise   = img.pixel<ColorUnorm>(coords).toFloat4();
         return noise;
+    }
+};
+
+struct Heightmap
+{
+    Device *device = nullptr;
+    Image height;
+    TextureSRV heightSRV;
+    Image color;
+    TextureSRV colorSRV;
+    int2 size;
+    float2 worldSize;
+    float texelSize;
+    float minHeight = 1e10;
+    float maxHeight = -1e10;
+
+    Heightmap() = default;
+    Heightmap(Device &device,
+              StringView file,
+              float texelSize = ArcSecond / 3.f,
+              float heightMultiplier = 1)
+    {
+        this->device = &device;
+        height = Image(Image::Builder().filename(file));
+
+        if (height.format() == DXGI_FORMAT_R16_UNORM)
+        {
+            ImageData sourceHeight = height.imageData();
+            RWImageData scaledHeight(height.size(), DXGI_FORMAT_R32_FLOAT);
+
+            float heightCoeff = heightMultiplier / static_cast<float>(std::numeric_limits<uint16_t>::max());
+
+            for (uint y = 0; y < scaledHeight.size.y; ++y)
+            {
+                for (uint x = 0; x < scaledHeight.size.x; ++x)
+                {
+                    uint16_t intHeight = sourceHeight.pixel<uint16_t>(uint2(x, y));
+                    float fHeight = static_cast<float>(intHeight) * heightCoeff;
+                    scaledHeight.pixel<float>(uint2(x, y)) = fHeight;
+                }
+            }
+
+            height = Image(scaledHeight);
+        }
+
+        XOR_ASSERT(height.format() == DXGI_FORMAT_R32_FLOAT, "Expected a float heightmap");
+
+        heightSRV = device.createTextureSRV(Texture::Info(height));
+
+        size  = int2(height.size());
+        this->texelSize = texelSize;
+        worldSize = texelSize * float2(size);
+
+#if defined(_DEBUG)
+        minHeight = 340.f;
+        maxHeight = 2600.f;
+#else
+        Timer t;
+        auto size = height.size();
+        auto sr   = height.imageData();
+        for (uint y = 0; y < size.y; ++y)
+        {
+            for (float f : sr.scanline<float>(y))
+            {
+                minHeight = std::min(f, minHeight);
+                maxHeight = std::max(f, maxHeight);
+            }
+        }
+        log("Heightmap", "Scanned heightmap bounds in %.2f ms\n", t.milliseconds());
+#endif
+    }
+
+    void setColor(Image colorMap)
+    {
+        color    = std::move(colorMap);
+        colorSRV = device->createTextureSRV(info::TextureInfo(color));
     }
 };
 
@@ -738,7 +740,7 @@ struct Terrain
             terrainLods.back().mesh = Mesh::generate(device, attrs, indices);
 
             log("uniformGrid", "    Generated LOD %d with %zu vertices and %zu indices in %.2f ms\n",
-                cfg_Settings.lodCount - lod + 1,
+                cfg_Settings.lodCount - lod - 1,
                 pixelCoords.size(),
                 indices.size(),
                 lodTimer.milliseconds());
@@ -970,7 +972,7 @@ struct Terrain
             lods.emplace_back(delaunay.exportWithoutSuperPolygon());
 
             log("incrementalMaxError", "    Generated LOD %d with %zu vertices and %zu triangles in %.2f ms\n",
-                cfg_Settings.lodCount - lod + 1,
+                cfg_Settings.lodCount - lod - 1,
                 lods.back().VB.size(),
                 lods.back().IB.size() / 3,
                 lodTimer.milliseconds());
@@ -1124,7 +1126,7 @@ struct Terrain
 
     void render(CommandList &cmd, const float2 *cameraPos = nullptr) const
     {
-        TerrainPatch::Constants constants;
+        TerrainRendering::Constants constants;
         constants.heightmapInvSize  = float2(1.f) / float2(heightmap->size);
         constants.worldCenter       = float2(worldCenter);
         constants.worldMin          = worldMin;
@@ -1145,10 +1147,6 @@ struct Terrain
 
         constants.lodBias       = cfg_Settings.lodBias;
         constants.lodMorphStart = cfg_Settings.lodMorphStart;
-
-        float tileSize = cfg_Settings.tileSize() * heightmap->texelSize;
-        float halfTile = tileSize / 2;
-
 
         auto &mesh = terrainLods[constants.lodLevel].mesh;
 
@@ -1373,8 +1371,6 @@ struct TerrainRenderer
 
                     cmd.setConstants(constants);
                     cmd.setShaderView(RenderTerrainAO::terrainAOVisibleBits, aoVisibilityBits.uav);
-                    //cmd.setShaderView(RenderTerrainAO::tileLODs, terrain->tileLODs);
-                    cmd.setShaderViewNullTextureSRV(RenderTerrainAO::tileLODs);
 
                     terrain->render(cmd);
 
@@ -1513,8 +1509,6 @@ struct TerrainRenderer
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainShadows);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::noiseTexture);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
-        cmd.setShaderViewNullTextureSRV(RenderTerrain::tileLODs);
-        //cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
 
         {
             auto p = cmd.profilingEvent("Draw shadows");
@@ -1640,8 +1634,6 @@ struct TerrainRenderer
             cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
             cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(noiseIndex()));
             cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
-            cmd.setShaderViewNullTextureSRV(RenderTerrain::tileLODs);
-            //cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
 
             cmd.setConstants(constants);
 
@@ -1724,8 +1716,6 @@ struct TerrainRenderer
             cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
             cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(noiseIndex()));
             cmd.setShaderView(RenderTerrain::shadowTerm,     shadowIn->srv);
-            cmd.setShaderViewNullTextureSRV(RenderTerrain::tileLODs);
-            //cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
 
             cmd.setConstants(constants);
 
@@ -1774,17 +1764,9 @@ struct TerrainRenderer
         case VisualizationMode::CPUError:
             defines[0] = info::ShaderDefine("CPU_ERROR");
             break;
-        case VisualizationMode::MorphDistance:
-            defines[0] = info::ShaderDefine("MORPH_DISTANCE");
-            break;
         case VisualizationMode::TileLOD:
             defines[0] = info::ShaderDefine("TILE_LOD");
             break;
-        case VisualizationMode::TileLODContinuous:
-            defines[0] = info::ShaderDefine("TILE_LOD_CONTINUOUS");
-            break;
-        case VisualizationMode::TileLODMorph:
-            defines[0] = info::ShaderDefine("TILE_LOD_MORPH");
             break;
         default:
             break;
@@ -1799,8 +1781,6 @@ struct TerrainRenderer
         cmd.setConstants(vtConstants);
         cmd.setShaderView(VisualizeTriangulation::heightMap,          heightmap->heightSRV);
         cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, terrain->cpuError);
-        cmd.setShaderViewNullTextureSRV(VisualizeTriangulation::tileLODs);
-        //cmd.setShaderView(VisualizeTriangulation::tileLODs, terrain->tileLODs);
 
         float2 cameraPos = camera.position.s_xz;
         terrain->render(cmd, &cameraPos);
@@ -1815,7 +1795,7 @@ struct TerrainRenderer
     }
 };
 
-class TerrainRendering : public Window
+class TerrainPrototype : public Window
 {
     Xor xor;
     Device device;
@@ -1844,7 +1824,7 @@ class TerrainRendering : public Window
     Terrain terrain;
     TerrainRenderer terrainRenderer;
 public:
-    TerrainRendering()
+    TerrainPrototype()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
 #if 0
         , xor(Xor::DebugLayer::GPUBasedValidation)
@@ -1979,8 +1959,7 @@ public:
             ImGui::Combo("Triangulation mode",
                          reinterpret_cast<int *>(&triangulationMode),
                          "Uniform grid\0"
-                         "Incremental max error\0"
-                         "Tiled uniform grid\0");
+                         "Incremental max error\0");
             ImGui::Checkbox("Tipsify vertex cache optimization", &tipsifyMesh);
 
             ImGui::Separator();
@@ -2088,5 +2067,5 @@ public:
 
 int main(int argc, const char *argv[])
 {
-    return TerrainRendering().run();
+    return TerrainPrototype().run();
 }

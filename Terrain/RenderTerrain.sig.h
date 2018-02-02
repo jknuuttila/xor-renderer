@@ -31,7 +31,6 @@ XOR_TEXTURE_SRV(Texture2D<float>,  terrainAO,      2)
 XOR_TEXTURE_SRV(Texture2D<float>,  terrainShadows, 3)
 XOR_TEXTURE_SRV(Texture2D<float4>, noiseTexture,   4)
 XOR_TEXTURE_SRV(Texture2D<float>,  shadowTerm,     5)
-XOR_TEXTURE_SRV(Texture2D<float>,  tileLODs,       6)
 
 XOR_SAMPLER_BILINEAR(bilinearSampler)
 XOR_SAMPLER_POINT(pointSampler)
@@ -41,9 +40,9 @@ XOR_SAMPLER_BILINEAR(tileLODSampler)
 
 XOR_END_SIGNATURE
 
-#include "TerrainPatchConstants.h"
+#include "TerrainRendering.h"
 
-#define RENDERTERRAIN_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CS(2, 7)
+#define RENDERTERRAIN_ROOT_SIGNATURE XOR_ROOT_SIGNATURE_CS(2, 6)
 
 #endif
 
