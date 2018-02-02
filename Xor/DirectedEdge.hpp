@@ -44,6 +44,15 @@ namespace xor
         {}
     };
 
+    // Serialized buffer representation of a mesh, which can be used
+    // for importing into or exporting out of DirectedEdge.
+    template <typename Vertex>
+    struct MeshBuffers
+    {
+        std::vector<Vertex> vb;
+        std::vector<int>    ib;
+    };
+
 #define XOR_DE_DEBUG_EDGE(e, ...)     debugEdge(__FILE__, __LINE__, #e, e, ## __VA_ARGS__)
 #define XOR_DE_DEBUG_VERTEX(v, ...)   debugVertex(__FILE__, __LINE__, #v, v, ## __VA_ARGS__)
 #define XOR_DE_DEBUG_TRIANGLE(t, ...) debugTriangle(__FILE__, __LINE__, #t, t, ## __VA_ARGS__)
@@ -79,13 +88,7 @@ namespace xor
             Edge(int start, int target) : EdgeType(start, target) {}
         };
 
-        // Serialized buffer representation of a mesh, which can be used
-        // for importing into or exporting out of DirectedEdge.
-        struct MeshBuffers
-        {
-            std::vector<Vertex> VB;
-            std::vector<int>    IB;
-        };
+        using MeshBuffers = MeshBuffers<Vertex>;
 
         static_assert(sizeof(Edge) == sizeof(EdgeType) +
                       std::is_empty<EdgeData>::value ? 0 : sizeof(EdgeData),
@@ -705,8 +708,8 @@ namespace xor
         MeshBuffers exportMesh() const
         {
             MeshBuffers buffers;
-            buffers.VB = m_vertices;
-            buffers.IB = triangleIndices();
+            buffers.vb = m_vertices;
+            buffers.ib = triangleIndices();
             return buffers;
         }
 
@@ -716,19 +719,19 @@ namespace xor
         {
             clear();
 
-            for (auto &v : buffers.VB)
+            for (auto &v : buffers.vb)
             {
                 int idx = addVertex(std::move(v));
-                XOR_ASSERT(idx == int(&v - buffers.VB.data()), "Unexpected vertex index");
+                XOR_ASSERT(idx == int(&v - buffers.vb.data()), "Unexpected vertex index");
             }
 
-            int numTs = int(buffers.IB.size() / 3);
+            int numTs = int(buffers.ib.size() / 3);
 
             for (int i = 0; i < numTs; ++i)
             {
-                int i0 = buffers.IB[i * 3 + 0];
-                int i1 = buffers.IB[i * 3 + 1];
-                int i2 = buffers.IB[i * 3 + 2];
+                int i0 = buffers.ib[i * 3 + 0];
+                int i1 = buffers.ib[i * 3 + 1];
+                int i2 = buffers.ib[i * 3 + 2];
 
                 addTriangle(i0, i1, i2);
             }
@@ -1432,15 +1435,15 @@ namespace xor
             using MB = typename DE::MeshBuffers;
 
             MB buffers;
-            buffers.VB.reserve(mesh.numVertices());
-            buffers.IB.reserve(mesh.numTriangles() * 3);
+            buffers.vb.reserve(mesh.numVertices());
+            buffers.ib.reserve(mesh.numTriangles() * 3);
 
             for (int v = 0; v < mesh.numVertices(); ++v)
             {
                 if (mesh.vertexIsValid(v) && !isSuperPolygonVertex(v))
-                    buffers.VB.emplace_back(mesh.V(v));
+                    buffers.vb.emplace_back(mesh.V(v));
                 else
-                    buffers.VB.emplace_back();
+                    buffers.vb.emplace_back();
             }
 
             for (int t = 0; t < mesh.numTriangles(); ++t)
@@ -1448,9 +1451,9 @@ namespace xor
                 if (mesh.triangleIsValid(t) && !triangleContainsSuperVertices(t))
                 {
                     int3 is = mesh.triangleVertices(t);
-                    buffers.IB.emplace_back(is.x);
-                    buffers.IB.emplace_back(is.y);
-                    buffers.IB.emplace_back(is.z);
+                    buffers.ib.emplace_back(is.x);
+                    buffers.ib.emplace_back(is.y);
+                    buffers.ib.emplace_back(is.z);
                 }
             }
 
@@ -1458,4 +1461,330 @@ namespace xor
         }
     };
 
+    struct ClusteredMesh
+    {
+        std::vector<int>  ib;           // Optimized index buffer
+        std::vector<int2> clusterSpans; // begin-end offsets into "ib" for each cluster
+    };
+
+    ClusteredMesh clusterAndOptimize(Span<const int> indexBuffer,
+                                     int clusterSize = -1,
+                                     int cacheSize = 16)
+    {
+        auto tri = [&] (int t)
+        {
+            int i = t * 3;
+            return int3(indexBuffer[i + 0],
+                        indexBuffer[i + 1],
+                        indexBuffer[i + 2]);
+        };
+
+        bool cluster = clusterSize > 0;
+
+        ClusteredMesh mesh;
+
+        int numIndices   = int(indexBuffer.size());
+        int numTriangles = numIndices / 3;
+        int numVertices  = 0;
+
+        // Scan the index buffer once to find out how many unique vertices
+        // there are.
+        for (int i : indexBuffer)
+            numVertices = std::max(numVertices, i + 1);
+
+        // Scan the index buffer again to find out how many triangles
+        // contain each vertex. Degenerates only count double or triple.
+        std::vector<int> numTrianglesContainingVertex(numVertices, 0);
+        std::vector<std::unordered_set<int>> verticesByTriangleCount;
+        for (int t = 0; t < numTriangles; ++t)
+        {
+            int3 vs = tri(t);
+            ++numTrianglesContainingVertex[vs.x];
+            ++numTrianglesContainingVertex[vs.y];
+            ++numTrianglesContainingVertex[vs.z];
+        }
+
+        // Allocate space for vertex triangle associations using an inclusive prefix sum.
+        std::vector<int> containingVertexOffsets;
+        {
+            containingVertexOffsets.reserve(numVertices);
+            int total = 0;
+
+            for (int v = 0; v < int(numTrianglesContainingVertex.size()); ++v)
+            {
+                int count = numTrianglesContainingVertex[v];
+                total += count;
+                containingVertexOffsets.emplace_back(total);
+
+                if (count > int(verticesByTriangleCount.size()))
+                    verticesByTriangleCount.resize(count);
+
+                if (count > 0)
+                    verticesByTriangleCount[count - 1].emplace(v);
+            }
+        }
+
+        // The last element of the prefix sum is also the total amount.
+        std::vector<int> containingVertexData(containingVertexOffsets.back());
+
+        // Scan the triangles again to insert the vertex triangle associations.
+        for (int t = 0; t < numTriangles; ++t)
+        {
+            int3 vs = tri(t);
+
+            auto contain = [&] (int v)
+            {
+                // Since it's an inclusive prefix sum, it actually contains the
+                // "end" offsets of each bucket.
+                int &endOffset                   = containingVertexOffsets[v];
+                // Insert into the last free place in the bucket by subtracting
+                // one from the end.
+                int insertInto                   = endOffset - 1;
+                containingVertexData[insertInto] = t;
+
+                // Now put the new end offset back so the next insert puts
+                // into the second last free place.
+
+                // There are exactly enough insertions to fill the bucket,
+                // so this also turns containingVertexOffsets into
+                // an exclusive prefix sum, i.e. it now contains begin offsets.
+                endOffset                        = insertInto;
+            };
+
+            contain(vs.x);
+            contain(vs.y);
+            contain(vs.z);
+        }
+        // Put the size as the last element, to function as the end offset for the last bucket.
+        containingVertexOffsets.emplace_back(int(containingVertexData.size()));
+
+        auto trianglesContainingVertex = [&] (int v)
+        {
+            int begin = containingVertexOffsets[v];
+            int end   = containingVertexOffsets[v + 1];
+            return Span<const int>(containingVertexData.data() + begin,
+                                   containingVertexData.data() + end);
+        };
+
+        // Approximate the vertex cache using a FIFO cache
+        std::vector<int> cacheTimestamps(numVertices, -1);
+        std::vector<int> vertsInCache(cacheSize, -1);
+        int cacheTime = 0;
+        auto vertexIsInCache = [&] (int v)
+        {
+            int timestamp = cacheTimestamps[v];
+            if (timestamp < 0)
+                return false;
+            else
+                return (cacheTime - timestamp) <= cacheSize;
+        };
+        auto touchVertex = [&] (int v)
+        {
+            uint i = uint(cacheTime) % uint(cacheSize);
+            vertsInCache[i] = v;
+            cacheTimestamps[v] = cacheTime;
+            ++cacheTime;
+        };
+
+
+        int numEmittedTriangles = 0;
+        std::vector<uint8_t> emittedTriangle(numTriangles, 0);
+
+        auto cacheMissesToEmit = [&] (int v)
+        {
+            int misses = 0;
+
+            for (int t : trianglesContainingVertex(v))
+            {
+                if (!emittedTriangle[t])
+                {
+                    int3 vs = tri(t);
+                    misses += int(vertexIsInCache(vs.x));
+                    misses += int(vertexIsInCache(vs.y));
+                    misses += int(vertexIsInCache(vs.z));
+                }
+            }
+
+            return misses;
+        };
+
+        auto vertexCompletelyProcessed = [&] (int v)
+        {
+            return numTrianglesContainingVertex[v] == 0;
+        };
+
+        int clusterCutoff   = clusterSize * 3;
+        int2 currentCluster = int2(0);
+
+        std::vector<std::unordered_set<int>> boundary(verticesByTriangleCount.size());
+        auto leastTrianglesLeftOnBoundary = [&]
+        {
+            // The boundary is organized by amount of triangles remaining,
+            // so we just need to find the first non-empty category.
+            for (auto &b : boundary)
+            {
+                if (!b.empty())
+                    return *b.begin();
+            }
+
+            return -1;
+        };
+
+        while (numEmittedTriangles < numTriangles)
+        {
+            int fanningVertex = -1;
+
+            // If there's no current fanning vertex, try to find one from the cache that requires
+            // the least cache misses to emit.
+            if (fanningVertex < 0)
+            {
+                int leastMisses = 99;
+                for (int v : vertsInCache)
+                {
+                    if (v < 0 || vertexCompletelyProcessed(v))
+                        continue;
+
+                    int misses = cacheMissesToEmit(v);
+
+                    if (misses < leastMisses)
+                    {
+                        fanningVertex = v;
+                        leastMisses   = misses;
+                    }
+                }
+            }
+
+            // If we didn't find anything, try to find one from the boundary of
+            // the previously processed vertices with the least triangles remaining.
+            // This should only happen if everything in the cache has been completely processed,
+            // or the cache is empty.
+            if (fanningVertex < 0)
+            {
+                fanningVertex = leastTrianglesLeftOnBoundary();
+            }
+
+            // If we still didn't find anything, take a vertex from anywhere in
+            // the mesh with the least amount of triangles remaining.
+            // This should only happen if the boundary empties because of limited
+            // mesh connectivity or it's the first iteration.
+            if (fanningVertex < 0)
+            {
+                // The boundary is organized by amount of triangles remaining,
+                // so we just need to find the first non-empty category.
+                for (auto &vbtc : verticesByTriangleCount)
+                {
+                    if (!vbtc.empty())
+                        fanningVertex = *vbtc.begin();
+                }
+            }
+
+            XOR_ASSERT(fanningVertex >= 0,
+                       "No fanning vertex found.");
+
+            XOR_ASSERT(!vertexCompletelyProcessed(fanningVertex),
+                       "Selected a fanning vertex that has no triangles left.");
+
+            // We have our fanning vertex. Emit all of its triangles that haven't
+            // been emitted before.
+            for (int t : trianglesContainingVertex(fanningVertex))
+            {
+                if (emittedTriangle[t])
+                    continue;
+
+                int3 vs = tri(t);
+
+                for (int v : vs.span())
+                {
+                    XOR_ASSERT(!vertexCompletelyProcessed(v),
+                               "Emitting a vertex that has been completely processed already.");
+
+                    mesh.ib.emplace_back(v);
+                    currentCluster.y = int(mesh.ib.size());
+
+                    // Update triangle counts and boundary.
+                    int trisBefore = numTrianglesContainingVertex[v];
+                    int trisAfter  = trisBefore - 1;
+
+                    numTrianglesContainingVertex[v] = trisAfter;
+
+                    boundary[trisBefore - 1].erase(v);
+                    verticesByTriangleCount[trisBefore - 1].erase(v);
+
+                    if (trisAfter > 0)
+                    {
+                        boundary[trisAfter - 1].insert(v);
+                        verticesByTriangleCount[trisAfter - 1].insert(v);
+                    }
+                }
+
+                ++numEmittedTriangles;
+                emittedTriangle[t] = 1;
+
+                if (cluster)
+                {
+                    // Whenever we fill up a cluster, emit it and purge
+                    // the boundary so clusters are roughly local.
+
+                    // The next iteration should still start from a reasonable place 
+                    // due to the cache.
+                    int currentSize = currentCluster.y - currentCluster.x;
+                    if (currentSize >= clusterSize)
+                    {
+                        mesh.clusterSpans.emplace_back(currentCluster);
+                        currentCluster = int2(int(mesh.ib.size()));
+
+                        for (auto &b : boundary)
+                            b.clear();
+                    }
+                }
+            }
+        }
+
+        if (cluster)
+        {
+            XOR_ASSERT(mesh.clusterSpans.size() * clusterSize >=
+                       numTriangles,
+                       "Clusters do not cover all emitted triangles.");
+        }
+
+        return mesh;
+    }
+
+    template <typename VertexBuffer>
+    void optimizeVertexLocations(VertexBuffer &vb, Span<int> ib)
+    {
+        int numVertices = int(xor::size(vb));
+        std::vector<int> newVertexIndices(numVertices, -1);
+        int seenVertices = 0;
+
+        // Allocate new vertex positions as we encounter them.
+        // This should guarantee reasonable cache locality.
+        for (int v : ib)
+        {
+            if (newVertexIndices[v] < 0)
+            {
+                newVertexIndices[v] = seenVertices;
+                ++seenVertices;
+            }
+        }
+
+        // In-place shuffle the vertices to their new positions.
+        for (int v = 0; v < numVertices; ++v)
+        {
+            int oldIndex = v;
+            int newIndex = newVertexIndices[v];
+
+            while (newIndex >= 0 && oldIndex != newIndex)
+            {
+                std::swap(vb[oldIndex], vb[newIndex]);
+                // The vertex that occupied newIndex previously
+                // is now in oldIndex. Find a new place for it.
+                newIndex = newVertexIndices[newIndex];
+            }
+        }
+
+        // In-place update the index buffer.
+        for (int &v : ib)
+            v = newVertexIndices[v];
+    }
 }

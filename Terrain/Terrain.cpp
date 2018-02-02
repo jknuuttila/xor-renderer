@@ -409,11 +409,11 @@ struct Terrain
                             std::vector<int> indices = {},
                             Span<const int> vertexForIndex = {})
     {
-        auto &vb = meshBuffers.VB;
+        auto &vb = meshBuffers.vb;
 
         auto ib = std::move(indices);
         if (ib.empty())
-            ib = meshBuffers.IB; 
+            ib = meshBuffers.ib; 
 
         int numVerts = int(vb.size());
 
@@ -971,10 +971,19 @@ struct Terrain
 
             lods.emplace_back(delaunay.exportWithoutSuperPolygon());
 
+            if (tipsify)
+            {
+                lods.back().ib = clusterAndOptimize(lods.back().ib).ib;
+#if 0
+                optimizeVertexLocations(lods.back().vb,
+                                        lods.back().ib);
+#endif
+            }
+
             log("incrementalMaxError", "    Generated LOD %d with %zu vertices and %zu triangles in %.2f ms\n",
                 cfg_Settings.lodCount - lod - 1,
-                lods.back().VB.size(),
-                lods.back().IB.size() / 3,
+                lods.back().vb.size(),
+                lods.back().ib.size() / 3,
                 lodTimer.milliseconds());
         }
 
