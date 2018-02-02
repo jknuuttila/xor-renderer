@@ -5,6 +5,10 @@
 
 #ifdef __cplusplus
 
+#ifdef __EDG__
+#define XOR_INTELLISENSE
+#endif
+
 #include "Core/Math.hpp"
 
 namespace xor

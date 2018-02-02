@@ -79,6 +79,14 @@ namespace xor
             Edge(int start, int target) : EdgeType(start, target) {}
         };
 
+        // Serialized buffer representation of a mesh, which can be used
+        // for importing into or exporting out of DirectedEdge.
+        struct MeshBuffers
+        {
+            std::vector<Vertex> VB;
+            std::vector<int>    IB;
+        };
+
         static_assert(sizeof(Edge) == sizeof(EdgeType) +
                       std::is_empty<EdgeData>::value ? 0 : sizeof(EdgeData),
                       "Empty base optimization for Edge has failed");
@@ -96,6 +104,16 @@ namespace xor
         int         E(const Edge &e) const { return static_cast<int>(&e - m_edges.data()); }
 
         // The edges of a triangle are stored in indices 3t, 3t+1, 3t+2
+
+        // Clear the mesh of all contents.
+        void clear()
+        {
+            m_vertices.clear();
+            m_edges.clear();
+            m_triangles.clear();
+            m_freeTriangles.clear();
+            m_freeVertices.clear();
+        }
 
         // Return the main edge at 3t, which goes from the first vertex to the second.
         int triangleEdge(int t) const
@@ -284,13 +302,6 @@ namespace xor
             return removed;
         }
 
-        void clear()
-        {
-            m_vertices.clear();
-            m_triangles.clear();
-            m_edges.clear();
-        }
-
         int numVertices()  const { return static_cast<int>(m_vertices.size()); }
         int numTriangles() const { return static_cast<int>(m_triangles.size()); }
         int numEdges()     const { return static_cast<int>(m_edges.size()); }
@@ -341,6 +352,14 @@ namespace xor
             V(v) = Vertex(pos);
             return v;
         }
+        
+        int addVertex(Vertex vertex)
+        {
+            int v = addData(m_freeVertices, m_vertices);
+            vertex.edge = -1;
+            V(v) = std::move(vertex);
+            return v;
+        }
 
         void removeVertex(int v)
         {
@@ -369,6 +388,14 @@ namespace xor
             int v0 = addVertex(p0);
             int v1 = addVertex(p1);
             int v2 = addVertex(p2);
+            return addTriangle(v0, v1, v2);
+        }
+
+        int addTriangle(Vertex vert0, Vertex vert1, Vertex vert2)
+        {
+            int v0 = addVertex(std::move(vert0));
+            int v1 = addVertex(std::move(vert1));
+            int v2 = addVertex(std::move(vert2));
             return addTriangle(v0, v1, v2);
         }
 
@@ -674,6 +701,43 @@ namespace xor
             }
         }
 
+        // Returns a vertex/index buffer representation of the mesh.
+        MeshBuffers exportMesh() const
+        {
+            MeshBuffers buffers;
+            buffers.VB = m_vertices;
+            buffers.IB = triangleIndices();
+            return buffers;
+        }
+
+        // Import the given mesh into the DirectedEdge structure.
+        // Returns the number of triangles in the mesh.
+        int importMesh(MeshBuffers buffers)
+        {
+            clear();
+
+            for (auto &v : buffers.VB)
+            {
+                int idx = addVertex(std::move(v));
+                XOR_ASSERT(idx == int(&v - buffers.VB.data()), "Unexpected vertex index");
+            }
+
+            int numTs = int(buffers.IB.size() / 3);
+
+            for (int i = 0; i < numTs; ++i)
+            {
+                int i0 = buffers.IB[i * 3 + 0];
+                int i1 = buffers.IB[i * 3 + 1];
+                int i2 = buffers.IB[i * 3 + 2];
+
+                addTriangle(i0, i1, i2);
+            }
+
+            connectAdjacentTriangles();
+
+            return numTs;
+        }
+
         void debugEdge(const char *file, int line, const char *name, int e, const char *prefix = nullptr) const
         {
             if (e >= 0)
@@ -692,7 +756,7 @@ namespace xor
 
         void debugVertex(const char *file, int line, const char *name, int v, const char *prefix = nullptr) const
         {
-            if (v >= 0 && vertexIsValid(v))
+            if (vertexIsValid(v))
             {
                 float3 pos = float3(V(v).pos);
 
@@ -714,7 +778,7 @@ namespace xor
 
         void debugTriangle(const char *file, int line, const char *name, int t, const char *prefix = nullptr) const
         {
-            if (t >= 0)
+            if (triangleIsValid(t))
             {
                 auto vs = triangleVertices(t);
                 print("%s%sTriangle \"%s\" (%d): (%d %d %d)\n",
@@ -1361,6 +1425,36 @@ namespace xor
         bool isSuperPolygonVertex(int v) const
         {
             return any(int4(v) == m_superPolygon);
+        }
+
+        auto exportWithoutSuperPolygon() const
+        {
+            using MB = typename DE::MeshBuffers;
+
+            MB buffers;
+            buffers.VB.reserve(mesh.numVertices());
+            buffers.IB.reserve(mesh.numTriangles() * 3);
+
+            for (int v = 0; v < mesh.numVertices(); ++v)
+            {
+                if (mesh.vertexIsValid(v) && !isSuperPolygonVertex(v))
+                    buffers.VB.emplace_back(mesh.V(v));
+                else
+                    buffers.VB.emplace_back();
+            }
+
+            for (int t = 0; t < mesh.numTriangles(); ++t)
+            {
+                if (mesh.triangleIsValid(t) && !triangleContainsSuperVertices(t))
+                {
+                    int3 is = mesh.triangleVertices(t);
+                    buffers.IB.emplace_back(is.x);
+                    buffers.IB.emplace_back(is.y);
+                    buffers.IB.emplace_back(is.z);
+                }
+            }
+
+            return buffers;
         }
     };
 

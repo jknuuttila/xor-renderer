@@ -15,8 +15,6 @@ XOR_BEGIN_SIGNATURE(TerrainPatch)
 
 XOR_CBUFFER(Constants, 0)
 {
-    int2 tileMin;
-    int2 tileMax;
     int2 worldMin;
     int2 worldMax;
     float2 worldCenter;
@@ -24,7 +22,7 @@ XOR_CBUFFER(Constants, 0)
     float heightMin;
     float heightMax;
     float texelSize;
-    int tileLOD;
+    int lodLevel;
     float2 cameraWorldCoords;
     int lodEnabled;
     float lodSwitchDistance;
@@ -35,7 +33,7 @@ XOR_CBUFFER(Constants, 0)
 
 XOR_END_SIGNATURE
 
-#ifdef XOR_SHADER
+#if defined(XOR_SHADER)
 
 #include "Xor/ShaderMath.h.hlsl"
 
@@ -67,7 +65,7 @@ float terrainLOD(float sampledLOD, float distance)
 float terrainLODAlpha(float sampledLOD, float distance)
 {
     float lod        = terrainLOD(sampledLOD, distance);
-    float fractional = saturate(lod - float(tileLOD));
+    float fractional = saturate(lod - float(lodLevel));
 #if 1
     float alpha      = saturate(remap(lodMorphStart, 1, 0, 1, fractional));
 #else

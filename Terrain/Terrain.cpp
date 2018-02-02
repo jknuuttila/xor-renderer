@@ -116,7 +116,6 @@ enum class TriangulationMode
 {
     UniformGrid,
     IncMaxError,
-    TiledUniformGrid,
 };
 
 XOR_DEFINE_CONFIG_ENUM(VisualizationMode,
@@ -161,14 +160,23 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
     XOR_CONFIG_SLIDER(int, tileSizeExp, "Terrain tile size exponent", 7, 7, 10);
     XOR_CONFIG_TEXT("Terrain tile size", "%d", &Settings::tileSize);
     XOR_CONFIG_SLIDER(int, lodCount, "LOD count", 5, 1, 10);
+    XOR_CONFIG_SLIDER(int, lodVertexBase, "LOD vertex count base", 9 * 9, 4, 8192);
+    XOR_CONFIG_SLIDER(float, lodVertexExponent, "LOD vertex count exponent", 4.f, 2.f, 8.f);
     XOR_CONFIG_SLIDER(float, lodSwitchDistance, "LOD switch distance", 1500.f, 100.f, 5000.f);
     XOR_CONFIG_SLIDER(float, lodSwitchExponent, "LOD switch exponent", 1.f, 1.f, 4.f);
     XOR_CONFIG_SLIDER(float, lodBias, "LOD bias", 0.f, -5.f, 5.f);
     XOR_CONFIG_SLIDER(float, lodMorphStart, "LOD morph start", 0.5f, 0.f, 1.f);
     XOR_CONFIG_ENUM(LodMode, lodMode, "LOD mode", LodMode::NoSnap);
+    XOR_CONFIG_SLIDER(int, renderLod, "Rendered LOD", -1, -1, 10);
     XOR_CONFIG_CHECKBOX(highlightCracks, "Highlight cracks", false);
 
     int tileSize() const { return 1 << tileSizeExp; }
+    int lodVertexCount(int lod) const
+    {
+        double vertexCountMultiplier = std::pow(double(lodVertexExponent), double(lod));
+        int numLodVertices = int(std::round(lodVertexBase * vertexCountMultiplier));
+        return numLodVertices;
+    }
 
     XOR_CONFIG_GROUP(LightingProperties)
     {
@@ -338,13 +346,9 @@ struct BlueNoise
     }
 };
 
-struct TerrainTile
+struct TerrainLOD
 {
-    int2 tileMin;
-    int2 tileMax;
-    float2 tileCenterPos;
-    int selectedLod = -1;
-    std::vector<Mesh> lodMeshes;
+    Mesh mesh;
 };
 
 struct Terrain
@@ -361,12 +365,7 @@ struct Terrain
     float worldHeight   = 0;
     float worldDiameter = 0;
 
-    uint2 numTiles;
-    std::vector<TerrainTile> tiles;
-#if 0
-    TextureSRV tileLODs;
-    RWImageData tileLODsCPU;
-#endif
+    std::vector<TerrainLOD> terrainLods;
 
     Terrain() = default;
     Terrain(Device device, Heightmap &heightmap)
@@ -375,7 +374,7 @@ struct Terrain
         this->heightmap = &heightmap;
         heightData = heightmap.height.imageData();
 
-        uniformGrid(Rect::withSize(heightmap.size), 100);
+        uniformGrid(Rect::withSize(heightmap.size));
     }
 
     struct VertexLod
@@ -398,10 +397,23 @@ struct Terrain
                  std::vector<int> indices = {},
                  Span<const int> vertexForIndex = {})
     {
-        int numVerts = mesh.numVertices();
+        return gpuMeshFromBuffers(mesh.exportMesh(),
+                                  std::move(indices),
+                                  vertexForIndex);
+    }
 
-        if (indices.empty())
-            indices = mesh.triangleIndices();
+    template <typename MeshBuffers>
+    Mesh gpuMeshFromBuffers(const MeshBuffers &meshBuffers,
+                            std::vector<int> indices = {},
+                            Span<const int> vertexForIndex = {})
+    {
+        auto &vb = meshBuffers.VB;
+
+        auto ib = std::move(indices);
+        if (ib.empty())
+            ib = meshBuffers.IB; 
+
+        int numVerts = int(vb.size());
 
         std::vector<int2>  pixelCoords(numVerts);
         std::vector<float> height(numVerts);
@@ -410,31 +422,29 @@ struct Terrain
 
         float2 dims = float2(heightmap->size);
 
-        auto verts = mesh.vertices();
-
         for (int i = 0; i < numVerts; ++i)
         {
             int vertexIndex       = vertexForIndex.empty() ? i : vertexForIndex[i];
-            auto &v               = verts[vertexIndex];
+            auto &v               = vb[vertexIndex];
             pixelCoords[i]        = int2(v.pos);
             height[i]             = heightData.pixel<float>(uint2(v.pos));
             nextLodPixelCoords[i] = vertexNextLodPixelCoords(v, pixelCoords[i]);
             nextLodHeight[i]      = heightData.pixel<float>(uint2(nextLodPixelCoords[i]));
         }
 
-        XOR_ASSERT(indices.size() % 3 == 0, "Unexpected amount of indices");
-        for (size_t i = 0; i < indices.size(); i += 3)
+        XOR_ASSERT(ib.size() % 3 == 0, "Unexpected amount of indices");
+        for (size_t i = 0; i < ib.size(); i += 3)
         {
-            uint a = indices[i];
-            uint b = indices[i + 1];
-            uint c = indices[i + 2];
+            uint a = ib[i];
+            uint b = ib[i + 1];
+            uint c = ib[i + 2];
 
             // Negate CCW test because the positions are in UV coordinates,
             // which is left handed because +Y goes down
             bool ccw = !isTriangleCCW(pixelCoords[a], pixelCoords[b], pixelCoords[c]);
 
             if (!ccw)
-                std::swap(indices[i + 1], indices[i + 2]);
+                std::swap(ib[i + 1], ib[i + 2]);
         }
 
         VertexAttribute attrs[] =
@@ -445,7 +455,7 @@ struct Terrain
             { "POSITION", 3, DXGI_FORMAT_R32_FLOAT,   asBytes(nextLodHeight) },
         };
 
-        return Mesh::generate(device, attrs, reinterpretSpan<const uint>(indices));
+        return Mesh::generate(device, attrs, reinterpretSpan<const uint>(ib));
     }
 
     template <typename DEMesh>
@@ -636,97 +646,111 @@ struct Terrain
         return vertex(int2(unnormalized));
     }
 
-    void singleTile(Rect area, Mesh m)
+    void singleLod(Rect area, Mesh m)
     {
         setBounds(area);
-        tiles.clear();
-        tiles.resize(1);
-        tiles.front().tileMin = area.min;
-        tiles.front().tileMax = area.max;
-        tiles.front().lodMeshes.emplace_back(std::move(m));
+        terrainLods.clear();
+        terrainLods.resize(1);
+        terrainLods.front().mesh = std::move(m);
     }
 
-    void uniformGrid(Rect area, uint quadsPerDim)
+    void uniformGrid(Rect area)
     {
         Timer t;
 
-        area.max = min(area.max, heightmap->size);
-        if (all(area.size() < int2(128)))
-            area.min = area.max - 128;
+        log("uniformGrid", "Generating uniform grid mesh with %d LODs\n",
+            cfg_Settings.lodCount.get());
 
-        int2 sz        = int2(area.size());
-        float2 szWorld = float2(sz) * heightmap->texelSize;
+        setBounds(area);
+        terrainLods.clear();
 
-        int minDim = std::min(sz.x, sz.y);
-        int vertexDistance = minDim / static_cast<int>(quadsPerDim);
-        vertexDistance = std::max(1, vertexDistance);
-
-        int2 verts = sz / vertexDistance;
-        float2 fVerts = float2(verts);
-        float2 fRes   = float2(sz);
-        float2 worldMin = -szWorld / 2.f;
-        float2 worldMax = worldMin + szWorld;
-
-        auto numVerts   = (verts.x + 1) * (verts.y + 1);
-
-        std::vector<int2>  pixelCoords;
-        std::vector<float> heights;
-        std::vector<uint>  indices;
-
-        pixelCoords.reserve(numVerts);
-        heights.reserve(numVerts);
-        indices.reserve(verts.x * verts.y * (3 * 2));
-
-        float2 invSize = 1.f / float2(heightmap->size);
-
-        for (int y = 0; y <= verts.y; ++y)
+        for (int lod = 0; lod < cfg_Settings.lodCount; ++lod)
         {
-            for (int x = 0; x <= verts.x; ++x)
+            Timer lodTimer;
+
+            int maxVertexCount = cfg_Settings.lodVertexCount(lod);
+            int vertsPerSide = int(std::round(std::sqrt(float(maxVertexCount))));
+            float2 vertexDistance = float2(area.size()) / float2(float(vertsPerSide - 1));
+            int numVerts = vertsPerSide * vertsPerSide;
+
+            std::vector<int2>  pixelCoords;
+            std::vector<float> heights;
+            std::vector<uint>  indices;
+
+            pixelCoords.reserve(numVerts);
+            heights.reserve(numVerts);
+            indices.reserve(numVerts * 3);
+
+            float2 invSize = 1.f / float2(heightmap->size);
+
+            for (int y = 0; y < vertsPerSide; ++y)
             {
-                int2 vertexGridCoords = int2(x, y);
-                int2 texCoords = min(vertexGridCoords * vertexDistance + area.min, heightmap->size - 1);
+                for (int x = 0; x < vertsPerSide; ++x)
+                {
+                    int2 vertexGridCoords = int2(x, y);
+                    float2 fCoords = float2(vertexGridCoords) * vertexDistance;
+                    int2 texCoords = min(int2(round(fCoords)) + area.min, heightmap->size - 1);
 
-                float height = heightData.pixel<float>(uint2(texCoords));
+                    float height = heightData.pixel<float>(uint2(texCoords));
 
-                pixelCoords.emplace_back(texCoords);
-                heights.emplace_back(height);
+                    pixelCoords.emplace_back(texCoords);
+                    heights.emplace_back(height);
+                }
             }
+
+            for (int y = 0; y < vertsPerSide - 1; ++y)
+            {
+                for (int x = 0; x < vertsPerSide - 1; ++x)
+                {
+                    uint ul = y * vertsPerSide + x;
+                    uint ur = ul + 1;
+                    uint dl = ul + vertsPerSide;
+                    uint dr = dl + 1;
+
+                    if ((x + y) & 1)
+                    {
+                        indices.emplace_back(ul);
+                        indices.emplace_back(dl);
+                        indices.emplace_back(ur);
+                        indices.emplace_back(dl);
+                        indices.emplace_back(dr);
+                        indices.emplace_back(ur);
+                    }
+                    else
+                    {
+                        indices.emplace_back(dl);
+                        indices.emplace_back(dr);
+                        indices.emplace_back(ul);
+                        indices.emplace_back(dr);
+                        indices.emplace_back(ur);
+                        indices.emplace_back(ul);
+                    }
+                }
+            }
+
+            VertexAttribute attrs[] =
+            {
+                { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(pixelCoords) },
+                { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
+            };
+
+            terrainLods.emplace_back();
+            terrainLods.back().mesh = Mesh::generate(device, attrs, indices);
+
+            log("uniformGrid", "    Generated LOD %d with %zu vertices and %zu indices in %.2f ms\n",
+                cfg_Settings.lodCount - lod + 1,
+                pixelCoords.size(),
+                indices.size(),
+                lodTimer.milliseconds());
         }
 
-        int vertsPerRow = verts.y + 1;
-        for (int y = 0; y < verts.y; ++y)
-        {
-            for (int x = 0; x < verts.x; ++x)
-            {
-                uint ul = y * vertsPerRow + x;
-                uint ur = ul + 1;
-                uint dl = ul + vertsPerRow;
-                uint dr = dl + 1;
+        std::reverse(terrainLods.begin(), terrainLods.end());
 
-                indices.emplace_back(ul);
-                indices.emplace_back(dl);
-                indices.emplace_back(ur);
-                indices.emplace_back(dl);
-                indices.emplace_back(dr);
-                indices.emplace_back(ur);
-            }
-        }
-
-        log("HeightmapRenderer", "Generated uniform grid mesh with %zu vertices and %zu indices in %.2f ms\n",
-            pixelCoords.size(),
-            indices.size(),
+        log("uniformGrid", "Generated uniform grid mesh in %.2f ms\n",
             t.milliseconds());
-
-        VertexAttribute attrs[] =
-        {
-            { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, asBytes(pixelCoords) },
-            { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,    asBytes(heights) },
-        };
-
-        singleTile(area, Mesh::generate(device, attrs, indices));
     }
 
-    void incrementalMaxError(Rect area, uint vertices, bool tipsify = true)
+    void incrementalMaxError(Rect area, bool tipsify = true)
     {
         Timer timer;
 
@@ -754,6 +778,7 @@ struct Terrain
         };
 
         using DErr = DirectedEdge<TriangleError, Vert>;
+        using MB   = typename DErr::MeshBuffers;
         DErr mesh;
 
         Vert minBound = vertex(area, {0, 0});
@@ -765,12 +790,19 @@ struct Terrain
         std::vector<int> newTriangles;
         std::unordered_set<int2, PodHash, PodEqual> usedVertices;
 
+        std::vector<MB> lods;
+
+        log("incrementalMaxError", "Generating incremental max error mesh with %d LODs\n",
+            cfg_Settings.lodCount.get());
+
 #if 0
         BowyerWatson<DErr> delaunay(mesh);
 #else
         DelaunayFlip<DErr> delaunay(mesh);
 #endif
         delaunay.superRectangle(minBound, maxBound);
+
+        int numSuperVertices = mesh.numVertices();
 
         {
             int v0 = delaunay.insertVertex(vertex(area, { 1, 0 }));
@@ -791,355 +823,174 @@ struct Terrain
 
         XOR_ASSERT(!largestError.empty(), "No valid triangles to subdivide");
 
-        // Subtract 3 from the vertex count to account for the supertriangle
-        while (mesh.numVertices() - 3 < static_cast<int>(vertices))
+        for (int lod = 0; lod < cfg_Settings.lodCount; ++lod)
         {
-            auto largest = largestError.top();
-            largestError.pop();
-            int t = largest.triangle;
+            Timer lodTimer;
 
-            if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t))
+            int numLodVertices = cfg_Settings.lodVertexCount(lod);
+
+            // Subtract from the vertex count to account for the superpolygon
+            while (mesh.numVertices() - numSuperVertices < numLodVertices)
             {
-                continue;
-            }
+                auto largest = largestError.top();
+                largestError.pop();
+                int t = largest.triangle;
 
-            auto &triData = mesh.T(t);
-            int3 verts  = mesh.triangleVertices(t);
-            Vert v0     = mesh.V(verts.x).pos;
-            Vert v1     = mesh.V(verts.y).pos;
-            Vert v2     = mesh.V(verts.z).pos;
-
-            // If the error isn't known, estimate it
-            if (!largest.error || largest.error != triData.error)
-            {
-                int2 largestErrorCoords;
-                float largestErrorFound = -1;
-
-                // InteriorSamples == 1
-                // [Heightmap]: L2: 4.532414e+05, L1: 6.876323e+08, L_inf: 7.701329e+02, Calculated for 152 triangles in 544.34 ms
-                // [Heightmap]: L2: 1.928656e+05, L1: 2.663657e+08, L_inf: 7.379893e+02, Calculated for 1129 triangles in 556.19 ms
-                // [Heightmap]: L2: 8.425315e+04, L1: 1.159352e+08, L_inf: 6.299168e+02, Calculated for 8413 triangles in 568.50 ms
-
-                // InteriorSamples == 10
-                // [Heightmap]: L2: 3.808483e+05, L1: 6.012014e+08, L_inf: 8.759630e+02, Calculated for 151 triangles in 544.98 ms
-                // [Heightmap]: L2: 1.611922e+05, L1: 2.331848e+08, L_inf: 6.007446e+02, Calculated for 1123 triangles in 529.35 ms
-                // [Heightmap]: L2: 6.603029e+04, L1: 1.004696e+08, L_inf: 3.462271e+02, Calculated for 8391 triangles in 560.90 ms
-
-                // InteriorSamples == 100
-                // [Heightmap]: L2: 4.335434e+05, L1: 6.780714e+08, L_inf: 7.855012e+02, Calculated for 151 triangles in 549.67 ms
-                // [Heightmap]: L2: 1.692659e+05, L1: 2.508276e+08, L_inf: 3.902838e+02, Calculated for 1114 triangles in 557.31 ms
-                // [Heightmap]: L2: 6.706991e+04, L1: 1.014288e+08, L_inf: 1.513256e+02, Calculated for 8383 triangles in 570.01 ms
-                constexpr int InteriorSamples = 30;
-                constexpr int EdgeSamples     = 0;
-
-                auto errorAt = [&] (float3 bary)
+                if (t < 0 || !mesh.triangleIsValid(t) || delaunay.triangleContainsSuperVertices(t))
                 {
-                    float3 interpolated = interpolateBarycentric(float3(v0), float3(v1), float3(v2), bary);
-                    Vert point          = vertex(int2(interpolated));
-
-                    float error = abs(float(point.z) - interpolated.z);
-                    if (isPointInsideTriangleUnknownWinding(v0.vec2(), v1.vec2(), v2.vec2(), point.vec2())
-                        && !usedVertices.count(int2(point))
-                        && error > largestErrorFound)
-                    {
-                        largestErrorCoords = int2(point);
-                        largestErrorFound  = error;
-                    }
-                };
-
-                for (int i = 0; i < InteriorSamples; ++i)
-                {
-                    float3 bary = uniformBarycentricGen(gen);
-                    errorAt(bary);
-                }
-
-                for (int i = 0; i < EdgeSamples; ++i)
-                {
-                    float x = std::uniform_real_distribution<float>()(gen);
-                    int e = std::uniform_int_distribution<int>(0, 2)(gen);
-                    float3 bary(0, x, 1 - x);
-                    std::swap(bary[0], bary[e]);
-                    errorAt(bary);
-                }
-
-                triData.coords = largestErrorCoords;
-                triData.error  = largestErrorFound;
-
-                largestError.emplace(t, largestErrorFound);
-            }
-            // The error is known, and it was the largest, so insert a new vertex
-            // in that position.
-            else
-            {
-                Vert newVertex = vertex(triData.coords);
-                newTriangles.clear();
-                delaunay.insertVertex(t, newVertex, &newTriangles);
-                usedVertices.emplace(int2(newVertex));
-
-                for (int nt : newTriangles)
-                    largestError.emplace(nt);
-            }
-        }
-
-        // Add extra vertices on area boundaries so the overall shape ends up being
-        // a rectangle.
-        {
-            std::vector<std::pair<int2, int>> newBorderVerts;
-
-            auto spv = delaunay.superPolygonVertices();
-            for (int sv : spv.span())
-            {
-                if (sv < 0)
                     continue;
+                }
 
-                for (int v : mesh.vertexAdjacentVertices(sv))
+                auto &triData = mesh.T(t);
+                int3 verts = mesh.triangleVertices(t);
+                Vert v0 = mesh.V(verts.x).pos;
+                Vert v1 = mesh.V(verts.y).pos;
+                Vert v2 = mesh.V(verts.z).pos;
+
+                // If the error isn't known, estimate it
+                if (!largest.error || largest.error != triData.error)
                 {
-                    if (delaunay.isSuperPolygonVertex(v))
+                    int2 largestErrorCoords;
+                    float largestErrorFound = -1;
+
+                    // InteriorSamples == 1
+                    // [Heightmap]: L2: 4.532414e+05, L1: 6.876323e+08, L_inf: 7.701329e+02, Calculated for 152 triangles in 544.34 ms
+                    // [Heightmap]: L2: 1.928656e+05, L1: 2.663657e+08, L_inf: 7.379893e+02, Calculated for 1129 triangles in 556.19 ms
+                    // [Heightmap]: L2: 8.425315e+04, L1: 1.159352e+08, L_inf: 6.299168e+02, Calculated for 8413 triangles in 568.50 ms
+
+                    // InteriorSamples == 10
+                    // [Heightmap]: L2: 3.808483e+05, L1: 6.012014e+08, L_inf: 8.759630e+02, Calculated for 151 triangles in 544.98 ms
+                    // [Heightmap]: L2: 1.611922e+05, L1: 2.331848e+08, L_inf: 6.007446e+02, Calculated for 1123 triangles in 529.35 ms
+                    // [Heightmap]: L2: 6.603029e+04, L1: 1.004696e+08, L_inf: 3.462271e+02, Calculated for 8391 triangles in 560.90 ms
+
+                    // InteriorSamples == 100
+                    // [Heightmap]: L2: 4.335434e+05, L1: 6.780714e+08, L_inf: 7.855012e+02, Calculated for 151 triangles in 549.67 ms
+                    // [Heightmap]: L2: 1.692659e+05, L1: 2.508276e+08, L_inf: 3.902838e+02, Calculated for 1114 triangles in 557.31 ms
+                    // [Heightmap]: L2: 6.706991e+04, L1: 1.014288e+08, L_inf: 1.513256e+02, Calculated for 8383 triangles in 570.01 ms
+                    constexpr int InteriorSamples = 30;
+                    constexpr int EdgeSamples = 0;
+
+                    auto errorAt = [&](float3 bary)
+                    {
+                        float3 interpolated = interpolateBarycentric(float3(v0), float3(v1), float3(v2), bary);
+                        Vert point = vertex(int2(interpolated));
+
+                        float error = abs(float(point.z) - interpolated.z);
+                        if (isPointInsideTriangleUnknownWinding(v0.vec2(), v1.vec2(), v2.vec2(), point.vec2())
+                            && !usedVertices.count(int2(point))
+                            && error > largestErrorFound)
+                        {
+                            largestErrorCoords = int2(point);
+                            largestErrorFound = error;
+                        }
+                    };
+
+                    for (int i = 0; i < InteriorSamples; ++i)
+                    {
+                        float3 bary = uniformBarycentricGen(gen);
+                        errorAt(bary);
+                    }
+
+                    for (int i = 0; i < EdgeSamples; ++i)
+                    {
+                        float x = std::uniform_real_distribution<float>()(gen);
+                        int e = std::uniform_int_distribution<int>(0, 2)(gen);
+                        float3 bary(0, x, 1 - x);
+                        std::swap(bary[0], bary[e]);
+                        errorAt(bary);
+                    }
+
+                    triData.coords = largestErrorCoords;
+                    triData.error = largestErrorFound;
+
+                    largestError.emplace(t, largestErrorFound);
+                }
+                // The error is known, and it was the largest, so insert a new vertex
+                // in that position.
+                else
+                {
+                    Vert newVertex = vertex(triData.coords);
+                    newTriangles.clear();
+                    delaunay.insertVertex(t, newVertex, &newTriangles);
+                    usedVertices.emplace(int2(newVertex));
+
+                    for (int nt : newTriangles)
+                        largestError.emplace(nt);
+                }
+            }
+
+            // Add extra vertices on area boundaries so the overall shape ends up being
+            // a rectangle.
+            {
+                std::vector<std::pair<int2, int>> newBorderVerts;
+
+                auto spv = delaunay.superPolygonVertices();
+                for (int sv : spv.span())
+                {
+                    if (sv < 0)
                         continue;
 
-                    // Try all four outer edges, pick the closest one
-                    int2 p = int2(mesh.V(v).pos);
-
-                    int2 pTop = int2(p.x, int(minBound.y));
-                    int2 pLeft = int2(int(minBound.x), p.y);
-                    int2 pRight = int2(int(maxBound.x), p.y);
-                    int2 pBottom = int2(p.x, int(maxBound.y));
-
-                    int2 pEdge = pTop;
-                    int minDistSq = (pEdge - p).lengthSqr();
-
-                    for (auto &p_ : { pLeft, pRight, pBottom })
+                    for (int v : mesh.vertexAdjacentVertices(sv))
                     {
-                        int dSq = (p_ - p).lengthSqr();
-                        if (dSq < minDistSq)
+                        if (delaunay.isSuperPolygonVertex(v))
+                            continue;
+
+                        // Try all four outer edges, pick the closest one
+                        int2 p = int2(mesh.V(v).pos);
+
+                        int2 pTop = int2(p.x, int(minBound.y));
+                        int2 pLeft = int2(int(minBound.x), p.y);
+                        int2 pRight = int2(int(maxBound.x), p.y);
+                        int2 pBottom = int2(p.x, int(maxBound.y));
+
+                        int2 pEdge = pTop;
+                        int minDistSq = (pEdge - p).lengthSqr();
+
+                        for (auto &p_ : { pLeft, pRight, pBottom })
                         {
-                            pEdge = p_;
-                            minDistSq = dSq;
+                            int dSq = (p_ - p).lengthSqr();
+                            if (dSq < minDistSq)
+                            {
+                                pEdge = p_;
+                                minDistSq = dSq;
+                            }
+                        }
+
+                        if (!usedVertices.count(pEdge))
+                        {
+                            newBorderVerts.emplace_back(pEdge, v);
                         }
                     }
-
-                    if (!usedVertices.count(pEdge))
-                    {
-                        newBorderVerts.emplace_back(pEdge, v);
-                    }
                 }
+
+                for (auto &v : newBorderVerts)
+                    delaunay.insertVertexNearAnother(vertex(v.first), v.second);
             }
 
-            for (auto &v : newBorderVerts)
-                delaunay.insertVertexNearAnother(vertex(v.first), v.second);
+            lods.emplace_back(delaunay.exportWithoutSuperPolygon());
+
+            log("incrementalMaxError", "    Generated LOD %d with %zu vertices and %zu triangles in %.2f ms\n",
+                cfg_Settings.lodCount - lod + 1,
+                lods.back().VB.size(),
+                lods.back().IB.size() / 3,
+                lodTimer.milliseconds());
         }
 
         delaunay.removeSuperPolygon();
-
         mesh.vertexRemoveUnconnected();
 
-        log("Heightmap", "Generated incremental max error triangulation with %d vertices and %d triangles in %.2f ms\n",
-            mesh.numValidVertices(),
-            mesh.numValidTriangles(),
+        log("incrementalMaxError", "Generated incremental max error triangulation in %.2f ms\n",
             timer.milliseconds());
 
-        if (tipsify)
-        {
-            singleTile(area, tipsifyMesh(mesh));
-        }
-        else
-        {
-            singleTile(area, gpuMesh(mesh));
-        }
-    }
-
-    TerrainTile uniformGridTile(Rect area, bool tipsify = true)
-    {
-        uint2 areaSize     = uint2(area.size());
-        uint sideLength    = std::max(areaSize.x, areaSize.y);
-
-        XOR_ASSERT(roundUpToPow2(sideLength) == sideLength, "Side length must be a power of 2");
-
-        TerrainTile tile;
-        tile.tileMin = area.min;
-        tile.tileMax = area.max;
-        tile.tileCenterPos = worldCoords(area.min + area.size() / 2);
-
-        for (int lod = 0; lod < cfg_Settings.lodCount; ++lod)
-        {
-            Timer t;
-
-            uint quadsPerSide = 2u << lod;
-
-            if (quadsPerSide > sideLength)
-                break;
-
-            uint vertsPerSide = quadsPerSide + 1;
-            uint pixelsPerQuad = sideLength / quadsPerSide;
-
-            float vertexDistance = float(pixelsPerQuad) * heightmap->texelSize;
-
-            DirectedEdge<Empty, uint2, VertexLod> de;
-
-            int numVertices = 0;
-            uint2 maxCoords = uint2(heightmap->size - 1);
-
-            for (uint y = 0; y < vertsPerSide; ++y)
-            {
-                for (uint x = 0; x < vertsPerSide; ++x)
-                {
-                    uint2 pixelCoords = uint2(x, y) * uint2(pixelsPerQuad) + uint2(area.min);
-                    pixelCoords = min(pixelCoords, maxCoords);
-
-                    int v = de.addVertex(pixelCoords);
-                    XOR_ASSERT(v == numVertices, "Unexpected vertex number");
-
-                    VertexLod &vl = de.V(v);
-
-                    uint2 coarser;
-                    switch (x % 4)
-                    {
-                    case 0:
-                    case 2:
-                        coarser.x = x;
-                        break;
-                    case 1:
-                        coarser.x = x - 1;
-                        break;
-                    case 3:
-                        coarser.x = x + 1;
-                        break;
-                    }
-
-                    switch (y % 4)
-                    {
-                    case 0:
-                    case 2:
-                        coarser.y = y;
-                        break;
-                    case 1:
-                        coarser.y = y - 1;
-                        break;
-                    case 3:
-                        coarser.y = y + 1;
-                        break;
-                    }
-
-                    if (any(coarser != uint2(x, y)))
-                    {
-                        vl.nextLodPixelCoords = int2(coarser) * int2(pixelsPerQuad) + int2(area.min);
-                        vl.nextLodPixelCoords = min(vl.nextLodPixelCoords, int2(maxCoords));
-                    }
-                    else
-                    {
-                        vl.nextLodPixelCoords = int2(pixelCoords);
-                    }
-
-#if 0
-                    if (lod == 1)
-                    {
-                        print("(%u, %u) (%u, %u) (%u, %u), (%d, %d)\n",
-                              x, y, coarser.x, coarser.y,
-                              pixelCoords.x, pixelCoords.y,
-                              vl.nextLodPixelCoords.x,
-                              vl.nextLodPixelCoords.y);
-                    }
-#endif
-
-                    ++numVertices;
-                }
-            }
-
-            auto vertexNumber = [vertsPerSide](int x, int y)
-            {
-                return y * vertsPerSide + x;
-            };
-
-            // Loop all "even" vertices in the interior, generate triangles
-            for (uint y = 1; y < vertsPerSide; y += 2)
-            {
-                for (uint x = 1; x < vertsPerSide; x += 2)
-                {
-                    // numpad directions
-                    int v7 = vertexNumber(x - 1, y - 1);
-                    int v8 = vertexNumber(x + 0, y - 1);
-                    int v9 = vertexNumber(x + 1, y - 1);
-                    int v4 = vertexNumber(x - 1, y + 0);
-                    int v5 = vertexNumber(x + 0, y + 0);
-                    int v6 = vertexNumber(x + 1, y + 0);
-                    int v1 = vertexNumber(x - 1, y + 1);
-                    int v2 = vertexNumber(x + 0, y + 1);
-                    int v3 = vertexNumber(x + 1, y + 1);
-
-                    de.addTriangle(v5, v8, v7);
-                    de.addTriangle(v5, v9, v8);
-                    de.addTriangle(v5, v7, v4);
-                    de.addTriangle(v5, v6, v9);
-                    de.addTriangle(v5, v4, v1);
-                    de.addTriangle(v5, v3, v6);
-                    de.addTriangle(v5, v1, v2);
-                    de.addTriangle(v5, v2, v3);
-                }
-            }
-
-            de.connectAdjacentTriangles();
-
-            if (tipsify)
-                tile.lodMeshes.emplace_back(tipsifyMesh(de));
-            else
-                tile.lodMeshes.emplace_back(gpuMesh(de));
-
-            log("uniformGridTile",
-                "Tile (%d, %d) ... (%d, %d), LOD %d, %.3f ms\n",
-                area.min.x, area.min.y,
-                area.max.x, area.max.y,
-                lod,
-                t.milliseconds());
-        }
-
-        std::reverse(tile.lodMeshes.begin(), tile.lodMeshes.end());
-
-        return tile;
-    }
-
-    void tiledUniformGrid(Rect area, bool tipsify = true)
-    {
-        Timer t;
+        std::reverse(lods.begin(), lods.end());
 
         setBounds(area);
-
-        tiles.clear();
-
-        int2 midpoint = area.min + area.size() / 2;
-
-        int tileSize = cfg_Settings.tileSize();
-
-        for (int y = area.min.y; y < area.max.y; y += int(tileSize))
+        terrainLods.clear();
+        for (auto &lod : lods)
         {
-            for (int x = area.min.x; x < area.max.x; x += int(tileSize))
-            {
-                int2 coords = int2(x, y);
-                tiles.emplace_back(
-                    uniformGridTile(
-                        Rect{ coords, coords + int2(tileSize) },
-                        tipsify));
-            }
+            terrainLods.emplace_back();
+            terrainLods.back().mesh = gpuMeshFromBuffers(lod);
         }
-
-#if 0
-        {
-            numTiles = uint2((area.size() + int2(tileSize - 1)) / tileSize);
-            tileLODsCPU = RWImageData(numTiles, DXGI_FORMAT_R8_UINT);
-            tileLODs = device.createTextureSRV(info::TextureInfoBuilder()
-                                               .size(tileLODsCPU.size)
-                                               .format(tileLODsCPU.format));
-        }
-#endif
-
-        {
-            auto cmd = device.graphicsCommandList();
-            selectLODs(cmd);
-            device.execute(cmd);
-        }
-
-        log("tiledUniformGrid", "Generated %zu tiles in %.3f ms\n",
-            tiles.size(),
-            t.milliseconds());
     }
 
     ErrorMetrics calculateMeshError()
@@ -1269,37 +1120,6 @@ struct Terrain
 
     void selectLODs(CommandList &cmd, const float2 *cameraPos = nullptr)
     {
-        float2 worldMinWS = worldCoords(worldMin);
-        float2 worldMaxWS = worldCoords(worldMax);
-
-        for (auto &t : tiles)
-        {
-            float2 tileMin = worldCoords(t.tileMin);
-            float2 tileMax = worldCoords(t.tileMax);
-
-            float2 tileCoordUV = remap(worldMinWS, worldMaxWS, float2(0.f), float2(1.f), tileMin);
-
-            // If LOD is disabled, use the best LOD
-            if (cameraPos)
-            {
-                float2 clampedCamera = max(min(*cameraPos, tileMax), tileMin);
-
-                float2 camera = *cameraPos;
-                float distanceToTile = (clampedCamera - camera).length();
-
-                int lod = computeLOD(distanceToTile, t.lodMeshes.size());
-
-                t.selectedLod = lod;
-            }
-            else
-            {
-                t.selectedLod = -1;
-            }
-
-            // tileLODsCPU.pixel<uint8_t>(tileCoordUV) = uint8_t(std::max(0, t.selectedLod));
-        }
-
-        // cmd.updateTexture(tileLODs.texture(), tileLODsCPU);
     }
 
     void render(CommandList &cmd, const float2 *cameraPos = nullptr) const
@@ -1312,6 +1132,7 @@ struct Terrain
         constants.texelSize         = heightmap->texelSize;
         constants.heightMin         = heightmap->minHeight;
         constants.heightMax         = heightmap->maxHeight;
+        constants.lodLevel          = clamp(cfg_Settings.renderLod, 0, int(terrainLods.size() - 1));
 
         constants.lodSwitchDistance = cfg_Settings.lodSwitchDistance;
         if (cfg_Settings.lodSwitchExponent > 1.05f)
@@ -1328,32 +1149,13 @@ struct Terrain
         float tileSize = cfg_Settings.tileSize() * heightmap->texelSize;
         float halfTile = tileSize / 2;
 
-        for (auto &t : tiles)
-        {
-            constants.tileMin = t.tileMin;
-            constants.tileMax = t.tileMax;
 
-            const Mesh *mesh = nullptr;
+        auto &mesh = terrainLods[constants.lodLevel].mesh;
 
-            // If LOD is disabled, use the best LOD
-            if (t.selectedLod >= 0)
-            {
-                mesh = &t.lodMeshes[t.selectedLod];
-                constants.tileLOD = t.selectedLod;
-                constants.lodEnabled = static_cast<int>(cfg_Settings.lodMode != LodMode::NoSnap);
-            }
-            else
-            {
-                mesh = &t.lodMeshes.front();
-                constants.tileLOD = 0;
-                constants.lodEnabled = 0;
-            }
+        cmd.setConstants(constants);
+        mesh.setForRendering(cmd);
 
-            cmd.setConstants(constants);
-            mesh->setForRendering(cmd);
-
-            cmd.drawIndexed(mesh->numIndices());
-        }
+        cmd.drawIndexed(mesh.numIndices());
     }
 
     info::InputLayoutInfo inputLayout()
@@ -2031,7 +1833,6 @@ class TerrainRendering : public Window
 #else
     int areaSize  = 2048;
 #endif
-    int triangulationDensity = 6;
     TriangulationMode triangulationMode = TriangulationMode::IncMaxError; //TriangulationMode::TiledUniformGrid;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
     bool blitArea    = true;
@@ -2099,13 +1900,10 @@ public:
         {
         case TriangulationMode::UniformGrid:
         default:
-            terrain.uniformGrid(area, quadsPerDim());
+            terrain.uniformGrid(area);
             break;
         case TriangulationMode::IncMaxError:
-            terrain.incrementalMaxError(area, vertexCount(), tipsifyMesh);
-            break;
-        case TriangulationMode::TiledUniformGrid:
-            terrain.tiledUniformGrid(area);
+            terrain.incrementalMaxError(area, tipsifyMesh);
             break;
         }
 
@@ -2129,6 +1927,7 @@ public:
 
     void measureTerrain()
     {
+#if 0
         auto area = Rect::withSize(areaStart, areaSize);
 
         constexpr int N = 18;
@@ -2155,18 +1954,7 @@ public:
         }
 
         updateTerrain();
-    }
-
-    int quadsPerDim(int density = 0) const
-    {
-        if (density == 0) density = triangulationDensity;
-        return static_cast<int>(std::round(std::pow(std::sqrt(2), static_cast<float>(density))));
-    }
-
-    int vertexCount(int density = 0) const
-    {
-        int qpd = quadsPerDim(density);
-        return (qpd + 1) * (qpd + 1);
+#endif
     }
 
     void mainLoop(double deltaTime) override
@@ -2185,8 +1973,6 @@ public:
                 areaSize = roundUpToPow2(areaSize);
 
             ImGui::SliderInt2("Start", areaStart.data(), 0, heightmap.size.x - areaSize);
-            ImGui::SliderInt("Density", &triangulationDensity, 5, 18);
-            ImGui::Text("Vertex count: %d", vertexCount());
 
             ImGui::Separator();
 
