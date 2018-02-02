@@ -258,6 +258,17 @@ namespace xor
             });
         }
 
+        std::vector<int> vertexAdjacentVertices(int v) const
+        {
+            std::vector<int> adjacent;
+            adjacent.reserve(6); // In most meshes 6 is enough
+            vertexForEachAdjacentVertex(v, [&] (int a)
+            {
+                adjacent.emplace_back(a);
+            });
+            return adjacent;
+        }
+
         int vertexRemoveUnconnected()
         {
             int removed = 0;
@@ -485,6 +496,45 @@ namespace xor
                                      newVertexBary.z * p2);
         }
 
+        // Call the given function once for each valid triangle adjacent to
+        // the current triangle. Return the amount of such triangles.
+        template <typename F>
+        int triangleForEachAdjacentTriangle(int t, F &&f) const
+        {
+            int count = 0;
+
+            int3 es = triangleAllEdges(t);
+            for (int e : es.span())
+            {
+                int n = edgeNeighbor(e);
+                if (n >= 0)
+                {
+                    f(edgeTriangle(n));
+                    ++count;
+                }
+            }
+
+            return count;
+        }
+
+        // Call the given function once for each valid triangle in the mesh.
+        // Returns the amount of valid triangles.
+        template <typename F>
+        int forEachTriangle(F &&f) const
+        {
+            int count = 0;
+            for (int t = 0; t < numTriangles(); ++t)
+            {
+                if (triangleIsValid(t))
+                {
+                    f(t);
+                    ++count;
+                }
+            }
+
+            return count;
+        }
+
         // Return true if the edge can be flipped using edgeFlip, when the triangles are
         // interpreted as 2D triangles using their XY coordinates.
         bool edgeIsFlippable(int e) const
@@ -642,14 +692,16 @@ namespace xor
 
         void debugVertex(const char *file, int line, const char *name, int v, const char *prefix = nullptr) const
         {
-            if (v >= 0)
+            if (v >= 0 && vertexIsValid(v))
             {
+                float3 pos = float3(V(v).pos);
+
                 print("%s%sVertex \"%s\" (%d): (%.3f %.3f %.3f) edge: %d\n",
                       prefix ? prefix : "", prefix ? " " : "",
                       name, v,
-                      V(v).pos.x,
-                      V(v).pos.y,
-                      V(v).pos.z,
+                      pos.x,
+                      pos.y,
+                      pos.z,
                       V(v).edge);
             }
             else
@@ -1002,7 +1054,7 @@ namespace xor
          std::unordered_set<int> m_affected;
          std::unordered_set<int> m_edges;
          std::unordered_set<int> m_nextEdges;
-         int3 m_superTriangle = int3(-1);
+         int4 m_superPolygon = int4(-1);
     public:
 
         DelaunayFlip(DE &mesh) : mesh(mesh)
@@ -1109,6 +1161,11 @@ namespace xor
             return newVertex;
         }
 
+        int4 superPolygonVertices() const
+        {
+            return m_superPolygon;
+        }
+
         bool isLocallyDelaunay(int e) const
         {
             int n = mesh.edgeNeighbor(e);
@@ -1172,28 +1229,107 @@ namespace xor
             return -1;
         }
 
-        void superTriangle(Pos pointSetMinBound, Pos pointSetMaxBound)
+        int insertVertexNearAnother(Pos newVertexPos,
+                                    int v,
+                                    std::vector<int> *affectedTriangles = nullptr)
         {
-            XOR_ASSERT(all(m_superTriangle == int3(-1)), "Supertriangle can only be set once");
+            // Search triangles in breadth-first order, starting from the given nearby
+            // vertex.
+
+            std::unordered_set<int> checkedTriangles;
+            std::unordered_set<int> triangles;
+            std::unordered_set<int> nextTriangles;
+            triangles.reserve(6);
+            nextTriangles.reserve(6);
+            checkedTriangles.reserve(6);
+
+            mesh.vertexForEachTriangle(v, [&] (int t) { nextTriangles.emplace(t); });
+
+            while (!nextTriangles.empty())
+            {
+                triangles.swap(nextTriangles);
+
+                while (!triangles.empty())
+                {
+                    int t = *triangles.begin();
+                    triangles.erase(triangles.begin());
+
+                    auto vs = mesh.triangleVertexPositions(t);
+
+                    if (isPointInsideTriangleUnknownWinding(
+                        vs[0].vec2(),
+                        vs[1].vec2(),
+                        vs[2].vec2(),
+                        newVertexPos.vec2()))
+                        return insertVertex(t, newVertexPos, affectedTriangles);
+
+                    checkedTriangles.emplace(t);
+
+                    mesh.triangleForEachAdjacentTriangle(t, [&] (int a)
+                    {
+                        if (!checkedTriangles.count(a))
+                            nextTriangles.emplace(a);
+                    });
+                }
+            }
+
+            return insertVertex(newVertexPos, affectedTriangles);
+        }
+
+        void superRectangle(Pos pointSetMinBound, Pos pointSetMaxBound)
+        {
+            XOR_ASSERT(all(m_superPolygon == int4(-1)), "Superpolygon can only be set once");
+            XOR_ASSERT(mesh.numVertices() == 0, "Use a superpolygon only on an empty mesh");
+
             Pos dims = pointSetMaxBound - pointSetMinBound;
             Pos center = pointSetMinBound + dims / 2;
 
             auto maxDim = std::max(dims.x, dims.y);
             auto enclosingDim = maxDim * 10 / 3;
 
-            auto v0 = Pos(center.x,                center.y - enclosingDim);
-            auto v1 = Pos(center.x - enclosingDim, center.y + enclosingDim);
-            auto v2 = Pos(center.x + enclosingDim, center.y + enclosingDim);
+            Pos p0 = Pos(center.x - enclosingDim, center.y - enclosingDim);
+            Pos p1 = Pos(center.x - enclosingDim, center.y + enclosingDim);
+            Pos p2 = Pos(center.x + enclosingDim, center.y - enclosingDim);
+            Pos p3 = Pos(center.x + enclosingDim, center.y + enclosingDim);
 
-            int t = mesh.addTriangle(v0, v1, v2);
-            m_superTriangle = mesh.triangleVertices(t);
+            int v0 = mesh.addVertex(p0);
+            int v1 = mesh.addVertex(p1);
+            int v2 = mesh.addVertex(p2);
+            int v3 = mesh.addVertex(p3);
+
+            mesh.addTriangle(v0, v1, v2);
+            mesh.addTriangle(v2, v1, v3);
+
+            mesh.connectAdjacentTriangles();
+
+            m_superPolygon = int4(v0, v1, v2, v3);
         }
 
-        void removeSuperTriangle()
+        void superTriangle(Pos pointSetMinBound, Pos pointSetMaxBound)
+        {
+            XOR_ASSERT(all(m_superPolygon == int4(-1)), "Superpolygon can only be set once");
+            XOR_ASSERT(mesh.numVertices() == 0, "Use a superpolygon only on an empty mesh");
+
+            Pos dims = pointSetMaxBound - pointSetMinBound;
+            Pos center = pointSetMinBound + dims / 2;
+
+            auto maxDim = std::max(dims.x, dims.y);
+            auto enclosingDim = maxDim * 10 / 3;
+
+            Pos v0 = Pos(center.x,                center.y - enclosingDim);
+            Pos v1 = Pos(center.x - enclosingDim, center.y + enclosingDim);
+            Pos v2 = Pos(center.x + enclosingDim, center.y + enclosingDim);
+
+            int t = mesh.addTriangle(v0, v1, v2);
+            m_superPolygon   = int4(mesh.triangleVertices(t));
+            m_superPolygon.w = -1;
+        }
+
+        void removeSuperPolygon()
         {
             m_affected.clear();
 
-            for (int v : m_superTriangle.span())
+            for (int v : m_superPolygon.span())
             {
                 mesh.vertexForEachTriangle(v, [&](int t)
                 {
@@ -1207,18 +1343,24 @@ namespace xor
                 mesh.removeTriangle(t);
             }
 
-            m_superTriangle = int3(-1);
+            m_superPolygon = int4(-1);
         }
 
         bool triangleContainsSuperVertices(int t) const
         {
-            if (m_superTriangle.x < 0)
+            if (m_superPolygon.x < 0)
                 return false;
 
             int3 verts = mesh.triangleVertices(t);
-            return any(int3(verts.x) == m_superTriangle) ||
-                any(int3(verts.y) == m_superTriangle) ||
-                any(int3(verts.z) == m_superTriangle);
+            return
+                isSuperPolygonVertex(verts.x) ||
+                isSuperPolygonVertex(verts.y) ||
+                isSuperPolygonVertex(verts.z);
+        }
+
+        bool isSuperPolygonVertex(int v) const
+        {
+            return any(int4(v) == m_superPolygon);
         }
     };
 

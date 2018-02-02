@@ -363,8 +363,10 @@ struct Terrain
 
     uint2 numTiles;
     std::vector<TerrainTile> tiles;
+#if 0
     TextureSRV tileLODs;
     RWImageData tileLODsCPU;
+#endif
 
     Terrain() = default;
     Terrain(Device device, Heightmap &heightmap)
@@ -761,13 +763,14 @@ struct Terrain
 
         std::priority_queue<LargestError> largestError;
         std::vector<int> newTriangles;
+        std::unordered_set<int2, PodHash, PodEqual> usedVertices;
 
 #if 0
         BowyerWatson<DErr> delaunay(mesh);
 #else
         DelaunayFlip<DErr> delaunay(mesh);
 #endif
-        delaunay.superTriangle(minBound, maxBound);
+        delaunay.superRectangle(minBound, maxBound);
 
         {
             int v0 = delaunay.insertVertex(vertex(area, { 1, 0 }));
@@ -777,6 +780,8 @@ struct Terrain
 
             for (int v : { v0, v1, v2, v3 })
             {
+                usedVertices.emplace(int2(mesh.V(v).pos));
+
                 mesh.vertexForEachTriangle(v, [&](int t)
                 {
                     largestError.emplace(t);
@@ -785,8 +790,6 @@ struct Terrain
         }
 
         XOR_ASSERT(!largestError.empty(), "No valid triangles to subdivide");
-
-        std::unordered_set<int2, PodHash, PodEqual> usedVertices;
 
         // Subtract 3 from the vertex count to account for the supertriangle
         while (mesh.numVertices() - 3 < static_cast<int>(vertices))
@@ -878,7 +881,55 @@ struct Terrain
             }
         }
 
-        delaunay.removeSuperTriangle();
+        // Add extra vertices on area boundaries so the overall shape ends up being
+        // a rectangle.
+        {
+            std::vector<std::pair<int2, int>> newBorderVerts;
+
+            auto spv = delaunay.superPolygonVertices();
+            for (int sv : spv.span())
+            {
+                if (sv < 0)
+                    continue;
+
+                for (int v : mesh.vertexAdjacentVertices(sv))
+                {
+                    if (delaunay.isSuperPolygonVertex(v))
+                        continue;
+
+                    // Try all four outer edges, pick the closest one
+                    int2 p = int2(mesh.V(v).pos);
+
+                    int2 pTop = int2(p.x, int(minBound.y));
+                    int2 pLeft = int2(int(minBound.x), p.y);
+                    int2 pRight = int2(int(maxBound.x), p.y);
+                    int2 pBottom = int2(p.x, int(maxBound.y));
+
+                    int2 pEdge = pTop;
+                    int minDistSq = (pEdge - p).lengthSqr();
+
+                    for (auto &p_ : { pLeft, pRight, pBottom })
+                    {
+                        int dSq = (p_ - p).lengthSqr();
+                        if (dSq < minDistSq)
+                        {
+                            pEdge = p_;
+                            minDistSq = dSq;
+                        }
+                    }
+
+                    if (!usedVertices.count(pEdge))
+                    {
+                        newBorderVerts.emplace_back(pEdge, v);
+                    }
+                }
+            }
+
+            for (auto &v : newBorderVerts)
+                delaunay.insertVertexNearAnother(vertex(v.first), v.second);
+        }
+
+        delaunay.removeSuperPolygon();
 
         mesh.vertexRemoveUnconnected();
 
@@ -1070,6 +1121,7 @@ struct Terrain
             }
         }
 
+#if 0
         {
             numTiles = uint2((area.size() + int2(tileSize - 1)) / tileSize);
             tileLODsCPU = RWImageData(numTiles, DXGI_FORMAT_R8_UINT);
@@ -1077,6 +1129,7 @@ struct Terrain
                                                .size(tileLODsCPU.size)
                                                .format(tileLODsCPU.format));
         }
+#endif
 
         {
             auto cmd = device.graphicsCommandList();
@@ -1243,10 +1296,10 @@ struct Terrain
                 t.selectedLod = -1;
             }
 
-            tileLODsCPU.pixel<uint8_t>(tileCoordUV) = uint8_t(std::max(0, t.selectedLod));
+            // tileLODsCPU.pixel<uint8_t>(tileCoordUV) = uint8_t(std::max(0, t.selectedLod));
         }
 
-        cmd.updateTexture(tileLODs.texture(), tileLODsCPU);
+        // cmd.updateTexture(tileLODs.texture(), tileLODsCPU);
     }
 
     void render(CommandList &cmd, const float2 *cameraPos = nullptr) const
@@ -1518,7 +1571,8 @@ struct TerrainRenderer
 
                     cmd.setConstants(constants);
                     cmd.setShaderView(RenderTerrainAO::terrainAOVisibleBits, aoVisibilityBits.uav);
-                    cmd.setShaderView(RenderTerrainAO::tileLODs, terrain->tileLODs);
+                    //cmd.setShaderView(RenderTerrainAO::tileLODs, terrain->tileLODs);
+                    cmd.setShaderViewNullTextureSRV(RenderTerrainAO::tileLODs);
 
                     terrain->render(cmd);
 
@@ -1657,7 +1711,8 @@ struct TerrainRenderer
         cmd.setShaderViewNullTextureSRV(RenderTerrain::terrainShadows);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::noiseTexture);
         cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
-        cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
+        cmd.setShaderViewNullTextureSRV(RenderTerrain::tileLODs);
+        //cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
 
         {
             auto p = cmd.profilingEvent("Draw shadows");
@@ -1783,7 +1838,8 @@ struct TerrainRenderer
             cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
             cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(noiseIndex()));
             cmd.setShaderViewNullTextureSRV(RenderTerrain::shadowTerm);
-            cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
+            cmd.setShaderViewNullTextureSRV(RenderTerrain::tileLODs);
+            //cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
 
             cmd.setConstants(constants);
 
@@ -1866,7 +1922,8 @@ struct TerrainRenderer
             cmd.setShaderView(RenderTerrain::terrainShadows, shadowMap.srv);
             cmd.setShaderView(RenderTerrain::noiseTexture,   blueNoise.srv(noiseIndex()));
             cmd.setShaderView(RenderTerrain::shadowTerm,     shadowIn->srv);
-            cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
+            cmd.setShaderViewNullTextureSRV(RenderTerrain::tileLODs);
+            //cmd.setShaderView(RenderTerrain::tileLODs, terrain->tileLODs);
 
             cmd.setConstants(constants);
 
@@ -1940,7 +1997,8 @@ struct TerrainRenderer
         cmd.setConstants(vtConstants);
         cmd.setShaderView(VisualizeTriangulation::heightMap,          heightmap->heightSRV);
         cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, terrain->cpuError);
-        cmd.setShaderView(VisualizeTriangulation::tileLODs, terrain->tileLODs);
+        cmd.setShaderViewNullTextureSRV(VisualizeTriangulation::tileLODs);
+        //cmd.setShaderView(VisualizeTriangulation::tileLODs, terrain->tileLODs);
 
         float2 cameraPos = camera.position.s_xz;
         terrain->render(cmd, &cameraPos);
@@ -1974,7 +2032,7 @@ class TerrainRendering : public Window
     int areaSize  = 2048;
 #endif
     int triangulationDensity = 6;
-    TriangulationMode triangulationMode = TriangulationMode::TiledUniformGrid;//TriangulationMode::UniformGrid;
+    TriangulationMode triangulationMode = TriangulationMode::IncMaxError; //TriangulationMode::TiledUniformGrid;//TriangulationMode::UniformGrid;
     bool tipsifyMesh = true;
     bool blitArea    = true;
     bool blitNormal  = false;
