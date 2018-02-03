@@ -1464,7 +1464,7 @@ namespace xor
     struct ClusteredMesh
     {
         std::vector<int>  ib;           // Optimized index buffer
-        std::vector<int2> clusterSpans; // begin-end offsets into "ib" for each cluster
+        std::vector<Block32> clusterSpans; // begin-end offsets into "ib" for each cluster
     };
 
     ClusteredMesh clusterAndOptimize(Span<const int> indexBuffer,
@@ -1614,7 +1614,7 @@ namespace xor
         };
 
         int clusterCutoff   = clusterSize * 3;
-        int2 currentCluster = int2(0);
+        Block32 currentCluster(0, 0);
 
         std::vector<std::unordered_set<int>> boundary(verticesByTriangleCount.size());
         auto leastTrianglesLeftOnBoundary = [&]
@@ -1635,21 +1635,26 @@ namespace xor
             int fanningVertex = -1;
 
             // If there's no current fanning vertex, try to find one from the cache that requires
-            // the least cache misses to emit.
+            // the least cache misses to emit, break ties in favor of older verts.
             if (fanningVertex < 0)
             {
                 int leastMisses = 99;
+                int oldest = std::numeric_limits<int>::max();
+
                 for (int v : vertsInCache)
                 {
                     if (v < 0 || vertexCompletelyProcessed(v))
                         continue;
 
-                    int misses = cacheMissesToEmit(v);
+                    int misses    = cacheMissesToEmit(v);
+                    int timestamp = cacheTimestamps[v];
 
-                    if (misses < leastMisses)
+                    if (misses < leastMisses ||
+                        (misses == leastMisses && timestamp < oldest))
                     {
                         fanningVertex = v;
                         leastMisses   = misses;
+                        oldest        = timestamp;
                     }
                 }
             }
@@ -1698,8 +1703,12 @@ namespace xor
                     XOR_ASSERT(!vertexCompletelyProcessed(v),
                                "Emitting a vertex that has been completely processed already.");
 
+                    if (currentCluster.empty())
+                        currentCluster.begin = int(mesh.ib.size());
+
                     mesh.ib.emplace_back(v);
-                    currentCluster.y = int(mesh.ib.size());
+
+                    currentCluster.end = int(mesh.ib.size());
 
                     // Update triangle counts and boundary.
                     int trisBefore = numTrianglesContainingVertex[v];
@@ -1727,11 +1736,11 @@ namespace xor
 
                     // The next iteration should still start from a reasonable place 
                     // due to the cache.
-                    int currentSize = currentCluster.y - currentCluster.x;
-                    if (currentSize >= clusterSize)
+                    if (int(currentCluster.size()) >= clusterSize)
                     {
                         mesh.clusterSpans.emplace_back(currentCluster);
-                        currentCluster = int2(int(mesh.ib.size()));
+                        currentCluster.begin = int(mesh.ib.size());
+                        currentCluster.end   = currentCluster.begin;
 
                         for (auto &b : boundary)
                             b.clear();
@@ -1739,6 +1748,10 @@ namespace xor
                 }
             }
         }
+
+        // If there's a cluster left, emit it.
+        if (!currentCluster.empty())
+            mesh.clusterSpans.emplace_back(currentCluster);
 
         if (cluster)
         {
@@ -1757,31 +1770,27 @@ namespace xor
         std::vector<int> newVertexIndices(numVertices, -1);
         int seenVertices = 0;
 
-        // Allocate new vertex positions as we encounter them.
-        // This should guarantee reasonable cache locality.
-        for (int v : ib)
+        auto allocateNewIndex = [&] (int v)
         {
             if (newVertexIndices[v] < 0)
             {
                 newVertexIndices[v] = seenVertices;
                 ++seenVertices;
             }
-        }
+        };
 
-        // In-place shuffle the vertices to their new positions.
+        // Allocate new vertex positions as we encounter them.
+        // This should guarantee reasonable cache locality.
+        for (int v : ib)
+            allocateNewIndex(v);
+
+        // Allocate positions for unseen vertices.
         for (int v = 0; v < numVertices; ++v)
-        {
-            int oldIndex = v;
-            int newIndex = newVertexIndices[v];
+            allocateNewIndex(v);
 
-            while (newIndex >= 0 && oldIndex != newIndex)
-            {
-                std::swap(vb[oldIndex], vb[newIndex]);
-                // The vertex that occupied newIndex previously
-                // is now in oldIndex. Find a new place for it.
-                newIndex = newVertexIndices[newIndex];
-            }
-        }
+        auto copy = vb;
+        for (int v = 0; v < numVertices; ++v)
+            vb[newVertexIndices[v]] = copy[v];
 
         // In-place update the index buffer.
         for (int &v : ib)

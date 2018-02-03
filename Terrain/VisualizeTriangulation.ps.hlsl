@@ -4,6 +4,7 @@ struct PSInput
 {
     float4 uvHeight          : TEXCOORD0;
     float4 areaUvWorldCoords : TEXCOORD1;
+    float4 svPosition : SV_Position;
 };
 
 static const float3 LodColors[10] =
@@ -48,6 +49,11 @@ float4 main(PSInput i) : SV_Target
         color.rgb = 1;
     else
         color.rgb = LodColors[clamp(tileLOD, 0, 9)];
+#elif defined(CLUSTER_ID)
+    if (cameraNear)
+        color.rgb = 1;
+    else
+        color.rgb = randomColorFromUint(clusterId);
 #else
     if (cameraNear)
         color.rgb = v + .25;

@@ -21,6 +21,7 @@ XOR_CBUFFER(Constants, 0)
     float lodSwitchExponentInvLog;
     float lodBias;
     float lodMorphStart;
+    int clusterId;
 };
 
 XOR_END_SIGNATURE

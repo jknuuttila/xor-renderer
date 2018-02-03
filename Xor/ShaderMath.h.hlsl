@@ -248,6 +248,83 @@ float GGX(float3 N, float3 V, float3 L, float roughness, float F0)
     return GGX_OPT3(N, V, L, roughness, F0);
 }
 
+static const uint FNV32Prime = 0x01000193;
+static const uint FNV32Basis = 0x811C9DC5;
+
+uint fnv1AInit()
+{
+    return FNV32Basis;
+}
+
+uint fnv1AConsume8(uint hash, uint octet)
+{
+    hash ^= octet;
+    hash *= FNV32Prime;
+    return hash;
+}
+
+uint fnv1AConsume32(uint hash, uint data32)
+{
+    hash = fnv1AConsume8(hash,         data32 & 0xff);
+    hash = fnv1AConsume8(hash, (data32 >>  8) & 0xff);
+    hash = fnv1AConsume8(hash, (data32 >> 16) & 0xff);
+    hash = fnv1AConsume8(hash, (data32 >> 24) & 0xff);
+    return hash;
+}
+
+uint fnv1AHash32(uint data32)
+{
+    uint hash = fnv1AInit();
+    return fnv1AConsume32(hash, data32);
+}
+
+// Algorithm from 
+// https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
+float3 HSVToRGB(float3 hsv)
+{
+    hsv = saturate(hsv);
+
+    float H = hsv.x;
+    float S = hsv.y;
+    float V = hsv.z;
+
+    H *= 6;
+    float f = frac(H);
+
+    float P = V * (1 - S);
+    float Q = V * (1 - S * f);
+    float T = V * (1 - S * (1 - f));
+
+    if (H <= 1)
+        return float3(V, T, P);
+    else if (H <= 2)
+        return float3(Q, V, P);
+    else if (H <= 3)
+        return float3(P, V, T);
+    else if (H <= 4)
+        return float3(P, Q, V);
+    else if (H <= 5)
+        return float3(T, P, V);
+    else if (H <= 6)
+        return float3(V, P, Q);
+    else
+        return float3(0, 0, 0);
+}
+
+float3 randomColorFromHash(uint hash)
+{
+    float3 hsv;
+    hsv.x = float(hash & 0xffff) / float(0xffff);
+    hsv.y = 1;
+    hsv.z = lerp(0.5, 1, float((hash >> 16) & 0xfff) / float(0xffff));
+    return HSVToRGB(hsv);
+}
+
+float3 randomColorFromUint(uint x)
+{
+    return randomColorFromHash(fnv1AHash32(x));
+}
+
 #if 0
 float4 bicubicBSpline(Texture2D<float4> tex, SamplerState bilinear, float2 uv)
 {

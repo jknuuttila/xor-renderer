@@ -49,7 +49,8 @@ XOR_DEFINE_CONFIG_ENUM(VisualizationMode,
     WireframeError,
     OnlyError,
     CPUError,
-    TileLOD);
+    TileLOD,
+    ClusterId);
 
 XOR_DEFINE_CONFIG_ENUM(RenderingMode,
     Height,
@@ -351,6 +352,7 @@ struct Heightmap
 struct TerrainLOD
 {
     Mesh mesh;
+    std::vector<Block32> clusters;
 };
 
 struct Terrain
@@ -793,6 +795,7 @@ struct Terrain
         std::unordered_set<int2, PodHash, PodEqual> usedVertices;
 
         std::vector<MB> lods;
+        std::vector<std::vector<Block32>> lodClusters;
 
         log("incrementalMaxError", "Generating incremental max error mesh with %d LODs\n",
             cfg_Settings.lodCount.get());
@@ -973,11 +976,14 @@ struct Terrain
 
             if (tipsify)
             {
-                lods.back().ib = clusterAndOptimize(lods.back().ib).ib;
-#if 0
+                auto clustered = clusterAndOptimize(lods.back().ib, 256);
+
+                lods.back().ib = std::move(clustered.ib);
+
                 optimizeVertexLocations(lods.back().vb,
                                         lods.back().ib);
-#endif
+
+                lodClusters.emplace_back(std::move(clustered.clusterSpans));
             }
 
             log("incrementalMaxError", "    Generated LOD %d with %zu vertices and %zu triangles in %.2f ms\n",
@@ -993,15 +999,17 @@ struct Terrain
         log("incrementalMaxError", "Generated incremental max error triangulation in %.2f ms\n",
             timer.milliseconds());
 
-        std::reverse(lods.begin(), lods.end());
 
         setBounds(area);
         terrainLods.clear();
-        for (auto &lod : lods)
+        for (size_t i = 0; i < lods.size(); ++i)
         {
             terrainLods.emplace_back();
-            terrainLods.back().mesh = gpuMeshFromBuffers(lod);
+            terrainLods.back().mesh     = gpuMeshFromBuffers(lods[i]);
+            terrainLods.back().clusters = std::move(lodClusters[i]);
         }
+
+        std::reverse(terrainLods.begin(), terrainLods.end());
     }
 
     ErrorMetrics calculateMeshError()
@@ -1133,7 +1141,9 @@ struct Terrain
     {
     }
 
-    void render(CommandList &cmd, const float2 *cameraPos = nullptr) const
+    void render(CommandList &cmd,
+                const float2 *cameraPos = nullptr,
+                bool clustered = false) const
     {
         TerrainRendering::Constants constants;
         constants.heightmapInvSize  = float2(1.f) / float2(heightmap->size);
@@ -1157,12 +1167,29 @@ struct Terrain
         constants.lodBias       = cfg_Settings.lodBias;
         constants.lodMorphStart = cfg_Settings.lodMorphStart;
 
-        auto &mesh = terrainLods[constants.lodLevel].mesh;
+        auto &lod = terrainLods[constants.lodLevel];
 
-        cmd.setConstants(constants);
-        mesh.setForRendering(cmd);
+        if (lod.clusters.empty() || !clustered)
+        {
+            constants.clusterId = -1;
 
-        cmd.drawIndexed(mesh.numIndices());
+            cmd.setConstants(constants);
+            lod.mesh.setForRendering(cmd);
+
+            cmd.drawIndexed(lod.mesh.numIndices());
+        }
+        else
+        {
+            lod.mesh.setForRendering(cmd);
+
+            constants.clusterId = 0;
+            for (auto &cluster : lod.clusters)
+            {
+                cmd.setConstants(constants);
+                cmd.drawIndexed(uint(cluster.size()), cluster.begin);
+                ++constants.clusterId;
+            }
+        }
     }
 
     info::InputLayoutInfo inputLayout()
@@ -1521,7 +1548,7 @@ struct TerrainRenderer
 
         {
             auto p = cmd.profilingEvent("Draw shadows");
-            terrain->render(cmd, &c.cameraPos2D);
+            terrain->render(cmd, &c.cameraPos2D, true);
         }
 
         cmd.setRenderTargets();
@@ -1646,7 +1673,7 @@ struct TerrainRenderer
 
             cmd.setConstants(constants);
 
-            terrain->render(cmd, &constants.cameraPos2D);
+            terrain->render(cmd, &constants.cameraPos2D, true);
         }
 
         RWTexture *shadowIn  = &shadowTerm[0];
@@ -1728,7 +1755,7 @@ struct TerrainRenderer
 
             cmd.setConstants(constants);
 
-            terrain->render(cmd, &constants.cameraPos2D);
+            terrain->render(cmd, &constants.cameraPos2D, true);
         }
 
         if (wireframe)
@@ -1741,7 +1768,7 @@ struct TerrainRenderer
                      .depthBias(10000)
                      .fill(D3D12_FILL_MODE_WIREFRAME));
 
-            terrain->render(cmd, &constants.cameraPos2D);
+            terrain->render(cmd, &constants.cameraPos2D, true);
         }
 
         cmd.setRenderTargets();
@@ -1776,6 +1803,8 @@ struct TerrainRenderer
         case VisualizationMode::TileLOD:
             defines[0] = info::ShaderDefine("TILE_LOD");
             break;
+        case VisualizationMode::ClusterId:
+            defines[0] = info::ShaderDefine("CLUSTER_ID");
             break;
         default:
             break;
@@ -1792,14 +1821,14 @@ struct TerrainRenderer
         cmd.setShaderView(VisualizeTriangulation::cpuCalculatedError, terrain->cpuError);
 
         float2 cameraPos = camera.position.s_xz;
-        terrain->render(cmd, &cameraPos);
+        terrain->render(cmd, &cameraPos, true);
 
         if (mode != VisualizationMode::OnlyHeight && mode != VisualizationMode::OnlyError)
         {
             cmd.bind(visualizeTriangulation.variant()
                      .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
                      .fill(D3D12_FILL_MODE_WIREFRAME));
-            terrain->render(cmd, &cameraPos);
+            terrain->render(cmd, &cameraPos, true);
         }
     }
 };
