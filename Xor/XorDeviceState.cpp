@@ -5,8 +5,8 @@ namespace xor
 {
     constexpr uint MaxRTVs = 256;
     constexpr uint MaxDSVs = 256;
-    constexpr uint DescriptorHeapSize = 65536 * 4;
-    constexpr uint DescriptorHeapRing = 65536 * 3;
+    constexpr uint DescriptorHeapSize = 65536 * 15;
+    constexpr uint DescriptorHeapRing = 65536 * 14;
     constexpr uint QueryHeapSize = 65536;
 
     namespace backend

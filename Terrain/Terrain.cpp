@@ -349,10 +349,16 @@ struct Heightmap
     }
 };
 
+struct TerrainCluster
+{
+    Block32 indices;
+    Rect aabb;
+};
+
 struct TerrainLOD
 {
     Mesh mesh;
-    std::vector<Block32> clusters;
+    std::vector<TerrainCluster> clusters;
 };
 
 struct Terrain
@@ -1005,8 +1011,28 @@ struct Terrain
         for (size_t i = 0; i < lods.size(); ++i)
         {
             terrainLods.emplace_back();
-            terrainLods.back().mesh     = gpuMeshFromBuffers(lods[i]);
-            terrainLods.back().clusters = std::move(lodClusters[i]);
+            auto &lod     = terrainLods.back();
+
+            lod.mesh      = gpuMeshFromBuffers(lods[i]);
+
+            for (Block32 indices : lodClusters[i])
+            {
+                lod.clusters.emplace_back();
+                auto &c   = lod.clusters.back();
+                c.indices = indices;
+
+                c.aabb.min = int2(std::numeric_limits<int>::max());
+                c.aabb.max = int2(std::numeric_limits<int>::min());
+
+                for (int k = c.indices.begin; k < c.indices.end; ++k)
+                {
+                    int idx = lods[i].ib[k];
+                    auto &v = lods[i].vb[idx];
+                    int2 pos = int2(v.pos);
+                    c.aabb.min = min(c.aabb.min, pos);
+                    c.aabb.max = max(c.aabb.max, pos);
+                }
+            }
         }
 
         std::reverse(terrainLods.begin(), terrainLods.end());
@@ -1178,6 +1204,31 @@ struct Terrain
 
             cmd.drawIndexed(lod.mesh.numIndices());
         }
+        else if (cfg_Settings.renderLod < 0 && cameraPos)
+        {
+            for (auto &l : terrainLods)
+            {
+                l.mesh.setForRendering(cmd);
+
+                constants.lodLevel  = uint(&l - terrainLods.data());
+                constants.clusterId = 0;
+                for (auto &cluster : l.clusters)
+                {
+                    RectF aabb;
+                    aabb.min = float2(cluster.aabb.min);
+                    aabb.max = float2(cluster.aabb.max);
+                    float2 clampedPos = clamp(*cameraPos, aabb.min, aabb.max);
+                    int clusterLOD = computeLOD(clampedPos.length(), terrainLods.size());
+
+                    if (clusterLOD != constants.lodLevel)
+                        continue;
+
+                    cmd.setConstants(constants);
+                    cmd.drawIndexed(uint(cluster.indices.size()), cluster.indices.begin);
+                    ++constants.clusterId;
+                }
+            }
+        }
         else
         {
             lod.mesh.setForRendering(cmd);
@@ -1186,7 +1237,7 @@ struct Terrain
             for (auto &cluster : lod.clusters)
             {
                 cmd.setConstants(constants);
-                cmd.drawIndexed(uint(cluster.size()), cluster.begin);
+                cmd.drawIndexed(uint(cluster.indices.size()), cluster.indices.begin);
                 ++constants.clusterId;
             }
         }
@@ -1823,7 +1874,9 @@ struct TerrainRenderer
         float2 cameraPos = camera.position.s_xz;
         terrain->render(cmd, &cameraPos, true);
 
-        if (mode != VisualizationMode::OnlyHeight && mode != VisualizationMode::OnlyError)
+        if (mode != VisualizationMode::OnlyHeight
+            && mode != VisualizationMode::OnlyError
+            && mode != VisualizationMode::ClusterId)
         {
             cmd.bind(visualizeTriangulation.variant()
                      .pixelShader(info::SameShader{}, { { "WIREFRAME" } })
