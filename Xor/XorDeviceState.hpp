@@ -87,6 +87,13 @@ namespace xor
                                         String name = String());
 
             size_t size() const { return static_cast<size_t>(m_size); }
+            size_t usedCount() const
+            {
+                size_t numFreeChunks = m_freeChunks.size();
+                size_t freeCount     = numFreeChunks * m_chunkSize;
+                size_t used          = m_size - freeCount;
+                return used;
+            }
 
             Block allocate(GPUProgressTracking &progress, GPUTransientChunk &chunk,
                            size_t size, size_t alignment, SeqNum cmdList);
@@ -238,6 +245,9 @@ namespace xor
                 XOR_ASSERT(offset < m_transientStart, "Released descriptor out of bounds.");
                 m_freeDescriptors.release(static_cast<int64_t>(offset));
             }
+
+            size_t transientSize() const { return m_transientAllocator.size(); }
+            size_t transientUsed() const { return m_transientAllocator.usedCount(); }
         };
 
         template <D3D12_HEAP_TYPE HeapType>
@@ -380,6 +390,16 @@ namespace xor
                                                 cmdListNumber);
                 flushed = false;
                 return block;
+            }
+
+            size_t size() const
+            {
+                return allocator.size();
+            }
+
+            size_t usedBytes() const
+            {
+                return allocator.usedCount();
             }
         };
 

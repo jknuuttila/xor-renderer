@@ -464,6 +464,32 @@ namespace xor
         if (ImGui::Begin("Profiling", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::SetWindowPos(float2(600, 0));
+
+            {
+                size_t uploadSize = S().uploadHeap->size();
+                size_t uploadUsed = S().uploadHeap->usedBytes();
+                double uploadSizeMB = static_cast<double>(uploadSize) / (1024 * 1024);
+                double uploadUsedMB = static_cast<double>(uploadUsed) / (1024 * 1024);
+
+                size_t readbackSize = S().readbackHeap->size();
+                size_t readbackUsed = S().readbackHeap->usedBytes();
+                double readbackSizeMB = static_cast<double>(readbackSize) / (1024 * 1024);
+                double readbackUsedMB = static_cast<double>(readbackUsed) / (1024 * 1024);
+
+                size_t descriptorsSize = S().viewHeap().transientSize();
+                size_t descriptorsUsed = S().viewHeap().transientUsed();
+
+                ImGui::Text("  Upload heap: %9.2f / %9.2f (%5.2f%%)",
+                            uploadUsedMB, uploadSizeMB, uploadUsedMB / uploadSizeMB * 100.0);
+                ImGui::Text("Readback heap: %9.2f / %9.2f (%5.2f%%)",
+                            readbackUsedMB, readbackSizeMB, readbackUsedMB / readbackSizeMB * 100.0);
+                ImGui::Text("  Descriptors: %9zu / %9zu (%5.2f%%)",
+                            descriptorsUsed, descriptorsSize,
+                            static_cast<double>(descriptorsUsed) / static_cast<double>(descriptorsSize)
+                            * 100.0);
+                ImGui::Separator();
+            }
+
             ImGui::SliderInt("History length", &S().profilingDataHistoryLength, 1, 30);
             ImGui::Text("Min / Avg / Max");
 
