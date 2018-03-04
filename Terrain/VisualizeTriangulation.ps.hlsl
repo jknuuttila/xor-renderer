@@ -44,11 +44,23 @@ float4 main(PSInput i) : SV_Target
 	color.rgb = signedColor(approxHeight - height, maxError);
 #elif defined(CPU_ERROR)
     color.rgb = signedColor(cpuCalculatedError.Sample(pointSampler, uv), maxError);
-#elif defined(TILE_LOD)
+#elif defined(LOD_LEVEL)
     if (cameraNear)
         color.rgb = 1;
     else
-        color.rgb = LodColors[clamp(tileLOD, 0, 9)];
+        color.rgb = LodColors[clamp(lodLevel, 0, 9)];
+#elif defined(CONTINUOUS_LOD)
+    float lod = terrainLOD(distanceToCamera);
+
+    lod = clamp(lod, 0, 9);
+
+    float3 A = LodColors[uint(floor(lod))];
+    float3 B = LodColors[uint(ceil(lod))];
+
+    if (cameraNear)
+        color.rgb = 1;
+    else
+        color.rgb = lerp(A, B, frac(lod));
 #elif defined(CLUSTER_ID)
     if (cameraNear)
         color.rgb = 1;

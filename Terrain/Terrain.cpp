@@ -29,6 +29,8 @@ static const float ArcSecond = 30.87f;
 
 static const float NearPlane = 1.f;
 
+static constexpr float LinearLODCutoff = 1.05f;
+
 struct ErrorMetrics
 {
     double l2    = 0;
@@ -49,7 +51,8 @@ XOR_DEFINE_CONFIG_ENUM(VisualizationMode,
     WireframeError,
     OnlyError,
     CPUError,
-    TileLOD,
+    LODLevel,
+    ContinuousLOD,
     ClusterId);
 
 XOR_DEFINE_CONFIG_ENUM(RenderingMode,
@@ -93,9 +96,9 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
     XOR_CONFIG_SLIDER(float, lodSwitchDistance, "LOD switch distance", 1500.f, 100.f, 5000.f);
     XOR_CONFIG_SLIDER(float, lodSwitchExponent, "LOD switch exponent", 1.f, 1.f, 4.f);
     XOR_CONFIG_SLIDER(float, lodBias, "LOD bias", 0.f, -5.f, 5.f);
-    XOR_CONFIG_SLIDER(float, lodMorphStart, "LOD morph start", 0.5f, 0.f, 1.f);
     XOR_CONFIG_ENUM(LodMode, lodMode, "LOD mode", LodMode::NoSnap);
     XOR_CONFIG_SLIDER(int, renderLod, "Rendered LOD", -1, -1, 10);
+    XOR_CONFIG_CHECKBOX(vertexCulling, "Vertex LOD culling", true);
     XOR_CONFIG_CHECKBOX(highlightCracks, "Highlight cracks", false);
 
     int lodVertexCount(int lod) const
@@ -104,6 +107,8 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
         int numLodVertices = int(std::round(lodVertexBase * vertexCountMultiplier));
         return numLodVertices;
     }
+
+    bool isLinearLOD() const { return lodSwitchExponent < LinearLODCutoff; }
 
     XOR_CONFIG_GROUP(LightingProperties)
     {
@@ -429,6 +434,7 @@ struct Terrain
         std::vector<float> height(numVerts);
         std::vector<int2>  nextLodPixelCoords(numVerts);
         std::vector<float> nextLodHeight(numVerts);
+        std::vector<float> longestEdge(numVerts, 0);
 
         float2 dims = float2(heightmap->size);
 
@@ -449,12 +455,32 @@ struct Terrain
             uint b = ib[i + 1];
             uint c = ib[i + 2];
 
+            int2 pA = pixelCoords[a];
+            int2 pB = pixelCoords[b];
+            int2 pC = pixelCoords[c];
+
             // Negate CCW test because the positions are in UV coordinates,
             // which is left handed because +Y goes down
-            bool ccw = !isTriangleCCW(pixelCoords[a], pixelCoords[b], pixelCoords[c]);
+            bool ccw = !isTriangleCCW(pA, pB, pC);
 
             if (!ccw)
                 std::swap(ib[i + 1], ib[i + 2]);
+
+            float &longestA = longestEdge[a];
+            float &longestB = longestEdge[b];
+            float &longestC = longestEdge[c];
+            float2 wA = worldCoords(pA);
+            float2 wB = worldCoords(pB);
+            float2 wC = worldCoords(pC);
+            float AB  = (wA - wB).length();
+            float AC  = (wA - wC).length();
+            float BC  = (wB - wC).length();
+            longestA = std::max(longestA, AB);
+            longestA = std::max(longestA, AC);
+            longestB = std::max(longestB, AB);
+            longestB = std::max(longestB, BC);
+            longestC = std::max(longestC, AC);
+            longestC = std::max(longestC, BC);
         }
 
         VertexAttribute attrs[] =
@@ -463,6 +489,7 @@ struct Terrain
             { "POSITION", 1, DXGI_FORMAT_R32_FLOAT,   asBytes(height) },
             { "POSITION", 2, DXGI_FORMAT_R32G32_SINT, asBytes(nextLodPixelCoords) },
             { "POSITION", 3, DXGI_FORMAT_R32_FLOAT,   asBytes(nextLodHeight) },
+            { "POSITION", 4, DXGI_FORMAT_R32_FLOAT,   asBytes(longestEdge) },
         };
 
         return Mesh::generate(device, attrs, reinterpretSpan<const uint>(ib));
@@ -1147,13 +1174,26 @@ struct Terrain
         worldCenter = area.min + area.size() / 2;
     }
 
-    static int computeLOD(float distance)
+    static float computeLODF(float distance)
     {
         float linearLOD        = distance / cfg_Settings.lodSwitchDistance;
-        float logLOD           = cfg_Settings.lodSwitchExponent > 1.05f
-            ? (logf(linearLOD) / logf(cfg_Settings.lodSwitchExponent))
-            : linearLOD;
-        int lod = int(std::floor(logLOD));
+        float logLOD           = cfg_Settings.isLinearLOD()
+            ? linearLOD
+            : (logf(linearLOD + 1) / logf(cfg_Settings.lodSwitchExponent));
+        return logLOD;
+    }
+
+    static float inverseLOD(float LOD)
+    {
+        if (cfg_Settings.isLinearLOD())
+            return LOD * cfg_Settings.lodSwitchDistance;
+        else
+            return cfg_Settings.lodSwitchDistance * std::max(0.f, std::powf(cfg_Settings.lodSwitchExponent, LOD) - 1);
+    }
+
+    static int computeLOD(float distance)
+    {
+        int lod = int(std::floor(computeLODF(distance)));
 
         return lod;
     }
@@ -1171,6 +1211,15 @@ struct Terrain
                 const float2 *cameraPos = nullptr,
                 bool clustered = false) const
     {
+        float LODSwitchNear[32] = { 0 };
+
+        for (size_t i = 0; i < terrainLods.size() + 1; ++i)
+        {
+            LODSwitchNear[i] = inverseLOD(float(i));
+        }
+        // Never far cull the coarsest LOD
+        LODSwitchNear[terrainLods.size()] = std::numeric_limits<float>::max();
+
         TerrainRendering::Constants constants;
         constants.heightmapInvSize  = float2(1.f) / float2(heightmap->size);
         constants.worldCenter       = float2(worldCenter);
@@ -1180,6 +1229,7 @@ struct Terrain
         constants.heightMin         = heightmap->minHeight;
         constants.heightMax         = heightmap->maxHeight;
         constants.lodLevel          = clamp(cfg_Settings.renderLod, 0, int(terrainLods.size() - 1));
+        constants.vertexCullEnabled = uint(cfg_Settings.vertexCulling);
 
         constants.lodSwitchDistance = cfg_Settings.lodSwitchDistance;
         if (cfg_Settings.lodSwitchExponent > 1.05f)
@@ -1191,13 +1241,14 @@ struct Terrain
             constants.cameraWorldCoords = *cameraPos;
 
         constants.lodBias       = cfg_Settings.lodBias;
-        constants.lodMorphStart = cfg_Settings.lodMorphStart;
 
         auto &lod = terrainLods[constants.lodLevel];
 
         if (lod.clusters.empty() || !clustered)
         {
             constants.clusterId = -1;
+            constants.vertexCullNear = LODSwitchNear[constants.lodLevel];
+            constants.vertexCullFar  = LODSwitchNear[constants.lodLevel + 1];
 
             cmd.setConstants(constants);
             lod.mesh.setForRendering(cmd);
@@ -1206,26 +1257,53 @@ struct Terrain
         }
         else if (cfg_Settings.renderLod < 0 && cameraPos)
         {
-            for (auto &l : terrainLods)
+            for (int i = int(terrainLods.size() - 1); i >= 0; --i)
             {
+                auto &l = terrainLods[i];
+
                 l.mesh.setForRendering(cmd);
 
-                constants.lodLevel  = uint(&l - terrainLods.data());
+                constants.lodLevel  = i;
                 constants.clusterId = 0;
+
+                constants.vertexCullNear = LODSwitchNear[i];
+                constants.vertexCullFar  = LODSwitchNear[i + 1];
+                
                 for (auto &cluster : l.clusters)
                 {
                     RectF aabb;
-                    aabb.min = float2(cluster.aabb.min);
-                    aabb.max = float2(cluster.aabb.max);
-                    float2 clampedPos = clamp(*cameraPos, aabb.min, aabb.max);
-                    int clusterLOD = computeLOD(clampedPos.length(), terrainLods.size());
 
-                    if (clusterLOD != constants.lodLevel)
+                    aabb.min = worldCoords(cluster.aabb.min);
+                    aabb.max = worldCoords(cluster.aabb.max);
+
+                    float2 clampedPos = clamp(*cameraPos, aabb.min, aabb.max);
+                    float minDistance = (clampedPos - *cameraPos).length();
+
+                    float2 corner0 = aabb.min;
+                    float2 corner1 = aabb.min;
+                    float2 corner2 = aabb.max;
+                    float2 corner3 = aabb.max;
+
+                    corner1.y = aabb.max.y;
+                    corner2.y = aabb.min.y;
+
+                    float maxDistance = 0;
+                    for (auto &c : {corner0, corner1, corner2, corner3})
+                        maxDistance = std::max(maxDistance, (c - *cameraPos).lengthSqr());
+
+                    maxDistance = std::sqrt(maxDistance);
+
+                    int minLOD = computeLOD(minDistance);
+                    int maxLOD = computeLOD(maxDistance);
+
+                    ++constants.clusterId;
+
+                    if (minLOD > constants.lodLevel ||
+                        maxLOD < constants.lodLevel)
                         continue;
 
                     cmd.setConstants(constants);
                     cmd.drawIndexed(uint(cluster.indices.size()), cluster.indices.begin);
-                    ++constants.clusterId;
                 }
             }
         }
@@ -1234,6 +1312,10 @@ struct Terrain
             lod.mesh.setForRendering(cmd);
 
             constants.clusterId = 0;
+
+            constants.vertexCullNear = LODSwitchNear[constants.lodLevel];
+            constants.vertexCullFar  = LODSwitchNear[constants.lodLevel + 1];
+                
             for (auto &cluster : lod.clusters)
             {
                 cmd.setConstants(constants);
@@ -1250,6 +1332,7 @@ struct Terrain
             .element("POSITION", 1, DXGI_FORMAT_R32_FLOAT,   1)
             .element("POSITION", 2, DXGI_FORMAT_R32G32_SINT, 2)
             .element("POSITION", 3, DXGI_FORMAT_R32_FLOAT,   3)
+            .element("POSITION", 4, DXGI_FORMAT_R32_FLOAT,   4)
             ;
     }
 };
@@ -1851,8 +1934,11 @@ struct TerrainRenderer
         case VisualizationMode::CPUError:
             defines[0] = info::ShaderDefine("CPU_ERROR");
             break;
-        case VisualizationMode::TileLOD:
-            defines[0] = info::ShaderDefine("TILE_LOD");
+        case VisualizationMode::LODLevel:
+            defines[0] = info::ShaderDefine("LOD_LEVEL");
+            break;
+        case VisualizationMode::ContinuousLOD:
+            defines[0] = info::ShaderDefine("CONTINUOUS_LOD");
             break;
         case VisualizationMode::ClusterId:
             defines[0] = info::ShaderDefine("CLUSTER_ID");

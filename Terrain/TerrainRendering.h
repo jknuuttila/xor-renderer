@@ -16,12 +16,13 @@ XOR_CBUFFER(Constants, 0)
     float texelSize;
     int lodLevel;
     float2 cameraWorldCoords;
-    int lodEnabled;
+    uint vertexCullEnabled;
+    float vertexCullNear;
+    float vertexCullFar;
+    int clusterId;
     float lodSwitchDistance;
     float lodSwitchExponentInvLog;
     float lodBias;
-    float lodMorphStart;
-    int clusterId;
 };
 
 XOR_END_SIGNATURE
@@ -30,6 +31,15 @@ XOR_END_SIGNATURE
 
 #include "Xor/ShaderMath.h.hlsl"
 
+struct VSInput
+{
+    int2  pixelCoords        : POSITION0;
+    float height             : POSITION1;
+    int2  nextLodPixelCoords : POSITION2;
+    float nextLodHeight      : POSITION3;
+    float longestEdge        : POSITION4;
+};
+
 float2 terrainWorldCoords(int2 pixelCoords)
 {
     float2 xy    = pixelCoords - worldCenter;
@@ -37,34 +47,35 @@ float2 terrainWorldCoords(int2 pixelCoords)
     return world;
 }
 
+bool vertexInLodArea(float2 worldCoords, float longestEdge)
+{
+    float dist                   = length(cameraWorldCoords - worldCoords);
+    float closestVertexEstimate  = max(0, dist - longestEdge);
+    float furthestVertexEstimate = dist + longestEdge;
+    bool tooFar                  = closestVertexEstimate  > vertexCullFar;
+    bool tooNear                 = furthestVertexEstimate < vertexCullNear;
+    return !(tooNear || tooFar);
+}
+
 float2 terrainUV(int2 pixelCoords)
 {
     return float2(pixelCoords) * heightmapInvSize;
 }
 
-float terrainLOD(float sampledLOD, float distance)
+float terrainLOD(float distance)
 {
-#if 1
-    return sampledLOD;
-#else
     float linearLOD        = distance / lodSwitchDistance;
     float logLOD           = lodSwitchExponentInvLog != 0
         ? (log(linearLOD) * lodSwitchExponentInvLog)
         : linearLOD;
     return logLOD + lodBias;
-#endif
 }
 
-float terrainLODAlpha(float sampledLOD, float distance)
+float terrainLODAlpha(float distance)
 {
-    float lod        = terrainLOD(sampledLOD, distance);
+    float lod        = terrainLOD(distance);
     float fractional = saturate(lod - float(lodLevel));
-#if 1
-    float alpha      = saturate(remap(lodMorphStart, 1, 0, 1, fractional));
-#else
-    float alpha      = smoothstep(lodMorphStart, 1.0, fractional);
-#endif
-    return alpha;
+    return fractional;
 }
 
 struct TerrainVertex
@@ -75,6 +86,15 @@ struct TerrainVertex
     float nextLodHeight;
     float2 loddedPixelCoords;
     float  loddedHeight;
+    float longestEdge;
+
+    bool isCulled()
+    {
+        if (vertexCullEnabled)
+            return !vertexInLodArea(worldCoords(), longestEdge);
+        else
+            return false;
+    }
 
     float2 worldCoords()
     {
@@ -116,14 +136,14 @@ struct TerrainVertex
     }
 };
 
-TerrainVertex makeTerrainVertex(int2 pixelCoords, float height,
-                                int2 nextLodPixelCoords, float nextLodHeight)
+TerrainVertex makeTerrainVertex(VSInput vsInput)
 {
     TerrainVertex v;
-    v.pixelCoords        = pixelCoords;
-    v.height             = height;
-    v.nextLodPixelCoords = nextLodPixelCoords;
-    v.nextLodHeight      = nextLodHeight;
+    v.pixelCoords        = vsInput.pixelCoords;
+    v.height             = vsInput.height;
+    v.nextLodPixelCoords = vsInput.nextLodPixelCoords;
+    v.nextLodHeight      = vsInput.nextLodHeight;
+    v.longestEdge        = vsInput.longestEdge;
 
     v.computeLOD();
 

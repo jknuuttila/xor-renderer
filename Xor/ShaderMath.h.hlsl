@@ -1,7 +1,8 @@
 #ifndef XOR_SHADERMATH_H_HLSL
 #define XOR_SHADERMATH_H_HLSL
 
-static const float Pi = 3.141592654;
+static const float Pi  = 3.141592654;
+static const float NaN = asfloat(0x7fffffff);
 
 // Sometimes referred to as Chi+
 float nonNegative(float x)
@@ -58,6 +59,10 @@ float3 signedColor(float value, float max)
 	else
 		return float3(0, 0, V);
 }
+
+float lengthSqr(float2 v) { return dot(v, v); }
+float lengthSqr(float3 v) { return dot(v, v); }
+float lengthSqr(float4 v) { return dot(v, v); }
 
 // Optimized GGX specular implementation from
 // http://www.filmicworlds.com/2014/04/21/optimizing-ggx-shaders-with-dotlh/

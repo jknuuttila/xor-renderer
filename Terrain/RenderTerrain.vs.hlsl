@@ -1,13 +1,5 @@
 #include "RenderTerrain.sig.h"
 
-struct VSInput
-{
-    int2  pixelCoords        : POSITION0;
-    float height             : POSITION1;
-    int2  nextLodPixelCoords : POSITION2;
-    float nextLodHeight      : POSITION3;
-};
-
 struct VSOutput
 {
     float4 worldPos : POSITION0;
@@ -19,8 +11,7 @@ struct VSOutput
 [RootSignature(RENDERTERRAIN_ROOT_SIGNATURE)]
 VSOutput main(VSInput i)
 {
-    TerrainVertex v = makeTerrainVertex(i.pixelCoords, i.height,
-                                        i.nextLodPixelCoords, i.nextLodHeight);
+    TerrainVertex v = makeTerrainVertex(i);
 
     VSOutput o;
 	o.worldPos.xz = v.worldCoords();
@@ -30,5 +21,9 @@ VSOutput main(VSInput i)
 	o.pos         = mul(viewProj, o.worldPos);
     o.prevPos     = mul(prevViewProj, o.worldPos);
     o.prevPos.xyz /= o.prevPos.w;
+
+    if (v.isCulled())
+        o.pos.xyz = NaN;
+
     return o;
 }
