@@ -4,7 +4,7 @@
 #include <intrin.h>
 #include <nmmintrin.h>
 
-namespace xor
+namespace Xor
 {
     // Function names try to match HLSL, where applicable.
     inline int64_t firstbitlow(uint64_t value)

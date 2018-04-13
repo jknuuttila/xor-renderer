@@ -2,7 +2,7 @@
 
 #include "external/quadric/src.cmd/Simplify.h"
 
-namespace xor
+namespace Xor
 {
     using namespace Simplify;
 

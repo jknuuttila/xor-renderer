@@ -3,7 +3,7 @@
 #include "Core/MathVectors.hpp"
 #include "Core/MathFloat.hpp"
 
-namespace xor
+namespace Xor
 {
     struct ColorUnorm
     {

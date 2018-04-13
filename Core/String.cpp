@@ -7,7 +7,7 @@
 #include <codecvt>
 #include <cctype>
 
-namespace xor
+namespace Xor
 {
     static std::wstring_convert<std::codecvt_utf8<wchar_t>> wConverter;
 

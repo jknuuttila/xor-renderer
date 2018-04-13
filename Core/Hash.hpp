@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace xor
+namespace Xor
 {
     class Hash
     {

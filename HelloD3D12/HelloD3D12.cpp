@@ -6,7 +6,7 @@
 
 #include <vector>
 
-using namespace xor;
+using namespace Xor;
 
 class HelloD3D12 : public Window
 {

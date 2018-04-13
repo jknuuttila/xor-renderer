@@ -1,6 +1,6 @@
 #include "MathVectors.hpp"
 
-namespace xor
+namespace Xor
 {
     namespace math
     {

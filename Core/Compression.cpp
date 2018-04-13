@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-namespace xor
+namespace Xor
 {
     static const int DefaultCompressionLevel = 20;
 

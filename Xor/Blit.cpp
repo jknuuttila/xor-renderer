@@ -1,7 +1,7 @@
 #include "Xor/Blit.hpp"
 #include "Xor/Blit.sig.h"
 
-namespace xor
+namespace Xor
 {
     Blit::Blit(Device & device)
     {

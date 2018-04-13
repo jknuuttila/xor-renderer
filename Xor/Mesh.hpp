@@ -3,7 +3,7 @@
 #include "Core/Core.hpp"
 #include "Xor/Xor.hpp"
 
-namespace xor
+namespace Xor
 {
     class Material;
     class Mesh;

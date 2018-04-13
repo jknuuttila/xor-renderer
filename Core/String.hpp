@@ -13,7 +13,7 @@
 #include <cstring>
 #include <cstdarg>
 
-namespace xor
+namespace Xor
 {
     // string.capitalize(word)
     // string.expandtabs(s[, tabsize])
@@ -475,20 +475,20 @@ namespace xor
 namespace std
 {
     template <>
-    struct hash<xor::String>
+    struct hash<Xor::String>
     {
-        size_t operator()(const xor::String &s) const
+        size_t operator()(const Xor::String &s) const
         {
-            return xor::hashBytes(s.begin(), s.end());
+            return Xor::hashBytes(s.begin(), s.end());
         }
     };
 
     template <>
-    struct hash<xor::StringView>
+    struct hash<Xor::StringView>
     {
-        size_t operator()(const xor::StringView &s) const
+        size_t operator()(const Xor::StringView &s) const
         {
-            return xor::hashBytes(s.begin(), s.end());
+            return Xor::hashBytes(s.begin(), s.end());
         }
     };
 }

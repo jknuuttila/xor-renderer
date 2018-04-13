@@ -2,7 +2,7 @@
 
 #include "Xor/Xor.hpp"
 
-namespace xor
+namespace Xor
 {
     class Blit
     {

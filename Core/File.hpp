@@ -6,7 +6,7 @@
 
 #include <filesystem>
 
-namespace xor
+namespace Xor
 {
     namespace fs = std::experimental::filesystem;
 

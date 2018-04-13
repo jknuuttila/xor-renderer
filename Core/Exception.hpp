@@ -5,7 +5,7 @@
 
 #include <exception>
 
-namespace xor
+namespace Xor
 {
     class Exception : public std::exception
     {
@@ -25,6 +25,6 @@ namespace xor
 }
 
 // Work around poor inheriting constructor support in VS
-#define XOR_EXCEPTION_TYPE(Type) struct Type : public ::xor::Exception { template <typename... Ts> Type(const Ts &... ts) : Exception(ts...) {} };
+#define XOR_EXCEPTION_TYPE(Type) struct Type : public ::Xor::Exception { template <typename... Ts> Type(const Ts &... ts) : Exception(ts...) {} };
 #define XOR_THROW(cond, ExType, ...) do { if (!(cond)) { throw ExType(__FILE__, __LINE__, __VA_ARGS__); } } while (false)
 #define XOR_THROW_HR(hr, ExType) do { HRESULT hr__ = hr; if (!SUCCEEDED(hr__)) { throw ExType(__FILE__, __LINE__, errorMessage(hr__)); } } while (false)

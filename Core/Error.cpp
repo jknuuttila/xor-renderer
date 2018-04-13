@@ -4,7 +4,7 @@
 
 #include <comdef.h>
 
-namespace xor
+namespace Xor
 {
     namespace detail
     {

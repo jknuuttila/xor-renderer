@@ -12,7 +12,7 @@
 
 #define NUMBERED_COMMAND_LIST_EVENTS
 
-namespace xor
+namespace Xor
 {
     namespace backend
     {
@@ -54,7 +54,7 @@ namespace xor
         }
     }
 
-    using namespace xor::backend;
+    using namespace Xor::backend;
 
     ID3D12GraphicsCommandList *CommandList::cmd()
     {

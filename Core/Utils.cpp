@@ -7,7 +7,7 @@
 #include <cstring>
 #include <vector>
 
-namespace xor
+namespace Xor
 {
     Timer::Timer()
     {

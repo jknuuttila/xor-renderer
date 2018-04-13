@@ -15,7 +15,7 @@
 #include <queue>
 #include <memory>
 
-namespace xor
+namespace Xor
 {
     class Device;
     class CommandList;

@@ -1,7 +1,7 @@
 #include "Window.hpp"
 #include "Error.hpp"
 
-namespace xor
+namespace Xor
 {
     static const int WindowThisPtrIndex = 0;
     static const char WindowClassName[] = "XORWindow";

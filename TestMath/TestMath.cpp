@@ -1,9 +1,9 @@
 #include "Core/Core.hpp"
 
-using namespace xor;
-using xor::math::Vector;
-using xor::math::Matrix;
-using xor::math::Angle;
+using namespace Xor;
+using Xor::math::Vector;
+using Xor::math::Matrix;
+using Xor::math::Angle;
 
 template <typename T> struct Epsilon { static double value() { return 0; } };
 template <> struct Epsilon<float> { static double value() { return 0.001; } };

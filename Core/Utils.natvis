@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?> 
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
-    <Type Name="xor::Span&lt;*&gt;">
+    <Type Name="Xor::Span&lt;*&gt;">
         <DisplayString>{{ size = {m_end - m_begin} }}</DisplayString>
         <Expand>
             <Item Name="[size]">m_end - m_begin</Item>
@@ -10,7 +10,7 @@
             </ArrayItems>
         </Expand>
     </Type>
-    <Type Name="xor::DynamicBuffer&lt;*&gt;">
+    <Type Name="Xor::DynamicBuffer&lt;*&gt;">
         <DisplayString>{{ size = {m_size} }}</DisplayString>
         <Expand>
             <Item Name="[size]">m_size</Item>
@@ -22,7 +22,7 @@
             </ArrayItems>
         </Expand>
     </Type>
-    <Type Name="xor::VirtualBuffer&lt;*&gt;">
+    <Type Name="Xor::VirtualBuffer&lt;*&gt;">
         <DisplayString>{{ size = {m_size} }}</DisplayString>
         <Expand>
             <Item Name="[size]">m_size</Item>

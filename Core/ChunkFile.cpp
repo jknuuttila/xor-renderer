@@ -9,7 +9,7 @@
 #define XOR_CHUNKFILE_OP(...)
 #endif
 
-namespace xor
+namespace Xor
 {
     namespace serialization
     {
@@ -40,7 +40,7 @@ namespace xor
         };
     }
 
-    using namespace xor::serialization;
+    using namespace Xor::serialization;
 
     struct ChunkFileHeader
     {

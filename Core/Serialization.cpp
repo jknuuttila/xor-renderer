@@ -1,6 +1,6 @@
 #include "Core/Serialization.hpp"
 
-namespace xor
+namespace Xor
 {
     uint Reader::readLength()
     {

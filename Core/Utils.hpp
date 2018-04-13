@@ -10,7 +10,7 @@
 #include <type_traits>
 #include <algorithm>
 
-namespace xor
+namespace Xor
 {
     class String;
 
@@ -190,7 +190,7 @@ namespace xor
     template <typename T>
     size_t sizeBytes(const T &t)
     {
-        return ::xor::size(t) * sizeof(t[0]);
+        return ::Xor::size(t) * sizeof(t[0]);
     }
 
     template <typename T>

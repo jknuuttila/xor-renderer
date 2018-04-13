@@ -10,9 +10,6 @@
 #endif
 #endif
 
-namespace xor
-{
-
 #define XOR_DEBUG_BREAK_IF_FALSE(cond) do { if (!cond) \
 { \
     if (IsDebuggerPresent()) \
@@ -21,6 +18,8 @@ namespace xor
         TerminateProcess(GetCurrentProcess(), 1); \
 } } while (false)
 
+namespace Xor
+{
     namespace detail
     {
         bool checkImpl(bool cond, const char *fmt, ...);
@@ -32,14 +31,14 @@ namespace xor
     String errorMessage(HRESULT hr);
 }
 
-#define XOR_CHECK(cond, ...)       XOR_DEBUG_BREAK_IF_FALSE(::xor::detail::checkImpl(cond, ## __VA_ARGS__))
-#define XOR_CHECK_HR(hr)           XOR_DEBUG_BREAK_IF_FALSE(::xor::detail::checkHRImpl(hr))
-#define XOR_CHECK_LAST_ERROR(cond) XOR_DEBUG_BREAK_IF_FALSE(::xor::detail::checkLastErrorImpl(cond))
+#define XOR_CHECK(cond, ...)       XOR_DEBUG_BREAK_IF_FALSE(::Xor::detail::checkImpl(cond, ## __VA_ARGS__))
+#define XOR_CHECK_HR(hr)           XOR_DEBUG_BREAK_IF_FALSE(::Xor::detail::checkHRImpl(hr))
+#define XOR_CHECK_LAST_ERROR(cond) XOR_DEBUG_BREAK_IF_FALSE(::Xor::detail::checkLastErrorImpl(cond))
 
 #if XOR_ASSERTIONS
-#define XOR_ASSERT(cond, ...)       XOR_DEBUG_BREAK_IF_FALSE(::xor::detail::checkImpl(cond, ## __VA_ARGS__))
-#define XOR_ASSERT_HR(hr)           XOR_DEBUG_BREAK_IF_FALSE(::xor::detail::checkHRImpl(hr))
-#define XOR_ASSERT_LAST_ERROR(cond) XOR_DEBUG_BREAK_IF_FALSE(::xor::detail::checkLastErrorImpl(cond))
+#define XOR_ASSERT(cond, ...)       XOR_DEBUG_BREAK_IF_FALSE(::Xor::detail::checkImpl(cond, ## __VA_ARGS__))
+#define XOR_ASSERT_HR(hr)           XOR_DEBUG_BREAK_IF_FALSE(::Xor::detail::checkHRImpl(hr))
+#define XOR_ASSERT_LAST_ERROR(cond) XOR_DEBUG_BREAK_IF_FALSE(::Xor::detail::checkLastErrorImpl(cond))
 #else
 #define XOR_ASSERT(cond, ...)   do {} while (false)
 #define XOR_ASSERT_HR(hr)       do {} while (false)

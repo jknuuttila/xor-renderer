@@ -6,7 +6,7 @@
 #include "Xor/XorBackend.hpp"
 #include "Xor/XorResources.hpp"
 
-namespace xor
+namespace Xor
 {
     static constexpr int MaxRenderTargets = 8;
 

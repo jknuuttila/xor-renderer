@@ -3,7 +3,7 @@
 #include "Xor/Xor.hpp"
 #include "Core/ChunkFile.hpp"
 
-namespace xor
+namespace Xor
 {
     namespace info
     {

@@ -1,6 +1,6 @@
 #include "Xor/Format.hpp"
 
-namespace xor
+namespace Xor
 {
     uint Format::size() const
     {

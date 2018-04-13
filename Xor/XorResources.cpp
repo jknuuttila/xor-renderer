@@ -4,11 +4,11 @@
 
 #define XOR_LOG_SHADER_COMPILES
 
-namespace xor
+namespace Xor
 {
     static const char ShaderFileExtension[] = ".cso";
 
-    using namespace xor::backend;
+    using namespace Xor::backend;
 
     namespace info
     {

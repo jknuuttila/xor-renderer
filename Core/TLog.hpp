@@ -7,7 +7,7 @@
 #include <vector>
 #include <memory>
 
-namespace xor
+namespace Xor
 {
     struct BuildInfo
     {

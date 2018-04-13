@@ -5,7 +5,7 @@
 
 #include <memory>
 
-namespace xor
+namespace Xor
 {
     struct Subresource
     {

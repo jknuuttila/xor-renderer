@@ -2,7 +2,7 @@
 #include "Utils.hpp"
 #include "File.hpp"
 
-namespace xor
+namespace Xor
 {
 #if 0
     std::vector<String> listFiles(const String &path, const String &pattern)

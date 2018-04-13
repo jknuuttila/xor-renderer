@@ -11,7 +11,7 @@
 
 #include "Core/Math.hpp"
 
-namespace xor
+namespace Xor
 {
     namespace backend
     {
@@ -26,16 +26,16 @@ namespace xor
 #define XOR_END_SIGNATURE };
 
 #define XOR_CBUFFER(cbufferName, cbufferSlot) \
-    struct cbufferName : ::xor::backend::ShaderCBuffer<cbufferName, cbufferSlot>
+    struct cbufferName : ::Xor::backend::ShaderCBuffer<cbufferName, cbufferSlot>
 
 #define XOR_TEXTURE_SRV(srvType, srvName, srvSlot) \
-    static const ::xor::backend::ShaderSRV<srvSlot> srvName = srvSlot;
+    static const ::Xor::backend::ShaderSRV<srvSlot> srvName = srvSlot;
 #define XOR_TEXTURE_UAV(uavType, uavName, uavSlot) \
-    static const ::xor::backend::ShaderUAV<uavSlot> uavName = uavSlot;
+    static const ::Xor::backend::ShaderUAV<uavSlot> uavName = uavSlot;
 #define XOR_BUFFER_SRV(srvType, srvName, srvSlot) \
-    static const ::xor::backend::ShaderSRV<srvSlot> srvName = srvSlot;
+    static const ::Xor::backend::ShaderSRV<srvSlot> srvName = srvSlot;
 #define XOR_BUFFER_UAV(uavType, uavName, uavSlot) \
-    static const ::xor::backend::ShaderUAV<uavSlot> uavName = uavSlot;
+    static const ::Xor::backend::ShaderUAV<uavSlot> uavName = uavSlot;
 
 #define XOR_SAMPLER_BILINEAR(samplerName)
 #define XOR_SAMPLER_POINT(samplerName)
@@ -43,9 +43,9 @@ namespace xor
 #define XOR_SAMPLER_POINT_WRAP(samplerName)
 #define XOR_SAMPLER_PCF_GE(samplerName)
 
-#define XOR_THREADGROUP_SIZE_1D(sizeX)               static constexpr ::xor::backend::ThreadGroupSize<sizeX, 1, 1> threadGroupSize = {};
-#define XOR_THREADGROUP_SIZE_2D(sizeX, sizeY)        static constexpr ::xor::backend::ThreadGroupSize<sizeX, sizeY, 1> threadGroupSize = {};
-#define XOR_THREADGROUP_SIZE_3D(sizeX, sizeY, sizeZ) static constexpr ::xor::backend::ThreadGroupSize<sizeX, sizeY, sizeZ> threadGroupSize = {};
+#define XOR_THREADGROUP_SIZE_1D(sizeX)               static constexpr ::Xor::backend::ThreadGroupSize<sizeX, 1, 1> threadGroupSize = {};
+#define XOR_THREADGROUP_SIZE_2D(sizeX, sizeY)        static constexpr ::Xor::backend::ThreadGroupSize<sizeX, sizeY, 1> threadGroupSize = {};
+#define XOR_THREADGROUP_SIZE_3D(sizeX, sizeY, sizeZ) static constexpr ::Xor::backend::ThreadGroupSize<sizeX, sizeY, sizeZ> threadGroupSize = {};
 
 #else
 

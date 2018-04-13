@@ -2,7 +2,7 @@
 
 #include "Core/Compression.hpp"
 
-namespace xor
+namespace Xor
 {
     Material::Material(String name)
     {

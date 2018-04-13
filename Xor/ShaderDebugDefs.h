@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 #include "Core/Math.hpp"
 
-namespace xor {
+namespace Xor {
 namespace backend {
 #endif
 

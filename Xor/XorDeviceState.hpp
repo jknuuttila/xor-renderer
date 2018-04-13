@@ -3,7 +3,7 @@
 #include "Xor/XorBackend.hpp"
 #include "Xor/XorDevice.hpp"
 
-namespace xor
+namespace Xor
 {
     namespace backend
     {

@@ -4,7 +4,7 @@
 
 #include <d3d12.h>
 
-namespace xor
+namespace Xor
 {
     class Format
     {

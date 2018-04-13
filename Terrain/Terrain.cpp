@@ -26,7 +26,7 @@
 
 // TODO: Superfluous vertex removal
 
-using namespace xor;
+using namespace Xor;
 
 static const float ArcSecond = 30.87f;
 
@@ -1978,7 +1978,7 @@ struct TerrainRenderer
 
 class TerrainPrototype : public Window
 {
-    Xor xor;
+    XorLibrary xorLib;
     Device device;
     SwapChain swapChain;
     TextureDSV depthBuffer;
@@ -2008,14 +2008,14 @@ public:
     TerrainPrototype()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
 #if 0
-        , xor(Xor::DebugLayer::GPUBasedValidation)
+        , xorLib(XorLibrary::DebugLayer::GPUBasedValidation)
 #endif
     {
-        xor.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
+        xorLib.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
 #if 1
-        device      = xor.defaultDevice();
+        device      = xorLib.defaultDevice();
 #else
-        device      = xor.warpDevice();
+        device      = xorLib.warpDevice();
 #endif
         swapChain   = device.createSwapChain(*this);
         depthBuffer = device.createTextureDSV(Texture::Info(size(), DXGI_FORMAT_D32_FLOAT));

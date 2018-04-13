@@ -5,7 +5,7 @@
 
 #include "Hello.sig.h"
 
-using namespace xor;
+using namespace Xor;
 
 void debugMatrix(Matrix m, Span<const float3> verts)
 {
@@ -20,7 +20,7 @@ void debugMatrix(Matrix m, Span<const float3> verts)
 
 class HelloXor : public Window
 {
-    Xor xor;
+    XorLibrary xorLib;
     Device device;
     SwapChain swapChain;
     GraphicsPipeline hello;
@@ -37,9 +37,9 @@ public:
     HelloXor()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
     {
-        xor.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
+        xorLib.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
 
-        device    = xor.defaultDevice();
+        device    = xorLib.defaultDevice();
         swapChain = device.createSwapChain(*this);
 
         cube = Mesh(device, Mesh::Info(XOR_DATA "/cube/cube.obj"));

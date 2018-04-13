@@ -31,6 +31,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LoadBalancing", "LoadBalanc
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Incircle", "external\incircle\Incircle\Incircle.vcxproj", "{851F04A2-CB38-41B5-AA07-43CAFDEF5919}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RayTracing", "RayTracing\RayTracing.vcxproj", "{DFC068AB-EC30-49A5-848F-5140D923943A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -113,6 +115,12 @@ Global
 		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Release|x64.Build.0 = Release|x64
 		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Release|x86.ActiveCfg = Release|Win32
 		{851F04A2-CB38-41B5-AA07-43CAFDEF5919}.Release|x86.Build.0 = Release|Win32
+		{DFC068AB-EC30-49A5-848F-5140D923943A}.Debug|x64.ActiveCfg = Debug|x64
+		{DFC068AB-EC30-49A5-848F-5140D923943A}.Debug|x64.Build.0 = Debug|x64
+		{DFC068AB-EC30-49A5-848F-5140D923943A}.Debug|x86.ActiveCfg = Debug|x64
+		{DFC068AB-EC30-49A5-848F-5140D923943A}.Release|x64.ActiveCfg = Release|x64
+		{DFC068AB-EC30-49A5-848F-5140D923943A}.Release|x64.Build.0 = Release|x64
+		{DFC068AB-EC30-49A5-848F-5140D923943A}.Release|x86.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -122,5 +130,8 @@ Global
 		{C02D4E4A-A8A6-4763-A485-9541F4FADE76} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
 		{8BFD8150-94D5-4BF9-8A50-7BD9929A0850} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
 		{851F04A2-CB38-41B5-AA07-43CAFDEF5919} = {EA84D2F7-E324-4EDF-BB41-A738A83F05C8}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {685C7C96-59F7-4A4C-A1A6-0BD73F78D75B}
 	EndGlobalSection
 EndGlobal

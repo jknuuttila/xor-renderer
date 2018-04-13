@@ -7,11 +7,11 @@
 
 #include <cstdint>
 
-namespace xor
+namespace Xor
 {
     namespace math
     {
-        using xor::uint;
+        using Xor::uint;
 
         static constexpr float Pi = 3.1415926535f;
 
@@ -107,8 +107,8 @@ namespace xor
             Span<T> span() { return Span<T>(&x, N); }
             constexpr Span<const T> span() const { return Span<const T>(&x, N); }
 
-            T *data() { return &x; }
-            constexpr const T *data() const { return &x; }
+            T *data() { return &this->x; }
+            constexpr const T *data() const { return &this->x; }
 
             T &operator[](uint i) { return data()[i]; }
             const T &operator[](uint i) const { return data()[i]; }
@@ -874,11 +874,11 @@ namespace xor
 #endif
     }
 
-    using xor::math::Pi;
-    using xor::math::Vector;
-    using xor::math::Angle;
-    using xor::math::Matrix;
-    using xor::math::Mat;
+    using Xor::math::Pi;
+    using Xor::math::Vector;
+    using Xor::math::Angle;
+    using Xor::math::Matrix;
+    using Xor::math::Mat;
 
     template <typename T, uint N> String toString(Vector<T, N> v)
     {
@@ -943,17 +943,17 @@ namespace xor
     }
 }
 
-using xor::math::int2;
-using xor::math::int3;
-using xor::math::int4;
-using xor::math::uint;
-using xor::math::uint2;
-using xor::math::uint3;
-using xor::math::uint4;
-using xor::math::float2;
-using xor::math::float3;
-using xor::math::float4;
-using xor::math::float4x4;
-using xor::math::float3x3;
-using xor::math::int4x4;
-using xor::math::int3x3;
+using Xor::math::int2;
+using Xor::math::int3;
+using Xor::math::int4;
+using Xor::math::uint;
+using Xor::math::uint2;
+using Xor::math::uint3;
+using Xor::math::uint4;
+using Xor::math::float2;
+using Xor::math::float3;
+using Xor::math::float4;
+using Xor::math::float4x4;
+using Xor::math::float3x3;
+using Xor::math::int4x4;
+using Xor::math::int3x3;

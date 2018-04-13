@@ -2,7 +2,7 @@
 
 #include "Core/MathVectors.hpp"
 
-namespace xor
+namespace Xor
 {
     uint64_t morton2DEncode(uint2 coords);
     uint2    morton2DDecode(uint64_t mortonIndex);

@@ -4,9 +4,9 @@
 #include "Xor/XorResources.hpp"
 #include "Xor/XorCommandList.hpp"
 
-namespace xor
+namespace Xor
 {
-    using namespace xor::backend;
+    using namespace Xor::backend;
 
     // Largest amount of data that we push to the upload heap at once during initial
     // data uploading.
@@ -35,7 +35,7 @@ namespace xor
 
     }
 
-    Xor::Xor(DebugLayer debugLayer)
+    XorLibrary::XorLibrary(DebugLayer debugLayer)
     {
         if (debugLayer == DebugLayer::Default)
         {
@@ -104,22 +104,22 @@ namespace xor
         }
     }
 
-    Xor::~Xor()
+    XorLibrary::~XorLibrary()
     {
     }
 
-    Span<Adapter> Xor::adapters()
+    Span<Adapter> XorLibrary::adapters()
     {
         return asSpan(m_adapters);
     }
 
-    Adapter & Xor::defaultAdapter()
+    Adapter & XorLibrary::defaultAdapter()
     {
         XOR_CHECK(!m_adapters.empty(), "No adapters detected!");
         return m_adapters.front();
     }
 
-    Device Xor::defaultDevice(bool createWarpDevice)
+    Device XorLibrary::defaultDevice(bool createWarpDevice)
     {
         if (createWarpDevice)
             return warpDevice();
@@ -135,12 +135,12 @@ namespace xor
         return Device();
     }
 
-    Device Xor::warpDevice()
+    Device XorLibrary::warpDevice()
     {
         return m_adapters.back().createDevice();
     }
 
-    void Xor::registerShaderTlog(StringView projectName, StringView shaderTlogPath)
+    void XorLibrary::registerShaderTlog(StringView projectName, StringView shaderTlogPath)
     {
         m_shaderLoader->registerShaderTlog(projectName, shaderTlogPath);
     }

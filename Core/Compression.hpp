@@ -3,7 +3,7 @@
 #include "Core/Utils.hpp"
 #include "Core/Exception.hpp"
 
-namespace xor
+namespace Xor
 {
     size_t compressZstd(Span<uint8_t> compressed, Span<const uint8_t> src, int compressionLevel = -1);
     DynamicBuffer<uint8_t> compressZstd(Span<const uint8_t> src, int compressionLevel = -1);

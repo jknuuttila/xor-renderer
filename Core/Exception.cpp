@@ -3,7 +3,7 @@
 
 #include <cstdarg>
 
-namespace xor
+namespace Xor
 {
     void Exception::printErrorMessage(const char *file, int line)
     {

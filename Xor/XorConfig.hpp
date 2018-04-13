@@ -5,7 +5,7 @@
 
 #include <type_traits>
 
-namespace xor
+namespace Xor
 {
     struct ConfigGroup {};
     struct ConfigWindow {};
@@ -260,31 +260,31 @@ namespace xor
     enum class EnumType { __VA_ARGS__ }; \
     static const char *xorConfigEnumValueNamesZeroSeparated(const EnumType &) \
     { \
-        static auto enumValueNames = ::xor::determineConfigEnumValueNamesZeroSeparated(# __VA_ARGS__); \
+        static auto enumValueNames = ::Xor::determineConfigEnumValueNamesZeroSeparated(# __VA_ARGS__); \
         return enumValueNames.data(); \
     } \
     static const char *xorConfigEnumValueName(const EnumType &e) \
     { \
-        static auto enumValueNames = ::xor::determineConfigEnumValueNames(# __VA_ARGS__); \
+        static auto enumValueNames = ::Xor::determineConfigEnumValueNames(# __VA_ARGS__); \
         return enumValueNames[static_cast<int>(e)].cStr(); \
     }
 
 #define XOR_CONFIG_STRUCT(TypeName, StructType, NameFnQualifier, ...) \
     struct TypeName; \
     NameFnQualifier const char *xorConfigWindowName_ ## TypeName() { return #TypeName ; } \
-    struct TypeName : public ::xor::ConfigStruct<TypeName, StructType, &xorConfigWindowName_ ## TypeName, ## __VA_ARGS__>
+    struct TypeName : public ::Xor::ConfigStruct<TypeName, StructType, &xorConfigWindowName_ ## TypeName, ## __VA_ARGS__>
 
-#define XOR_CONFIG_WINDOW(TypeName, ...) XOR_CONFIG_STRUCT(TypeName, ::xor::ConfigWindow, inline, ## __VA_ARGS__)
-#define XOR_CONFIG_GROUP(TypeName) XOR_CONFIG_STRUCT(TypeName, ::xor::ConfigGroup, static)
+#define XOR_CONFIG_WINDOW(TypeName, ...) XOR_CONFIG_STRUCT(TypeName, ::Xor::ConfigWindow, inline, ## __VA_ARGS__)
+#define XOR_CONFIG_GROUP(TypeName) XOR_CONFIG_STRUCT(TypeName, ::Xor::ConfigGroup, static)
 
 #define XOR_CONFIG_ENUM(EnumType, ValueName, Label, DefaultValue) \
-    ::xor::ConfigEnum<EnumType> ValueName { Label, DefaultValue };
+    ::Xor::ConfigEnum<EnumType> ValueName { Label, DefaultValue };
 #define XOR_CONFIG_CHECKBOX(ValueName, Label, DefaultValue) \
-    ::xor::ConfigValue<bool> ValueName { Label, DefaultValue };
+    ::Xor::ConfigValue<bool> ValueName { Label, DefaultValue };
 #define XOR_CONFIG_SLIDER(Type, ValueName, Label, DefaultValue, ...) \
-    ::xor::ConfigValue<Type, ::xor::ConfigSlider> ValueName { Label, DefaultValue, ## __VA_ARGS__ };
+    ::Xor::ConfigValue<Type, ::Xor::ConfigSlider> ValueName { Label, DefaultValue, ## __VA_ARGS__ };
 #define XOR_CONFIG_INPUT(Type, ValueName, Label, DefaultValue, ...) \
-    ::xor::ConfigValue<Type, ::xor::ConfigInput> ValueName { Label, DefaultValue, ## __VA_ARGS__ };
+    ::Xor::ConfigValue<Type, ::Xor::ConfigInput> ValueName { Label, DefaultValue, ## __VA_ARGS__ };
 #define XOR_CONFIG_TEXT(Label, FmtString, ValueMemberFunction) \
-    ::xor::ConfigText XOR_CONCAT(xorConfigText, __COUNTER__) { Label, FmtString, this, ValueMemberFunction };
-#define XOR_CONFIG_SEPARATOR ::xor::ConfigSeparator XOR_CONCAT(xorConfigSeparator, __COUNTER__);
+    ::Xor::ConfigText XOR_CONCAT(xorConfigText, __COUNTER__) { Label, FmtString, this, ValueMemberFunction };
+#define XOR_CONFIG_SEPARATOR ::Xor::ConfigSeparator XOR_CONCAT(xorConfigSeparator, __COUNTER__);

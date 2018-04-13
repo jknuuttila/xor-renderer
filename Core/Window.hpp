@@ -7,7 +7,7 @@
 #include <vector>
 #include <array>
 
-namespace xor
+namespace Xor
 {
     struct Input
     {

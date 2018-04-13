@@ -1,7 +1,7 @@
 #include "Xor/XorDeviceState.hpp"
 #include "Xor/XorCommandList.hpp"
 
-namespace xor
+namespace Xor
 {
     constexpr uint MaxRTVs = 256;
     constexpr uint MaxDSVs = 256;

@@ -5,7 +5,7 @@
 #include <cmath>
 #include <random>
 
-namespace xor
+namespace Xor
 {
     inline float frac(float f)
     {

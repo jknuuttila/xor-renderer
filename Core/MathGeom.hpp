@@ -7,7 +7,7 @@
 
 #include <random>
 
-namespace xor
+namespace Xor
 {
     template <typename T>
     inline T orient2D(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)

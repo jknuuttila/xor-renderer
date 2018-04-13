@@ -3,7 +3,7 @@
 
 #include <cstdio>
 
-namespace xor
+namespace Xor
 {
     void vprint(const char * fmt, va_list ap)
     {

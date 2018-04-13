@@ -11,7 +11,7 @@
 #include <vector>
 #include <unordered_map>
 
-namespace xor
+namespace Xor
 {
     struct Mesh::State
     {

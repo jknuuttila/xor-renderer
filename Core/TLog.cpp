@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace xor
+namespace Xor
 {
     static std::vector<String> tlogLines(StringView path)
     {

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace xor
+namespace Xor
 {
     void vprint(const char *fmt, va_list ap);
     void print(const char *fmt, ...);

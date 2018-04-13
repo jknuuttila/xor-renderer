@@ -8,7 +8,7 @@
 #include <random>
 #include <unordered_set>
 
-using namespace xor;
+using namespace Xor;
 
 XOR_DEFINE_CONFIG_ENUM(LBShaderVariant, 
     Naive,
@@ -57,6 +57,7 @@ XOR_CONFIG_WINDOW(WorkloadSettings, 100, 100)
     XOR_CONFIG_INPUT(   int, maxItems,   "Maximum items",    30);
     XOR_CONFIG_INPUT(   int, multiplier, "Multiplier",       1);
     XOR_CONFIG_SLIDER(float, zeroProb,   "Zero probability", .5f);
+    XOR_CONFIG_CHECKBOX(verify, "Verify output", true);
 #endif
     XOR_CONFIG_CHECKBOX(vsync, "VSync", true);
 
@@ -65,7 +66,7 @@ XOR_CONFIG_WINDOW(WorkloadSettings, 100, 100)
 
 class LoadBalancing : public Window
 {
-    Xor xor;
+    XorLibrary xorLib;
     Device device;
     SwapChain swapChain;
 
@@ -85,15 +86,15 @@ public:
     LoadBalancing()
         : Window { XOR_PROJECT_NAME, { 1600, 900 } }
 #if 0
-        , xor(Xor::DebugLayer::GPUBasedValidation)
+        , xorLib(XorLibrary::DebugLayer::GPUBasedValidation)
 #endif
     {
-        xor.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
+        xorLib.registerShaderTlog(XOR_PROJECT_NAME, XOR_PROJECT_TLOG);
 
 #if 1
-        device      = xor.defaultDevice();
+        device      = xorLib.defaultDevice();
 #else
-        device      = xor.warpDevice();
+        device      = xorLib.warpDevice();
 #endif
         swapChain   = device.createSwapChain(*this);
 

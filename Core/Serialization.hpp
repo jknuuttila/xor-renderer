@@ -6,7 +6,7 @@
 #include <array>
 #include <cstring>
 
-namespace xor
+namespace Xor
 {
     namespace serialization
     {

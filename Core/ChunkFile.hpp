@@ -6,7 +6,7 @@
 #include "Core/File.hpp"
 #include "Core/Serialization.hpp"
 
-namespace xor
+namespace Xor
 {
     namespace serialization
     {

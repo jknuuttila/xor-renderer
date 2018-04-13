@@ -4,7 +4,7 @@
 // been contained in this file.
 #include "external/libmorton/libmorton/include/morton.h"
 
-namespace xor
+namespace Xor
 {
     uint64_t morton2DEncode(uint2 coords)
     {

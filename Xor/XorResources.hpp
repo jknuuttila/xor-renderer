@@ -8,7 +8,7 @@
 
 #include <unordered_map>
 
-namespace xor
+namespace Xor
 {
     class GraphicsPipeline;
     class ComputePipeline;
@@ -27,7 +27,7 @@ namespace xor
         template <typename Resource>
         class ResourceInitializer
         {
-            friend class xor::Device;
+            friend class Xor::Device;
             std::function<void(Device &device, Resource &res)>   m_withDevice;
             std::function<void(CommandList &cmd, Resource &res)> m_withCommandList;
         public:
@@ -249,7 +249,7 @@ namespace xor
         class GraphicsPipelineInfo : private D3D12_GRAPHICS_PIPELINE_STATE_DESC
         {
             friend class Device;
-            friend class xor::GraphicsPipeline;
+            friend class Xor::GraphicsPipeline;
             friend struct backend::PipelineState;
             ShaderDesc                             m_vs;
             ShaderDesc                             m_ps;
@@ -291,7 +291,7 @@ namespace xor
         class ComputePipelineInfo
         {
             friend class Device;
-            friend class xor::ComputePipeline;
+            friend class Xor::ComputePipeline;
             friend struct backend::PipelineState;
             ShaderDesc                             m_cs;
         public:

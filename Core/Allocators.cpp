@@ -4,7 +4,7 @@
 
 #include <numeric>
 
-namespace xor
+namespace Xor
 {
     OffsetPool::OffsetPool(size_t size)
     {

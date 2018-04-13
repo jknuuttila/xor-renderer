@@ -2,7 +2,7 @@
 #include "Xor/XorDevice.hpp"
 #include "Xor/XorCommandList.hpp"
 
-namespace xor
+namespace Xor
 {
     namespace backend
     {

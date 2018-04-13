@@ -1,5 +1,5 @@
 #pragma once
 
-namespace xor
+namespace Xor
 {
 }

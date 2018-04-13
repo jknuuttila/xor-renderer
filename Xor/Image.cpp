@@ -5,7 +5,7 @@
 #include "external/FreeImage/FreeImage.h"
 #include "external/Compressonator/Compressonator.h"
 
-namespace xor
+namespace Xor
 {
     struct ImageHeader
     {

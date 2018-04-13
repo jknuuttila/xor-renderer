@@ -7,11 +7,11 @@
 #include "Xor/XorResources.hpp"
 #include "Xor/XorBackend.hpp"
 
-namespace xor
+namespace Xor
 {
     class Adapter
     {
-        friend class Xor;
+        friend class XorLibrary;
 
         ComPtr<IDXGIAdapter3>                  m_adapter;
         std::shared_ptr<backend::ShaderLoader> m_shaderLoader;
@@ -144,7 +144,7 @@ namespace xor
     };
 
     // Global initialization and deinitialization of the Xor renderer.
-    class Xor
+    class XorLibrary
     {
     public:
         enum class DebugLayer
@@ -161,8 +161,8 @@ namespace xor
 
     public:
 
-        Xor(DebugLayer debugLayer = DebugLayer::Default);
-        ~Xor();
+        XorLibrary(DebugLayer debugLayer = DebugLayer::Default);
+        ~XorLibrary();
 
         Span<Adapter> adapters();
         Adapter &defaultAdapter();

@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <unordered_map>
 
-namespace xor
+namespace Xor
 {
     struct EdgeSmall
     {
@@ -1766,7 +1766,7 @@ namespace xor
     template <typename VertexBuffer>
     void optimizeVertexLocations(VertexBuffer &vb, Span<int> ib)
     {
-        int numVertices = int(xor::size(vb));
+        int numVertices = int(Xor::size(vb));
         std::vector<int> newVertexIndices(numVertices, -1);
         int seenVertices = 0;
 

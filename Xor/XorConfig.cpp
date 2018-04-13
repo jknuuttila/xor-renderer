@@ -4,7 +4,7 @@
 #include <unordered_set>
 #include <map>
 
-namespace xor
+namespace Xor
 {
     struct RegisteredConfigurables
     {

@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <functional>
 
-namespace xor
+namespace Xor
 {
     // Simple pool allocator that manages abstract offsets.
     class OffsetPool

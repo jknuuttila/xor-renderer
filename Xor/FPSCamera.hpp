@@ -2,7 +2,7 @@
 
 #include "Core/Core.hpp"
 
-namespace xor
+namespace Xor
 {
     struct FPSCamera
     {
