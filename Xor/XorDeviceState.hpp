@@ -513,6 +513,8 @@ namespace xor
             std::unordered_map<info::PipelineKey, std::shared_ptr<PipelineState>> pipelines;
 
             uint64_t frameNumber = 0;
+            double lastFrameDurationCPU = 0;
+            Timer frameTimer;
 
             struct ImGui
             {

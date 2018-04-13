@@ -18,9 +18,12 @@
 #include <random>
 #include <unordered_set>
 
-// TODO: Helper visualizations (lines etc.)
-// TODO: Tiled meshing
-// TODO: Continuous LOD
+// Top CPU problems:
+// - CopyDescriptors
+// - Root argument setting
+// - CreateConstantBufferView
+// - CPUVisibleHeap::flushBlock
+
 // TODO: Superfluous vertex removal
 
 using namespace xor;
@@ -100,6 +103,7 @@ XOR_CONFIG_WINDOW(Settings, 500, 100)
     XOR_CONFIG_SLIDER(int, renderLod, "Rendered LOD", -1, -1, 10);
     XOR_CONFIG_CHECKBOX(vertexCulling, "Vertex LOD culling", true);
     XOR_CONFIG_CHECKBOX(highlightCracks, "Highlight cracks", false);
+    XOR_CONFIG_CHECKBOX(vsync, "Vsync", true);
 
     int lodVertexCount(int lod) const
     {
@@ -2238,7 +2242,7 @@ public:
         cmd.imguiEndFrame(swapChain);
 
         device.execute(cmd);
-        device.present(swapChain);
+        device.present(swapChain, cfg_Settings.vsync);
     }
 };
 

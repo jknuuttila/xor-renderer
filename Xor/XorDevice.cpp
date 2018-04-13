@@ -490,6 +490,8 @@ namespace xor
                 ImGui::Separator();
             }
 
+            ImGui::Text("CPU frame time: %6.2f ms", S().lastFrameDurationCPU * 1000.0);
+
             ImGui::SliderInt("History length", &S().profilingDataHistoryLength, 1, 30);
             ImGui::Text("Min / Avg / Max");
 
@@ -1121,6 +1123,10 @@ namespace xor
         // that have been executed, but not on those which have
         // been started but not executed. Otherwise, deadlock could result.
         backbuffer.seqNum = S().progress.newestExecuted;
+
+        S().lastFrameDurationCPU = S().frameTimer.seconds();
+        S().frameTimer.reset();
+
         swapChain.S().swapChain->Present(vsync ? 1 : 0, 0);
         S().shaderLoader->scanChangedSources();
         retireCommandLists();
