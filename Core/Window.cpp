@@ -163,15 +163,15 @@ namespace Xor
     int Window::run()
     {
         mainLoop(0.0);
+        m_mainLoopTimer.reset();
 
         while (!m_terminate)
         {
             pumpMessages();
 
             double delta = m_mainLoopTimer.seconds();
-            mainLoop(delta);
-
             m_mainLoopTimer.reset();
+            mainLoop(delta);
         }
 
         return m_exitCode;
