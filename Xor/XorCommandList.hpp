@@ -46,6 +46,12 @@ namespace Xor
         float averageMs() const;
         float maximumMs() const;
     };
+    
+    enum class ProfilingDisplay
+    {
+        Enabled,
+        Disabled,
+    };
 
     namespace backend
     {
@@ -196,7 +202,9 @@ namespace Xor
                          const Texture &src, ImageRect srcArea = {});
         void copyTexture(Texture &dst, const Texture &src);
 
-        void imguiBeginFrame(SwapChain &swapChain, double deltaTime);
+        void imguiBeginFrame(SwapChain &swapChain,
+                             double deltaTime,
+                             ProfilingDisplay profiling = ProfilingDisplay::Enabled);
         void imguiEndFrame(SwapChain &swapChain);
 
         ProfilingEvent profilingEvent(const char *name, uint64_t uniqueId = 0);

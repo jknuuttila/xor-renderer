@@ -4,9 +4,12 @@
 
 #include <cmath>
 #include <random>
+#include <numeric>
 
 namespace Xor
 {
+    constexpr float MaxFloat = std::numeric_limits<float>::max();
+
     inline float frac(float f)
     {
         float integral;
@@ -82,4 +85,52 @@ namespace Xor
     {
         return std::max(minimum, std::min(maximum, x));
     }
+
+    // Quadratic equation of the form ax^2 + bx + c == 0
+    struct Quadratic
+    {
+        float a = 0;
+        float b = 0;
+        float c = 0;
+
+        Quadratic() = default;
+        Quadratic(float a, float b, float c) : a(a), b(b), c(c) {}
+
+        float discriminant() const
+        {
+            return b*b - 4*a*c;
+        }
+
+        struct Roots
+        {
+            float2 x;
+            int numRoots = 0;
+
+            Roots() = default;
+            Roots(float x) : x(x), numRoots(1) {}
+            Roots(float x0, float x1) : x(x0, x1), numRoots(2) {}
+
+            explicit operator bool() const { return numRoots > 0; }
+        };
+
+        Roots solve() const
+        {
+            float D = discriminant();
+
+            if (D < 0)
+            {
+                return Roots();
+            }
+            else if (D == 0)
+            {
+                return Roots(-b / (2 * a));
+            }
+            else
+            {
+                float d    = sqrt(D);
+                float a2   = 2 * a;
+                return Roots((-b + d) / a2, (-b - d) / a2);
+            }
+        }
+    };
 }

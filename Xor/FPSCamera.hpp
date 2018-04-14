@@ -26,8 +26,10 @@ namespace Xor
         float turnSpeed = .055f;
         float fastMultiplier = 10;
 
-        void update(const Window &window)
+        bool update(const Window &window)
         {
+            bool moved = false;
+
             float x = 0;
             float z = 0;
             float s = 1;
@@ -45,18 +47,22 @@ namespace Xor
             {
                 x *= speed * s;
                 position += M.getRotationXAxis() * x;
+                moved = true;
             }
 
             if (z != 0)
             {
                 z *= speed * s;
                 position += M.getRotationZAxis() * z;
+                moved = true;
             }
 
-            if (window.isKeyHeld(keys.lookLeft))  azimuth.radians   += turnSpeed;
-            if (window.isKeyHeld(keys.lookRight)) azimuth.radians   -= turnSpeed;
-            if (window.isKeyHeld(keys.lookUp))    elevation.radians += turnSpeed;
-            if (window.isKeyHeld(keys.lookDown))  elevation.radians -= turnSpeed;
+            if (window.isKeyHeld(keys.lookLeft))  { azimuth.radians   += turnSpeed; moved = true; }
+            if (window.isKeyHeld(keys.lookRight)) { azimuth.radians   -= turnSpeed; moved = true; }
+            if (window.isKeyHeld(keys.lookUp))    { elevation.radians += turnSpeed; moved = true; }
+            if (window.isKeyHeld(keys.lookDown))  { elevation.radians -= turnSpeed; moved = true; }
+
+            return moved;
         }
 
         Matrix orientation() const

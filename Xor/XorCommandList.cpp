@@ -867,7 +867,9 @@ namespace Xor
         copyTexture(dst, {0, 0}, src);
     }
 
-    void CommandList::imguiBeginFrame(SwapChain &swapChain, double deltaTime)
+    void CommandList::imguiBeginFrame(SwapChain &swapChain,
+                                      double deltaTime,
+                                      ProfilingDisplay profiling)
     {
         ImGuiIO &io = ImGui::GetIO();
         io.DisplaySize = float2(swapChain.backbuffer(false).m_texture->size);
@@ -882,7 +884,9 @@ namespace Xor
 
         ImGui::NewFrame();
 
-        device().processProfilingEvents();
+        if (profiling == ProfilingDisplay::Enabled)
+            device().processProfilingEvents();
+
         processConfigurables();
     }
 
