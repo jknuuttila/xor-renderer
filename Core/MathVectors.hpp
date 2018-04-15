@@ -409,6 +409,14 @@ namespace Xor
             return c;
         }
 
+        template <uint N>
+        inline Vector<float, N> sqrtVec(Vector<float, N> a)
+        {
+            Vector<float, N> c;
+            for (uint i = 0; i < N; ++i) c[i] = std::sqrt(a[i]);
+            return c;
+        }
+
         template <typename T, uint N>
         Vector<T, N> abs(Vector<T, N> a)
         {
@@ -447,6 +455,28 @@ namespace Xor
         inline Vector<T, N> clamp(Vector<T, N> x, Vector<T, N> minimum, Vector<T, N> maximum)
         {
             return max(minimum, min(maximum, x));
+        }
+
+        template <typename T, uint N>
+        inline T smallestElement(Vector<T, N> a)
+        {
+            T smallest = a.x;
+
+            for (uint i = 1; i < N; ++i)
+                smallest = std::min(smallest, a[i]);
+
+            return smallest;
+        }
+
+        template <typename T, uint N>
+        inline T largestElement(Vector<T, N> a)
+        {
+            T largest = a.x;
+
+            for (uint i = 1; i < N; ++i)
+                largest = std::max(largest, a[i]);
+
+            return largest;
         }
 
         static const float RadToDeg = 180.f / Pi;
