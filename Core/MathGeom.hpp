@@ -248,6 +248,17 @@ namespace Xor
         return float3(cos(phi) * r, sin(phi) * r, u1);
     }
 
+    inline float3 uniformSphere(float2 u)
+    {
+        const float theta  = u.x * (2 * Pi);
+        const float cosPhi = 2*u.y - 1;
+        const float k      = sqrt(1 - cosPhi*cosPhi);
+
+        return float3(k * cos(theta),
+                      k * sin(theta),
+                      cosPhi);
+    }
+
     inline float3 cosineWeightedHemisphere(float2 u)
     {
         float2 disk = uniformDisk(u);
@@ -259,6 +270,13 @@ namespace Xor
     {
         std::uniform_real_distribution<float> U;
         return uniformHemisphere(float2(U(gen), U(gen)));
+    }
+
+    template <typename RandomGen>
+    float3 uniformSphereGen(RandomGen &gen)
+    {
+        std::uniform_real_distribution<float> U;
+        return uniformSphere(float2(U(gen), U(gen)));
     }
 
     template <typename RandomGen>
