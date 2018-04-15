@@ -467,6 +467,25 @@ namespace Xor
             float toDeg() const { return radians * RadToDeg; }
         };
 
+        struct AxisAngleRotation
+        {
+            float3 axis    = float3(1, 0, 0);
+            float cosAngle = 1;
+            float sinAngle = 0;
+
+            AxisAngleRotation() = default;
+            AxisAngleRotation(float3 axis, float cosAngle, float sinAngle)
+                : axis(axis)
+                , cosAngle(cosAngle)
+                , sinAngle(sinAngle)
+            {}
+            AxisAngleRotation(float3 axis, Angle angle);
+
+            static AxisAngleRotation fromTo(float3 aUnit, float3 bUnit);
+
+            float3 rotate(float3 v) const;
+        };
+
         static const Angle DefaultFov = Angle::degrees(60.f);
         static const float DefaultDepth0Plane = 100.f;
         static const float DefaultDepth1Plane =    .1f;
@@ -653,7 +672,9 @@ namespace Xor
             }
 
             static Matrix crossProductMatrix(float3 k);
+            static Matrix axisAngle(float3 axis, float cosAngle, float sinAngle);
             static Matrix axisAngle(float3 axis, Angle angle);
+            static Matrix rotateFromTo(float3 aUnit, float3 bUnit);
 
             static Matrix lookInDirection(float3 dir,       float3 up = float3(0, 1, 0));
             static Matrix lookTo(float3 pos, float3 dir,    float3 up = float3(0, 1, 0));
@@ -877,6 +898,7 @@ namespace Xor
     using Xor::math::Pi;
     using Xor::math::Vector;
     using Xor::math::Angle;
+    using Xor::math::AxisAngleRotation;
     using Xor::math::Matrix;
     using Xor::math::Mat;
 

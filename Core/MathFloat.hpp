@@ -9,6 +9,7 @@
 namespace Xor
 {
     constexpr float MaxFloat = std::numeric_limits<float>::max();
+    static const float AlmostOne = std::nextafter(1.0f, 0.0f);
 
     inline float frac(float f)
     {

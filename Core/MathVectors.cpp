@@ -4,6 +4,45 @@ namespace Xor
 {
     namespace math
     {
+        AxisAngleRotation::AxisAngleRotation(float3 axis, Angle angle)
+            : axis(axis)
+            , cosAngle(cos(angle.radians))
+            , sinAngle(sin(angle.radians))
+        {}
+
+        AxisAngleRotation AxisAngleRotation::fromTo(float3 a, float3 b)
+        {
+            float cosAngle = dot(a, b);
+
+            float3 k       = cross(a, b);
+            float kLen     = k.length();
+
+            float sinAngle = kLen;
+
+            constexpr float CollinearThreshold = .001f;
+
+            if (std::abs(sinAngle) < CollinearThreshold)
+            {
+                if (cosAngle < 0)
+                    return AxisAngleRotation();
+                else
+                    return AxisAngleRotation(float3(1, 0, 0), -1, 0);
+            }
+            else
+            {
+                return AxisAngleRotation(k * (1 / kLen), cosAngle, sinAngle);
+            }
+        }
+
+        float3 AxisAngleRotation::rotate(float3 v) const
+        {
+            auto &k = axis;
+            float s = sinAngle;
+            float c = cosAngle;
+
+            return v*c + cross(k, v)*s + k*dot(k, v)*(1-c);
+        }
+
         Matrix Matrix::crossProductMatrix(float3 k)
         {
             return Matrix {
@@ -14,15 +53,55 @@ namespace Xor
             };
         }
 
-        Matrix Matrix::axisAngle(float3 axis, Angle angle)
+        Matrix Matrix::axisAngle(float3 axis, float cosAngle, float sinAngle)
         {
             float3 k = axis;
-            float  s = sin(angle.radians);
-            float  c = cos(angle.radians);
+            float  s = sinAngle;
+            float  c = cosAngle;
 
             Matrix K = Matrix::crossProductMatrix(k);
-            Matrix R = Matrix::identity() + s * K + (1 - c) * (K * K);
+            Matrix R = Matrix::identity() + s*K + (1-c) * (K*K);
             return R;
+        }
+
+        Matrix Matrix::axisAngle(float3 axis, Angle angle)
+        {
+            return axisAngle(axis,
+                             cos(angle.radians),
+                             sin(angle.radians));
+        }
+
+        Matrix Matrix::rotateFromTo(float3 a, float3 b)
+        {
+            float cosAngle = dot(a, b);
+
+            float3 k       = cross(a, b);
+            float kLen     = k.length();
+
+            float sinAngle = kLen;
+
+            constexpr float CollinearThreshold = .001f;
+
+            if (std::abs(sinAngle) < CollinearThreshold)
+            {
+                if (cosAngle < 0)
+                {
+                    return Matrix {
+                        { -1,  0,  0,  0 },
+                        {  0, -1,  0,  0 },
+                        {  0,  0, -1,  0 },
+                        {  0,  0,  0,  1 },
+                    };
+                }
+                else
+                {
+                    return Matrix::identity();
+                }
+            }
+            else
+            {
+                return Matrix::axisAngle(k * (1 / kLen), cosAngle, sinAngle);
+            }
         }
 
         Matrix Matrix::lookInDirection(float3 dir, float3 up)
@@ -184,7 +263,7 @@ namespace Xor
             m1 *= 1 / determinant();
             return m1;
         }
-    }
+}
 
     String toString(const math::Matrix & m)
     {
