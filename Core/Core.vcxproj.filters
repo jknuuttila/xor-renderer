@@ -44,6 +44,8 @@
     <ClInclude Include="MathMorton.hpp" />
     <ClInclude Include="MathColors.hpp" />
     <ClInclude Include="SortingNetworks.h" />
+    <ClInclude Include="MathRandom.hpp" />
+    <ClInclude Include="MathRandomXoroshiro128p.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="MathVectors.natvis" />

@@ -6,4 +6,5 @@
 #include "MathGeom.hpp"
 #include "MathMorton.hpp"
 #include "MathColors.hpp"
+#include "MathRandom.hpp"
 

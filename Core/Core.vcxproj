@@ -47,6 +47,8 @@
     <ClInclude Include="MathGeom.hpp" />
     <ClInclude Include="MathInteger.hpp" />
     <ClInclude Include="MathMorton.hpp" />
+    <ClInclude Include="MathRandom.hpp" />
+    <ClInclude Include="MathRandomXoroshiro128p.hpp" />
     <ClInclude Include="MathVectors.hpp" />
     <ClInclude Include="MathVectorSwizzle.hpp" />
     <ClInclude Include="OS.hpp" />

@@ -825,7 +825,7 @@ struct Terrain
         Vert minBound = vertex(area, {0, 0});
         Vert maxBound = vertex(area, {1, 1});
 
-        std::mt19937 gen(95832);
+        Random gen(95832);
 
         std::priority_queue<LargestError> largestError;
         std::vector<int> newTriangles;
@@ -1503,7 +1503,7 @@ struct TerrainRenderer
         Blit blit(device);
 #endif
 
-        std::mt19937 gen(120495);
+        Random gen(120495);
 
         float radius = terrain->worldDiameter / 2;
 

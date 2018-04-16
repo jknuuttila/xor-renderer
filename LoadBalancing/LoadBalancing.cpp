@@ -122,7 +122,7 @@ public:
         workload.input.clear();
         workload.correctOutput.clear();
 
-        std::mt19937 gen(2358279);
+        Random gen(2358279);
         std::uniform_int_distribution<uint> dist(cfg_WorkloadSettings.minItems, cfg_WorkloadSettings.maxItems);
         std::uniform_real_distribution<float> zeroDist;
 
