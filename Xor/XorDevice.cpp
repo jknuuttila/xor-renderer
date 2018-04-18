@@ -1207,6 +1207,11 @@ namespace Xor
         return retval;
     }
 
+    int2 Device::debugMouseCursor() const
+    {
+        return S().debugMousePosition;
+    }
+
     size_t Device::debugFeedback(Span<uint8_t> dst)
     {
         auto &feedback = S().debugFeedbackValue;

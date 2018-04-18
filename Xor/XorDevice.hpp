@@ -85,6 +85,7 @@ namespace Xor
             bool wantsText     = false;
         };
         ImguiInput imguiInput(const Input &input);
+        int2 debugMouseCursor() const;
 
         size_t debugFeedback(Span<uint8_t> dst);
         template <typename T>
