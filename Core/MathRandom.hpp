@@ -9,6 +9,25 @@
 
 namespace Xor
 {
+    // Generates floats in the interval [0, 1) using the given generator
+    // such that they are uniformly distributed if the lowest 24 bits
+    // of the integers returned by the given generator are uniformly distributed.
+    // This function is substantially faster than using std::uniform_real_distribution
+    template <typename Gen>
+    inline float fastUniformFloat(Gen &gen)
+    {
+        constexpr uint32_t RandomGenBits  = 24;
+        constexpr uint32_t Mask = (1u << RandomGenBits) - 1;
+        constexpr float NextAfterLargestInt = 16777218.f;
+        constexpr float RandomGenCoeff = 1.f / NextAfterLargestInt;
+
+        uint32_t randomBits = uint32_t(gen());
+        randomBits         &= Mask;
+        float f             = float(randomBits);
+
+        return f * RandomGenCoeff;
+    }
+
     inline float3 uniformBarycentric(float2 u)
     {
         float r1  = u.x;
