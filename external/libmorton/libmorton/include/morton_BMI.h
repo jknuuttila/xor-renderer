@@ -1,4 +1,9 @@
 #pragma once
+
+#pragma warning(push)
+// warning C4309: 'static_cast': truncation of constant value
+#pragma warning(disable: 4309)
+
 #if defined(__BMI2__) || __AVX2__
 #include <immintrin.h>
 #include <stdint.h>
@@ -55,3 +60,5 @@ inline void m3D_d_BMI(const morton m, coord& x, coord& y, coord& z){
 	z = static_cast<coord>(bmi2_detail::pext(m, static_cast<morton>(BMI_3D_Z_MASK)));
 }
 #endif
+
+#pragma warning(pop)
