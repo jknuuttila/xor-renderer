@@ -372,6 +372,18 @@ namespace Xor
             return dp;
         }
 
+        template <typename T, uint N>
+        inline T absDot(Vector<T, N> a, Vector<T, N> b)
+        {
+            return std::abs(dot(a, b));
+        }
+
+        template <typename T, uint N>
+        inline T clampedDot(Vector<T, N> a, Vector<T, N> b)
+        {
+            return std::max<T>(0, dot(a, b));
+        }
+
         template <uint N>
         inline float lengthSqr(Vector<float, N> a)
         {
