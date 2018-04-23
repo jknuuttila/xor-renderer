@@ -7,6 +7,12 @@
 
 namespace Xor
 {
+    template <typename T, uint N>
+    inline Vector<T, N> reflect(Vector<T, N> i, Vector<T, N> n)
+    {
+        return i - 2.f * dot(i, n) * n;
+    }
+
     template <typename T>
     inline T orient2D(Vector<T, 2> a, Vector<T, 2> b, Vector<T, 2> c)
     {

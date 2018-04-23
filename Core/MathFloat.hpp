@@ -21,12 +21,6 @@ namespace Xor
     inline float4 frac(float4 f) { return float4(frac(f.x), frac(f.y), frac(f.z), frac(f.w)); }
 
     template <uint N>
-    inline Vector<float, N> saturate(Vector<float, N> a)
-    {
-        return clamp(a, 0, 1);
-    }
-
-    template <uint N>
     inline Vector<float, N> round(Vector<float, N> a)
     {
         for (uint i = 0; i < N; ++i)
@@ -85,6 +79,17 @@ namespace Xor
     inline float clamp(float x, float minimum, float maximum)
     {
         return std::max(minimum, std::min(maximum, x));
+    }
+
+    inline float saturate(float f)
+    {
+        return clamp(f, 0.f, 1.f);
+    }
+
+    template <uint N>
+    inline Vector<float, N> saturate(Vector<float, N> a)
+    {
+        return clamp(a, 0, 1);
     }
 
     // Quadratic equation of the form ax^2 + bx + c == 0
