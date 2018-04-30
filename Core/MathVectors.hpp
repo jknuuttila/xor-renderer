@@ -315,6 +315,26 @@ namespace Xor
             {
                 return std::sqrt(lengthSqr());
             }
+
+            T smallest() const
+            {
+                T v = this->x;
+
+                for (uint i = 1; i < N; ++i)
+                    v = std::min(v, data()[i]);
+
+                return v;
+            }
+
+            T largest() const
+            {
+                T v = this->x;
+
+                for (uint i = 1; i < N; ++i)
+                    v = std::max(v, data()[i]);
+
+                return v;
+            }
         };
 
 #include "MathVectorSwizzle.hpp"
@@ -467,28 +487,6 @@ namespace Xor
         inline Vector<T, N> clamp(Vector<T, N> x, Vector<T, N> minimum, Vector<T, N> maximum)
         {
             return max(minimum, min(maximum, x));
-        }
-
-        template <typename T, uint N>
-        inline T smallestElement(Vector<T, N> a)
-        {
-            T smallest = a.x;
-
-            for (uint i = 1; i < N; ++i)
-                smallest = std::min(smallest, a[i]);
-
-            return smallest;
-        }
-
-        template <typename T, uint N>
-        inline T largestElement(Vector<T, N> a)
-        {
-            T largest = a.x;
-
-            for (uint i = 1; i < N; ++i)
-                largest = std::max(largest, a[i]);
-
-            return largest;
         }
 
         static const float RadToDeg = 180.f / Pi;

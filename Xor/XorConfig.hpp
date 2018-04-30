@@ -127,6 +127,9 @@ namespace Xor
         T get() const { return m_value; }
         operator T() const { return get(); }
 
+        bool isMin() const { return m_value == static_cast<T>(m_min); }
+        bool isMax() const { return m_value == static_cast<T>(m_max); }
+
         ConfigValue &operator=(T value)
         {
             m_value = value;
