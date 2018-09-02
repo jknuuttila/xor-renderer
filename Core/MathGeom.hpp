@@ -7,6 +7,9 @@
 
 namespace Xor
 {
+    constexpr float AreaOfUnitSphere     = 4.f * Pi;
+    constexpr float AreaOfUnitHemisphere = 2.f * Pi;
+
     template <typename T, uint N>
     inline Vector<T, N> reflect(Vector<T, N> i, Vector<T, N> n)
     {
